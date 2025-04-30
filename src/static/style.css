@@ -1,0 +1,29 @@
+/* Basic styling */
+body {
+    font-family: sans-serif;
+    display: flex;
+}
+
+.calendar-container {
+    width: 75%;
+    border-right: 1px solid #ccc;
+    padding: 10px;
+}
+
+.daily-view-container {
+    width: 25%;
+    padding: 10px;
+}
+
+.slideshow-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: black;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}

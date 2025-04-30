@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Calendar</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Family Calendar</h1>
+    <div class="calendar-container">
+        <!-- Calendar view will go here -->
+        <p>Monthly Calendar Area</p>
+    </div>
+    <div class="daily-view-container">
+        <!-- Daily view will go here -->
+        <p>Daily Breakdown Area</p>
+    </div>
+    <div class="slideshow-container" style="display: none;">
+        <!-- Photo slideshow will go here -->
+        <p>Photo Slideshow Area</p>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
