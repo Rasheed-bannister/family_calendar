@@ -14,6 +14,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedCell = null;
     let inactivityTimer = null;
     const INACTIVITY_TIMEOUT = 60 * 1000; // 1 minute
+    
+    // Variables for Google Calendar update checking
+    let googleUpdateTimer = null;
+    const UPDATE_CHECK_INTERVAL = 300000; // Check every 5 minutes (300000ms)
+    const INITIAL_CHECK_INTERVAL = 1000; // Check every 1 second initially until task completes
+    const currentDisplayedMonth = parseInt(document.querySelector('.calendar').dataset.month || currentMonth);
+    const currentDisplayedYear = parseInt(document.querySelector('.calendar').dataset.year || currentYear);
+    let updateCheckEnabled = true; // Control flag
+    let initialLoadComplete = false; // Flag to track whether we've completed initial load
+    let inDebounce = false; // Debounce flag
 
     // --- Helper Functions ---
 
@@ -42,7 +52,6 @@ document.addEventListener('DOMContentLoaded', function() {
             timeString = eventData.startTime || eventData.endTime || 'Time not specified';
         }
 
-
         let locationString = eventData.location ? `<small>Location: ${eventData.location}</small><br>` : '';
         let descriptionString = eventData.description ? `<small>Notes: ${eventData.description}</small>` : '';
 
@@ -63,7 +72,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Use UTC to avoid timezone issues when creating the date for formatting
         const clickedDate = new Date(Date.UTC(year, month - 1, day));
         const dateHeader = clickedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
-
 
         const eventElements = dayCell.querySelectorAll('.events .event');
         let eventsHTML = '';
@@ -114,9 +122,120 @@ document.addEventListener('DOMContentLoaded', function() {
         inactivityTimer = setTimeout(resetToToday, INACTIVITY_TIMEOUT);
     }
 
+    function checkForGoogleUpdates() {
+        if (!updateCheckEnabled) return;
+        
+        fetch(`/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log(`Update check: status=${data.status}, updates=${data.updates_available}`);
+                
+                // Handle first load differently from regular checks
+                if (!initialLoadComplete) {
+                    // If the task is complete, switch to regular interval
+                    if (data.status === 'complete') {
+                        console.log("Initial Google Calendar task completed.");
+                        clearInterval(googleUpdateTimer);
+                        googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+                        console.log(`Switched to regular update interval (${UPDATE_CHECK_INTERVAL/1000}s)`);
+                        initialLoadComplete = true;
+                        
+                        // If updates were found during initial load, refresh the page
+                        if (data.updates_available) {
+                            console.log("✅ Found new events during initial load, refreshing page");
+                            refreshPage();
+                        }
+                    }
+                    // Continue checking frequently until task completes
+                } else {
+                    // Only refresh during regular checks if updates are available AND we're not in a debounce period
+                    if (data.updates_available && !inDebounce) {
+                        console.log("✅ New Google Calendar events found during regular check");
+                        refreshPage();
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("Error checking for Google Calendar updates:", err);
+            });
+    }
+
+    function refreshPage() {
+        // Show notification
+        showUpdateNotification();
+        
+        // Temporarily disable further checks
+        updateCheckEnabled = false;
+        
+        // Use a more reliable reload method
+        setTimeout(() => {
+            // Add cache busting parameter to prevent browser caching
+            const cacheBuster = new Date().getTime();
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('_', cacheBuster);
+            window.location.href = currentUrl.toString();
+        }, 1500);
+    }
+
+    function startGoogleUpdateTimer() {
+        // Clear any existing timer
+        if (googleUpdateTimer) {
+            clearInterval(googleUpdateTimer);
+        }
+        
+        // Start with frequent checks until initial load completes
+        googleUpdateTimer = setInterval(checkForGoogleUpdates, INITIAL_CHECK_INTERVAL);
+        console.log(`Started initial Google Calendar update checker (checking every ${INITIAL_CHECK_INTERVAL/1000}s)`);
+        
+        // Do an immediate first check
+        checkForGoogleUpdates();
+    }
+
+    function showUpdateNotification() {
+        // Create a notification element
+        const notification = document.createElement('div');
+        notification.classList.add('update-notification');
+        notification.textContent = 'New calendar events found! Refreshing...';
+        
+        // Style the notification
+        Object.assign(notification.style, {
+            position: 'fixed',
+            top: '10px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            padding: '10px 20px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            zIndex: '1000',
+            transition: 'opacity 0.3s ease'
+        });
+        
+        // Add to the page
+        document.body.appendChild(notification);
+        
+        // Remove after the page refreshes or 3 seconds (whichever comes first)
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (document.body.contains(notification)) {
+                    document.body.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
     // --- Initialization ---
 
     highlightToday(); // Highlight today on load
+    startGoogleUpdateTimer(); // Start checking for Google updates
+    
+    // Add data attributes to the calendar for the current displayed month/year
+    if (calendar) {
+        calendar.dataset.month = currentDisplayedMonth;
+        calendar.dataset.year = currentDisplayedYear;
+    }
 
     // --- Event Listeners ---
 
@@ -151,7 +270,6 @@ document.addEventListener('DOMContentLoaded', function() {
                  console.log("Removed highlight from today cell.");
             }
 
-
             // Highlight the new cell and update selection state
             clickedCell.classList.add('selected');
             selectedCell = clickedCell;
@@ -164,12 +282,23 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error("Calendar element not found!");
     }
 
-    // Start the timer initially only if today is visible and selected by default
-    // We only want the timer active after the user *first* clicks away from today.
-    // So, no need to start it here initially.
-
-    // Add other interactive features here if needed
+    // Handle page visibility changes to manage update checks
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            // Page is hidden, pause update checks
+            updateCheckEnabled = false;
+            if (googleUpdateTimer) {
+                clearInterval(googleUpdateTimer);
+                googleUpdateTimer = null;
+            }
+            console.log("Page hidden, paused Google Calendar update checks");
+        } else {
+            // Page is visible again, resume update checks
+            updateCheckEnabled = true;
+            // Reset initial load status to check immediately
+            initialLoadComplete = false;
+            startGoogleUpdateTimer();
+            console.log("Page visible, resumed Google Calendar update checks");
+        }
+    });
 });
-
-// Example: Slideshow activation/deactivation logic would go here
-// Example: Event handling for adding events would go here

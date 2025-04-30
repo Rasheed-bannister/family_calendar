@@ -84,7 +84,6 @@ def get_events_current_month(service, month: int, year: int):
   """
   calendars = get_calendar_list(service)
   if not calendars:
-      print("No calendars found or accessible.")
       return []
 
   # Calculate the time range for the given month and year
@@ -97,11 +96,9 @@ def get_events_current_month(service, month: int, year: int):
   time_max = time_max_dt.isoformat()
 
   all_events = []
-  print(f"Fetching events for {time_min_dt.strftime('%B %Y')}...")
 
   for calendar in calendars:
     calendar_id = calendar["id"]
-    print(f"  Fetching events from calendar: {calendar.get('summary', calendar_id)}")
     try:
       events_result = (
           service.events()
@@ -124,7 +121,6 @@ def get_events_current_month(service, month: int, year: int):
 
 
   if not all_events:
-    print(f"No events found for {time_min_dt.strftime('%B %Y')}.")
     return []
 
   # Sort all collected events by start time
@@ -166,13 +162,10 @@ def get_calendar_list(service):
             or an error occurs.
   """
   try:
-    print("Getting list of calendars...")
     calendar_list_result = service.calendarList().list().execute()
     calendars = calendar_list_result.get("items", [])
     if not calendars:
-        print("No calendars found.")
         return []
-    print(f"Found {len(calendars)} calendars.")
     return calendars
   except HttpError as error:
     print(f"An error occurred fetching calendar list: {error}")
@@ -180,49 +173,3 @@ def get_calendar_list(service):
   except Exception as e:
     print(f"An unexpected error occurred fetching calendar list: {e}")
     return []
-
-
-def initialize():
-  """Shows basic usage of the Google Calendar API.
-  Authenticates, fetches events for the current month, and prints them.
-  """
-  creds = authenticate()
-
-  if not creds:
-      print("Authentication failed. Exiting.")
-      return
-
-  try:
-    service = build("calendar", "v3", credentials=creds)
-
-    # Get current month and year
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
-    current_month = now.month
-    current_year = now.year
-
-    # Fetch events for the current month
-    # Note: get_events_current_month now handles fetching calendars internally
-    monthly_events = get_events_current_month(service, current_month, current_year)
-
-    if monthly_events:
-        print(f"\nEvents for {now.strftime('%B %Y')}:")
-        for event in monthly_events:
-            start = event["start"].get("dateTime", event["start"].get("date"))
-            # Simple formatting for date/dateTime
-            try:
-                if 'T' in start: # DateTime
-                    start_dt = datetime.datetime.fromisoformat(start.replace('Z', '+00:00'))
-                    start_formatted = start_dt.strftime('%Y-%m-%d %H:%M:%S %Z')
-                else: # Date
-                    start_dt = datetime.date.fromisoformat(start)
-                    start_formatted = start_dt.strftime('%Y-%m-%d (All day)')
-            except ValueError:
-                start_formatted = start # Fallback to raw string if parsing fails
-
-            print(f"{start_formatted} {event['summary']}")
-
-  except HttpError as error:
-    # Errors during service build or other API calls not caught in sub-functions
-    print(f"An API error occurred: {error}")
-  except Exception as e:
-    print(f"An unexpected error occurred in main: {e}")

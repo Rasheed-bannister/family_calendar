@@ -97,17 +97,14 @@ def create_all():
     cursor.execute('SELECT COUNT(*) FROM DefaultColors')
     if cursor.fetchone()[0] == 0:
         cursor.executemany('INSERT INTO DefaultColors (hex_code) VALUES (?)', [(color,) for color in DEFAULT_COLORS])
-        print("Default colors populated.")
 
     # Initialize ColorIndex if empty
     cursor.execute('SELECT COUNT(*) FROM ColorIndex')
     if cursor.fetchone()[0] == 0:
         cursor.execute('INSERT INTO ColorIndex (id, current_index) VALUES (1, 0)')
-        print("Color index initialized.")
 
     conn.commit()
     conn.close()
-    print("Database tables created successfully.")
 
 @db_connection
 def add_calendar(cursor, calendar: Calendar): 
@@ -119,7 +116,6 @@ def add_calendar(cursor, calendar: Calendar):
         INSERT OR REPLACE INTO Calendar (calendar_id, name, color)
         VALUES (?, ?, ?)
     ''', (calendar.calendar_id, calendar.name, calendar.color))
-    print(f"Calendar '{calendar.name}' added/updated in the database.")
 
 @db_connection
 def get_calendar(cursor, calendar_id: str) -> Calendar | None: 
@@ -136,7 +132,6 @@ def add_month(cursor, month: CalendarMonth):
         INSERT OR REPLACE INTO CalendarMonth (id, year, month)
         VALUES (?, ?, ?)
     ''', (month.id, month.year, month.month))
-    print(f"Month '{month.id}' added/updated in the database.")
 
 @db_connection
 def get_month(cursor, month_id: str) -> CalendarMonth | None: 
@@ -172,7 +167,6 @@ def add_event(cursor, event: CalendarEvent):
         event.location,
         event.description
     ))
-    print(f"Event {event.title} added to the database.")
 
 @db_connection
 def check_event_exists(cursor, event_id: str) -> CalendarEvent | None: 
