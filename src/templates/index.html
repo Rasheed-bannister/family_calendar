@@ -7,15 +7,108 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Family Calendar</h1>
-    <div class="calendar-container">
-        <!-- Calendar view will go here -->
-        <p>Monthly Calendar Area</p>
+    <div class="main-container"> {# New overall container #}
+        <div class="left-column"> {# Left side (Weather + Calendar) #}
+            <div class="weather-placeholder">
+                <!-- Weather information will go here -->
+                <p>Weather Placeholder</p> 
+            </div>
+            <div id="main-calendar-area">
+                <div class="calendar-header-nav">
+                    <a href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
+                    <h1>Bannister Family - {{ month_name }} {{ year }}</h1>
+                    <a href="{{ url_for('calendar_view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
+                </div>
+                <div class="calendar-container">
+                    <!-- Calendar view will go here -->
+                    <table class="calendar">
+                        <thead>
+                            <tr>
+                                <th>Sun</th>
+                                <th>Mon</th>
+                                <th>Tue</th>
+                                <th>Wed</th>
+                                <th>Thu</th>
+                                <th>Fri</th>
+                                <th>Sat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for week in weeks %}
+                            <tr>
+                                {% for day in week %}
+                                <td 
+                                    class="{{ 'current-month' if day.is_current_month else 'other-month' }}" 
+                                    {% if day.is_current_month %}
+                                    data-day="{{ day.day_number }}" 
+                                    data-month="{{ month_number }}" 
+                                    data-year="{{ year }}"
+                                    {% endif %}
+                                >
+                                    <div class="day-content"> {# New wrapper div #}
+                                        <div class="day-header">{{ day.day_number }}</div> {# Renamed from day-number for clarity #}
+                                        <div class="events">
+                                            {% for event in day.events %}
+                                            <div class="event"
+                                                 style="background-color: {{ event.calendar_color or '#eee' }}; border-left: 3px solid {{ event.calendar_color or '#ccc' }};"
+                                                 data-title="{{ event.title }}"
+                                                 data-calendar-name="{{ event.calendar_name }}"
+                                                 data-all-day="{{ 'true' if event.all_day else 'false' }}"
+                                                 data-start-time="{{ event.start_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
+                                                 data-end-time="{{ event.end_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
+                                                 data-location="{{ event.location or '' }}"
+                                                 data-description="{{ event.description or '' }}"
+                                                 data-color="{{ event.calendar_color or '#ccc' }}">
+                                                <span class="event-time">
+                                                    {% if event.all_day %}
+                                                        All Day
+                                                    {% else %}
+                                                        {{ event.start_datetime.strftime('%-I:%M%p') }}
+                                                    {% endif %}
+                                                </span>
+                                                <span class="event-title">{{ event.title }}</span>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div> {# End new wrapper div #}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="right-column"> {# Right side (Daily View) #}
+            <div class="daily-view-container">
+                <h2>Today's Events</h2>
+                {% if today_events %}
+                    <ul>
+                        {% for event in today_events %}
+                            <li style="border-left: 5px solid {{ event.calendar_color or '#ccc' }}; padding-left: 10px; margin-bottom: 10px;">
+                                <strong>{{ event.title }}</strong> ({{ event.calendar_name }})<br>
+                                {% if event.all_day %}
+                                    All Day
+                                {% else %}
+                                    {{ event.start_datetime.strftime('%I:%M %p') }} - {{ event.end_datetime.strftime('%I:%M %p') }}
+                                {% endif %}<br>
+                                {% if event.location %}
+                                    <small>Location: {{ event.location }}</small><br>
+                                {% endif %}
+                                {% if event.description %}
+                                    <small>Notes: {{ event.description }}</small>
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No events found for today.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
-    <div class="daily-view-container">
-        <!-- Daily view will go here -->
-        <p>Daily Breakdown Area</p>
-    </div>
+
     <div class="slideshow-container" style="display: none;">
         <!-- Photo slideshow will go here -->
         <p>Photo Slideshow Area</p>

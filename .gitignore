@@ -8,5 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# secrets
 credentials.json
 token.json
+calendar.db

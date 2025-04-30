@@ -1,29 +1,201 @@
-/* Basic styling */
-body {
+/* Basic Reset & Full Height */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
     font-family: sans-serif;
+    overflow: hidden; /* Prevent body scrollbars */
+}
+
+/* Main Layout Container */
+.main-container {
     display: flex;
+    flex-direction: row; /* Side-by-side columns */
+    height: 100vh; /* Full viewport height */
+}
+
+/* Left Column (Weather + Calendar) */
+.left-column {
+    width: 80%;
+    height: 100%;
+    display: flex;
+    flex-direction: column; /* Stack weather and calendar */
+}
+
+/* Right Column (Daily View) */
+.right-column {
+    width: 20%;
+    height: 100%;
+    border-left: 1px solid #ccc;
+    display: flex; /* To make child fill height */
+    flex-direction: column;
+    overflow: hidden; /* Prevent overflow */
+}
+
+/* Weather Placeholder */
+.weather-placeholder {
+    height: 20%; /* Top 20% of left column */
+    border-bottom: 1px solid #ccc;
+    padding: 10px;
+    background-color: #e9f5ff; /* Light blue background */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Main Calendar Area (Title + Grid) */
+#main-calendar-area {
+    height: 80%; /* Bottom 80% of left column */
+    display: flex;
+    flex-direction: column; /* Stack title and table */
+}
+
+#main-calendar-area h1 {
+    text-align: center;
+    margin: 10px 0;
+    flex-shrink: 0; /* Prevent title from shrinking */
+    flex-grow: 1; /* Allow title to take space */
+}
+
+/* New styles for header navigation */
+.calendar-header-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Pushes arrows to sides */
+    padding: 0 20px; /* Add some padding */
+    margin-bottom: 10px; /* Space below header */
+}
+
+.nav-arrow {
+    font-size: 1.5em;
+    font-weight: bold;
+    text-decoration: none;
+    color: #337ab7; /* Bootstrap-like blue */
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.nav-arrow:hover {
+    background-color: #eee;
+    color: #23527c;
 }
 
 .calendar-container {
-    width: 75%;
-    border-right: 1px solid #ccc;
-    padding: 10px;
+    flex-grow: 1; /* Allow table container to fill remaining space */
+    overflow: hidden; /* Prevent container overflow */
+    padding: 0 10px 10px 10px; /* Add some padding */
+    display: flex; /* Use flex to make table fill height */
 }
 
-.daily-view-container {
-    width: 25%;
-    padding: 10px;
-}
-
-.slideshow-container {
-    position: absolute;
-    top: 0;
-    left: 0;
+/* Calendar Table Styling */
+.calendar {
     width: 100%;
-    height: 100%;
-    background-color: black;
-    color: white;
+    height: 100%; /* Fill the container */
+    border-collapse: collapse;
+    table-layout: fixed; /* Ensure equal column widths */
+}
+
+.calendar th {
+    text-align: center;
+    padding: 8px;
+    background-color: #f2f2f2;
+    border: 1px solid #ddd;
+}
+
+.calendar td {
+    border: 1px solid #ddd;
+    vertical-align: top; /* Align content to the top */
+    overflow: hidden; /* Hide overflow from td itself */
+    height: calc(100% / 6); /* Assuming max 6 weeks */
+}
+
+/* New rule for the wrapper inside td */
+.day-content {
     display: flex;
-    justify-content: center;
-    align-items: center;
+    flex-direction: column;
+    height: 100%; /* Make the wrapper fill the cell height */
+    width: 100%; /* Make the wrapper fill the cell width */
+}
+
+/* Day Cell Header (Number) */
+.day-header {
+    padding: 4px;
+    text-align: right;
+    font-weight: bold;
+    background-color: #fafafa;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+.other-month .day-header {
+    color: #aaa;
+    background-color: #f9f9f9;
+}
+
+/* Events Area within Day Cell */
+.events {
+    padding: 4px;
+    flex-grow: 1; /* Take remaining space */
+    overflow-y: auto; /* Allow scrolling for overflow */
+    font-size: 0.8em;
+}
+
+.event {
+    margin-bottom: 3px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.event-time {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+/* Daily View Container */
+.daily-view-container {
+    padding: 15px;
+    overflow-y: auto; /* Allow scrolling if content exceeds */
+    flex-grow: 1; /* Takes remaining height within right column */
+    height: 100%; /* Ensure it tries to fill */
+    box-sizing: border-box; /* Include padding in height calculation */
+}
+
+.daily-view-container h2 {
+    margin-top: 0;
+}
+
+/* Hide Slideshow for now */
+.slideshow-container {
+    display: none;
+}
+
+/* Style for the current day's cell */
+.calendar td.today {
+    background-color: #ffffcc; /* Light yellow background */
+    border: 2px solid #f0e68c; /* Khaki border */
+}
+
+/* Optional: Style the day number within the current day's cell */
+.calendar td.today .day-header {
+    font-weight: bold;
+    color: #000; /* Black color for emphasis */
+    background-color: #f0e68c; /* Match border color */
+}
+
+/* Style for the user-selected day's cell */
+.calendar td.selected {
+    background-color: #d0eaff; /* Light blue background */
+    border: 2px solid #99ccff; /* Stronger blue border */
+}
+
+/* Optional: Style the day number within the selected day's cell */
+.calendar td.selected .day-header {
+    font-weight: bold;
+    color: #000;
+    background-color: #b3d9ff; /* Slightly darker blue */
 }
