@@ -2,8 +2,6 @@ import datetime
 import calendar
 import threading
 from flask import Flask, render_template, redirect, url_for, jsonify
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from google_integration import api as google_api
 from calendar_app import database as db
@@ -21,124 +19,75 @@ google_fetch_lock = threading.Lock()
 background_tasks = {}
 
 
-def parse_google_datetime(google_date_obj):
-    """Parses Google API's date or dateTime object into a timezone-aware datetime."""
-    dt_str = google_date_obj.get('dateTime', google_date_obj.get('date'))
-    is_all_day = 'dateTime' not in google_date_obj
-
-    if is_all_day:
-        # For all-day events, Google provides 'YYYY-MM-DD'
-        # Represent as start of the day UTC
-        dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d').replace(tzinfo=datetime.timezone.utc)
-    else:
-        # For specific time events, Google provides RFC3339 format
-        try:
-            # Handle 'Z' for UTC explicitly
-            if dt_str.endswith('Z'):
-                dt = datetime.datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-            else:
-                dt = datetime.datetime.fromisoformat(dt_str)
-            # Ensure timezone-aware (assume UTC if naive, though Google API usually provides offset)
-            if dt.tzinfo is None:
-                 dt = dt.replace(tzinfo=datetime.timezone.utc)
-        except ValueError:
-            print(f"Warning: Could not parse datetime string '{dt_str}'. Using epoch.")
-            dt = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
-
-    return dt, is_all_day
-
-
 def fetch_google_events_background(month, year):
-    """Fetches Google Calendar events in a background thread."""
+    """Fetches Google Calendar events in a background thread and updates the local DB."""
     task_id = f"{month}.{year}"
-    
+
     # Skip if a task is already running for this month/year
     with google_fetch_lock:
         if task_id in background_tasks and background_tasks[task_id]['status'] == 'running':
+            print(f"Task {task_id} already running. Skipping.")
             return
-        
+
         # Mark task as running
         background_tasks[task_id] = {'status': 'running', 'updated': False}
-    
+        print(f"Starting background task {task_id}...")
+
     try:
-        # Create month if it doesn't exist
+        # Create month if it doesn't exist in the DB
         current_calendar_month = CalendarMonth(year=year, month=month)
         db.add_month(current_calendar_month)
-        
-        # Fetch and process Google events
-        creds = google_api.authenticate()
-        processed_google_events = []
-        events_changed = False
 
-        if creds:
-            try:
-                service = build("calendar", "v3", credentials=creds)
-                google_events_raw = google_api.get_events_current_month(service, month, year)
+        # Fetch and process Google events using the refactored function
+        processed_google_events_data = google_api.fetch_and_process_google_events(month, year)
 
-                if google_events_raw:
-                    for event_data in google_events_raw:
-                        google_cal_id = event_data.get('organizer', {}).get('email', 'primary')
-                        google_cal_summary = event_data.get('organizer', {}).get('displayName', google_cal_id)
-                        calendar_obj = db.get_calendar(google_cal_id)
-                        calendar_changed = False
-                        
-                        if not calendar_obj:
-                            calendar_obj = Calendar(calendar_id=google_cal_id, name=google_cal_summary)
-                            db.add_calendar(calendar_obj)
-                            calendar_changed = True
-                        elif calendar_obj.name != google_cal_summary:
-                             calendar_obj.name = google_cal_summary
-                             db.add_calendar(calendar_obj)
-                             calendar_changed = True
-                        
-                        if calendar_changed:
-                            events_changed = True
+        if not processed_google_events_data:
+            print(f"No events fetched or processed for {month}/{year}.")
+            # Mark task as complete even if no events, but not updated
+            with google_fetch_lock:
+                background_tasks[task_id]['status'] = 'complete'
+                background_tasks[task_id]['updated'] = False
+            return
 
-                        start_datetime, start_all_day = parse_google_datetime(event_data['start'])
-                        end_datetime, end_all_day = parse_google_datetime(event_data['end'])
-                        is_all_day = start_all_day
+        # Use the new utility function to create CalendarEvent objects and handle Calendars
+        events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
+            processed_google_events_data, current_calendar_month
+        )
 
-                        event = CalendarEvent(
-                            id=event_data['id'],
-                            calendar=calendar_obj,
-                            month=current_calendar_month,
-                            title=event_data.get('summary', '(No Title)'),
-                            start_datetime=start_datetime,
-                            end_datetime=end_datetime,
-                            all_day=is_all_day,
-                            location=event_data.get('location'),
-                            description=event_data.get('description')
-                        )
-                        
-                        processed_google_events.append(event)
-                    
-                    if processed_google_events:
-                        print(f"Processing {len(processed_google_events)} events from Google Calendar for {month}/{year}...")
-                        # Use the return value from add_events to determine if changes were made
-                        db_changes = calendar_utils.add_events(processed_google_events)
-                        
-                        # Only mark as updated if we found new or changed events
-                        events_changed = events_changed or db_changes
-                        
-                        with google_fetch_lock:
-                            background_tasks[task_id]['updated'] = events_changed
-                            if events_changed:
-                                print(f"Calendar changes detected for {month}/{year}, notifying client")
-                                background_tasks[task_id]['updated'] = True  # Ensure update flag is set to True for client refresh
-                            else:
-                                print(f"No changes detected for {month}/{year}")
+        # Add/update events in the database
+        if events_to_add_or_update:
+            print(f"Processing {len(events_to_add_or_update)} events in database for {month}/{year}...")
+            db_changes = calendar_utils.add_events(events_to_add_or_update)
 
-            except HttpError as error:
-                print(f"An API error occurred: {error}")
-            except Exception as e:
-                print(f"An unexpected error occurred during Google API interaction: {e}")
+            # Mark as updated if calendar info changed OR events were added/updated in DB
+            events_changed = calendars_changed or db_changes
+
+            with google_fetch_lock:
+                background_tasks[task_id]['updated'] = events_changed
+                if events_changed:
+                    print(f"Calendar changes detected for {month}/{year}, notifying client")
+                else:
+                    print(f"No database changes detected for {month}/{year}")
         else:
-            print("Google Calendar authentication failed or skipped.")
-    
-    finally:
-        # Mark task as complete
+             # If only calendar info changed but no events processed for DB
+             with google_fetch_lock:
+                 background_tasks[task_id]['updated'] = calendars_changed
+                 if calendars_changed:
+                     print(f"Calendar info changes detected for {month}/{year}, notifying client")
+
+    except Exception as e:
+        print(f"An unexpected error occurred in background task {task_id}: {e}")
+        # Optionally mark as error state
         with google_fetch_lock:
-            background_tasks[task_id]['status'] = 'complete'
+            background_tasks[task_id]['status'] = 'error'
+            background_tasks[task_id]['updated'] = False # Ensure no refresh on error
+
+    finally:
+        # Mark task as complete (unless already marked as error)
+        with google_fetch_lock:
+            if background_tasks[task_id]['status'] != 'error':
+                 background_tasks[task_id]['status'] = 'complete'
+        print(f"Background task {task_id} finished with status: {background_tasks[task_id]['status']}")
 
 
 @app.route('/')
@@ -166,7 +115,7 @@ def calendar_view(year=None, month=None):
     current_month = month
     today_date = now.date()
     first_day_of_current_month = datetime.date(current_year, current_month, 1)
-    
+
     prev_month_date = first_day_of_current_month - datetime.timedelta(days=1)
     prev_month = prev_month_date.month
     prev_year = prev_month_date.year
@@ -178,28 +127,40 @@ def calendar_view(year=None, month=None):
     else:
         next_month = current_month + 1
         next_year = current_year
-    
+
     # Ensure the displayed month exists in the database
     current_calendar_month = CalendarMonth(year=current_year, month=current_month)
     db.add_month(current_calendar_month)
 
-    # Start a background thread to fetch Google Calendar data
+    # Start a background thread to fetch Google Calendar data if not already running
     task_id = f"{current_month}.{current_year}"
-    google_thread = threading.Thread(
-        target=fetch_google_events_background,
-        args=(current_month, current_year)
-    )
-    google_thread.daemon = True  # Thread will exit when main thread exits
-    google_thread.start()
-    
+    start_background_task = False
+    with google_fetch_lock:
+        if task_id not in background_tasks or background_tasks[task_id]['status'] not in ['running', 'complete']:
+             start_background_task = True
+        elif background_tasks[task_id]['status'] == 'complete' and not background_tasks[task_id].get('updated', False):
+            pass
+
+    if start_background_task:
+        google_thread = threading.Thread(
+            target=fetch_google_events_background,
+            args=(current_month, current_year)
+        )
+        google_thread.daemon = True  # Thread will exit when main thread exits
+        google_thread.start()
+
     # --- Fetch Events from Local Database for the *Displayed* Month --- #
-    # This happens immediately while Google data is being fetched in the background
     db_events = db.get_all_events(current_calendar_month)
 
     # --- Organize Events by Day --- #
     events_by_day = {}
     for event in db_events:
-        event_date = event['start_datetime'].date()
+        start_dt = event['start_datetime']
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+
+        event_date = start_dt.date()
+
         if event_date.year == current_year and event_date.month == current_month:
             day_num = event_date.day
             if day_num not in events_by_day:
@@ -207,7 +168,7 @@ def calendar_view(year=None, month=None):
             events_by_day[day_num].append(event)
 
     for day_num in events_by_day:
-        events_by_day[day_num].sort(key=lambda x: (x['all_day'], x['start_datetime']))
+        events_by_day[day_num].sort(key=lambda x: (not x['all_day'], x['start_datetime']))
 
     # --- Generate Calendar Weeks Structure --- #
     calendar.setfirstweekday(calendar.SUNDAY)
@@ -238,17 +199,16 @@ def calendar_view(year=None, month=None):
     today_events = []
     if today_date.year == current_year and today_date.month == current_month:
         today_events = events_by_day.get(today_date.day, [])
-        today_events.sort(key=lambda x: (x['all_day'], x['start_datetime']))
 
     # Get month name for the *displayed* month
     month_name = calendar.month_name[current_month]
 
     return render_template(
-        'index.html', 
-        weeks=weeks_data, 
+        'index.html',
+        weeks=weeks_data,
         today_events=today_events,
-        month_name=month_name, 
-        month_number=current_month, 
+        month_name=month_name,
+        month_number=current_month,
         year=current_year,
         prev_year=prev_year,
         prev_month=prev_month,
@@ -264,28 +224,27 @@ def calendar_view(year=None, month=None):
 def check_updates(year, month):
     """API endpoint to check if calendar updates are available."""
     task_id = f"{month}.{year}"
-    
+
     with google_fetch_lock:
-        if task_id in background_tasks:
-            task = background_tasks[task_id]
-            status = task['status']
-            updated = task.get('updated', False)
-            
+        task_info = background_tasks.get(task_id)
+
+        if task_info:
+            status = task_info['status']
+            updated = task_info.get('updated', False)
+
             response = {
                 "status": status,
                 "updates_available": False
             }
-            
+
             # If task is complete and there were updates, tell client to refresh
             if status == 'complete' and updated:
-                # Reset the updated flag
-                task['updated'] = False
+                task_info['updated'] = False
                 response["updates_available"] = True
-                
+
             return jsonify(response)
-    
-    # If no task found for this month/year, create one
-    return jsonify({"status": "not_started", "updates_available": False})
+
+    return jsonify({"status": "not_tracked", "updates_available": False})
 
 
 if __name__ == '__main__':

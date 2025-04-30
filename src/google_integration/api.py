@@ -11,6 +11,34 @@ from googleapiclient.errors import HttpError
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
+def parse_google_datetime(google_date_obj):
+    """Parses Google API's date or dateTime object into a timezone-aware datetime."""
+    dt_str = google_date_obj.get('dateTime', google_date_obj.get('date'))
+    is_all_day = 'dateTime' not in google_date_obj
+
+    if is_all_day:
+        # For all-day events, Google provides 'YYYY-MM-DD'
+        # Represent as start of the day UTC
+        dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d').replace(tzinfo=datetime.timezone.utc)
+    else:
+        # For specific time events, Google provides RFC3339 format
+        try:
+            # Handle 'Z' for UTC explicitly
+            if dt_str.endswith('Z'):
+                dt = datetime.datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+            else:
+                dt = datetime.datetime.fromisoformat(dt_str)
+            # Ensure timezone-aware (assume UTC if naive, though Google API usually provides offset)
+            if dt.tzinfo is None:
+                 dt = dt.replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            print(f"Warning: Could not parse datetime string '{dt_str}'. Using epoch.")
+            # Use min datetime with UTC timezone as a fallback
+            dt = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+    return dt, is_all_day
+
+
 def authenticate():
   """
   Handles authentication with Google Calendar API using OAuth 2.0.
@@ -173,3 +201,58 @@ def get_calendar_list(service):
   except Exception as e:
     print(f"An unexpected error occurred fetching calendar list: {e}")
     return []
+
+
+def fetch_and_process_google_events(month: int, year: int) -> list[dict]:
+    """
+    Fetches events from Google Calendar for a given month/year, processes them,
+    and returns a list of dictionaries ready for database insertion.
+
+    Returns:
+        list[dict]: A list of processed event dictionaries, or an empty list on error/no events.
+                    Each dictionary contains keys like 'id', 'calendar_id', 'calendar_name',
+                    'title', 'start_datetime', 'end_datetime', 'all_day', 'location', 'description'.
+    """
+    creds = authenticate()
+    if not creds:
+        print("Google Calendar authentication failed or skipped.")
+        return []
+
+    processed_events = []
+    try:
+        service = build("calendar", "v3", credentials=creds)
+        google_events_raw = get_events_current_month(service, month, year)
+
+        if not google_events_raw:
+            return []
+
+        for event_data in google_events_raw:
+            google_cal_id = event_data.get('organizer', {}).get('email', 'primary')
+            google_cal_summary = event_data.get('organizer', {}).get('displayName', google_cal_id)
+
+            start_datetime, start_all_day = parse_google_datetime(event_data['start'])
+            end_datetime, end_all_day = parse_google_datetime(event_data['end'])
+            is_all_day = start_all_day # Use start_all_day as the definitive flag
+
+            processed_event = {
+                'id': event_data['id'],
+                'calendar_id': google_cal_id,
+                'calendar_name': google_cal_summary,
+                'title': event_data.get('summary', '(No Title)'),
+                'start_datetime': start_datetime,
+                'end_datetime': end_datetime,
+                'all_day': is_all_day,
+                'location': event_data.get('location'),
+                'description': event_data.get('description')
+            }
+            processed_events.append(processed_event)
+
+    except HttpError as error:
+        print(f"An API error occurred: {error}")
+        return [] # Return empty list on API error
+    except Exception as e:
+        print(f"An unexpected error occurred during Google API interaction: {e}")
+        return [] # Return empty list on other errors
+
+    print(f"Fetched and processed {len(processed_events)} events from Google Calendar for {month}/{year}.")
+    return processed_events

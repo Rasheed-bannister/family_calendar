@@ -13,7 +13,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let selectedCell = null;
     let inactivityTimer = null;
+    let monthInactivityTimer = null; // New timer for month navigation
     const INACTIVITY_TIMEOUT = 60 * 1000; // 1 minute
+    const MONTH_INACTIVITY_TIMEOUT = 300 * 1000; // 5 minutes for month navigation
     
     // Variables for Google Calendar update checking
     let googleUpdateTimer = null;
@@ -120,6 +122,29 @@ document.addEventListener('DOMContentLoaded', function() {
         clearTimeout(inactivityTimer); // Clear existing timer
         console.log(`Starting inactivity timer (${INACTIVITY_TIMEOUT / 1000}s)`);
         inactivityTimer = setTimeout(resetToToday, INACTIVITY_TIMEOUT);
+    }
+
+    function isCurrentMonthDisplayed() {
+        // Check if the month/year being viewed is the current month/year
+        return (currentDisplayedMonth === currentMonth && currentDisplayedYear === currentYear);
+    }
+
+    function resetToCurrentMonth() {
+        console.log("Month inactivity timeout reached. Navigating back to current month.");
+        if (!isCurrentMonthDisplayed()) {
+            // Only navigate if we're not already on the current month
+            window.location.href = `/calendar/${currentYear}/${currentMonth}`;
+        }
+    }
+
+    function startMonthInactivityTimer() {
+        clearTimeout(monthInactivityTimer); // Clear existing timer
+        
+        // Only start the timer if we're not on the current month
+        if (!isCurrentMonthDisplayed()) {
+            console.log(`Starting month inactivity timer (${MONTH_INACTIVITY_TIMEOUT / 1000}s)`);
+            monthInactivityTimer = setTimeout(resetToCurrentMonth, MONTH_INACTIVITY_TIMEOUT);
+        }
     }
 
     function checkForGoogleUpdates() {
@@ -236,11 +261,18 @@ document.addEventListener('DOMContentLoaded', function() {
         calendar.dataset.month = currentDisplayedMonth;
         calendar.dataset.year = currentDisplayedYear;
     }
+    
+    // Start the month inactivity timer on page load
+    startMonthInactivityTimer();
 
     // --- Event Listeners ---
 
     if (calendar) {
         calendar.addEventListener('click', function(event) {
+            // Reset both inactivity timers on any calendar interaction
+            startInactivityTimer();
+            startMonthInactivityTimer();
+            
             // Find the closest parent TD element that has a data-day attribute
             const clickedCell = event.target.closest('td[data-day]');
 
@@ -280,6 +312,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } else {
         console.error("Calendar element not found!");
+    }
+
+    // Reset both inactivity timers when user interacts with the page
+    document.addEventListener('click', function() {
+        startMonthInactivityTimer();
+    });
+
+    document.addEventListener('keydown', function() {
+        startMonthInactivityTimer();
+    });
+
+    // Also reset the month timer when clicking month navigation links
+    const navArrows = document.querySelectorAll('.nav-arrow');
+    if (navArrows.length) {
+        navArrows.forEach(arrow => {
+            arrow.addEventListener('click', function() {
+                // When navigating months, don't immediately start the timer
+                // It will be started on the new page load
+                clearTimeout(monthInactivityTimer);
+            });
+        });
     }
 
     // Handle page visibility changes to manage update checks
