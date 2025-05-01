@@ -35,11 +35,10 @@ def create_all():
     This function is called only when it's confirmed that there is no database file.
     """
     # Create the database file in the file system
-    db_filepath = Path(__file__).parent / "calendar.db"
-    with open(db_filepath, 'w') as db_file:
+    with open(DATABASE_FILE, 'w') as db_file:
         pass
 
-    conn = sqlite3.connect('calendar.db')
+    conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
 
     # Create Calendar table
