@@ -3,6 +3,7 @@ import requests_cache
 import pandas as pd
 from retry_requests import retry
 from datetime import datetime
+import os
 
 def get_weather_data():
     """Fetches current weather and daily forecast from Open-Meteo API."""
@@ -11,16 +12,21 @@ def get_weather_data():
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
+    # Get location settings from environment variables, with default fallbacks
+    latitude = float(os.environ.get('CALENDAR_WEATHER_LATITUDE', '40.759010'))
+    longitude = float(os.environ.get('CALENDAR_WEATHER_LONGITUDE', '-73.984474'))
+    timezone = os.environ.get('CALENDAR_TIMEZONE', 'America/New_York')
+    
     # Make sure all required weather variables are listed here
     # The order of variables in hourly or daily is important to assign them correctly below
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": 27.1658787,
-        "longitude": -80.2864783,
+        "latitude": latitude,
+        "longitude": longitude,
         "daily": ["weather_code", "apparent_temperature_max", "apparent_temperature_min", "sunrise", "sunset", "precipitation_probability_max"],
         "models": "best_match",
         "current": ["apparent_temperature", "is_day", "weather_code"],
-        "timezone": "America/New_York",
+        "timezone": timezone,
         "wind_speed_unit": "mph",
         "temperature_unit": "fahrenheit",
         "precipitation_unit": "inch"
@@ -38,7 +44,6 @@ def get_weather_data():
         "is_day": current.Variables(1).Value(),
         "weather_code": current.Variables(2).Value()
     }
-
 
     # Process daily data. The order of variables needs to be the same as requested.
     daily = response.Daily()
