@@ -106,6 +106,27 @@
                     <p>No events found for today.</p>
                 {% endif %}
             </div>
+            <div class="chores-list">
+                <h2>Chores</h2>
+                {% if chores %}
+                    {% set grouped_chores = chores|groupby('title') %} {# Group chores by person (title) #}
+                    {% for person, person_chores in grouped_chores %}
+                        <div class="chore-person-group">
+                            <h3>{{ person }}</h3>
+                            <ul>
+                                {% for chore in person_chores %}
+                                    {# Add class based on status #}
+                                    <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'pending' }}">
+                                        {{ chore.notes }} {# Display the chore description #}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No chores found or assigned.</p> {# Updated message #}
+                {% endif %}
+            </div>
         </div>
     </div>
 

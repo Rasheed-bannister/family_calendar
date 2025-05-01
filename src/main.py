@@ -1,26 +1,36 @@
 import datetime
 import calendar
 import threading
+import os  # <-- Add os import
 from flask import Flask, render_template, redirect, url_for, jsonify
 
 from google_integration import api as google_api
+from google_integration import tasks_api  # <-- Import tasks_api
 from calendar_app import database as db
 from calendar_app import utils as calendar_utils
-from calendar_app.models import CalendarEvent, CalendarMonth, Calendar
+from calendar_app.models import CalendarMonth
+from slideshow import database as slideshow_db
 
 app = Flask(__name__)
 
 # Initialize the database if it doesn't exist
 calendar_utils.initialize_db()
 
+# Initialize and sync the slideshow database
+slideshow_db.init_db()
+slideshow_db.sync_photos(app.static_folder)
+
 # Global lock for Google API fetching
 google_fetch_lock = threading.Lock()
 # Dict to track background task status by month/year
 background_tasks = {}
+# Global variable to store the last known chores list
+last_known_chores = []
 
 
 def fetch_google_events_background(month, year):
-    """Fetches Google Calendar events in a background thread and updates the local DB."""
+    """Fetches Google Calendar events and Tasks in a background thread and updates the local DB/cache."""
+    global last_known_chores  # Allow modification of the global variable
     task_id = f"{month}.{year}"
 
     # Skip if a task is already running for this month/year
@@ -34,59 +44,61 @@ def fetch_google_events_background(month, year):
         print(f"Starting background task {task_id}...")
 
     try:
-        # Create month if it doesn't exist in the DB
+        # --- Fetch Calendar Events ---
         current_calendar_month = CalendarMonth(year=year, month=month)
         db.add_month(current_calendar_month)
-
-        # Fetch and process Google events using the refactored function
         processed_google_events_data = google_api.fetch_and_process_google_events(month, year)
 
-        if not processed_google_events_data:
-            print(f"No events fetched or processed for {month}/{year}.")
-            # Mark task as complete even if no events, but not updated
-            with google_fetch_lock:
-                background_tasks[task_id]['status'] = 'complete'
-                background_tasks[task_id]['updated'] = False
-            return
+        events_to_add_or_update = []
+        calendars_changed = False
+        events_changed = False  # Initialize events_changed flag
 
-        # Use the new utility function to create CalendarEvent objects and handle Calendars
-        events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
-            processed_google_events_data, current_calendar_month
-        )
-
-        # Add/update events in the database
-        if events_to_add_or_update:
-            print(f"Processing {len(events_to_add_or_update)} events in database for {month}/{year}...")
-            db_changes = calendar_utils.add_events(events_to_add_or_update)
-
-            # Mark as updated if calendar info changed OR events were added/updated in DB
-            events_changed = calendars_changed or db_changes
-
-            with google_fetch_lock:
-                background_tasks[task_id]['updated'] = events_changed
-                if events_changed:
-                    print(f"Calendar changes detected for {month}/{year}, notifying client")
-                else:
-                    print(f"No database changes detected for {month}/{year}")
+        if processed_google_events_data:
+            events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
+                processed_google_events_data, current_calendar_month
+            )
+            if events_to_add_or_update:
+                print(f"Processing {len(events_to_add_or_update)} events in database for {month}/{year}...")
+                db_changes = calendar_utils.add_events(events_to_add_or_update)
+                events_changed = calendars_changed or db_changes  # Combine calendar info and DB changes
+            else:
+                events_changed = calendars_changed  # Only calendar info might have changed
         else:
-             # If only calendar info changed but no events processed for DB
-             with google_fetch_lock:
-                 background_tasks[task_id]['updated'] = calendars_changed
-                 if calendars_changed:
-                     print(f"Calendar info changes detected for {month}/{year}, notifying client")
+            print(f"No events fetched or processed for {month}/{year}.")
+            events_changed = False  # No event changes if nothing was fetched
+
+        # --- Fetch Google Tasks (Chores) ---
+        print(f"Fetching Google Tasks (Chores) for background task {task_id}...")
+        current_chores = tasks_api.get_chores()
+        chores_changed = False
+        with google_fetch_lock:  # Protect access to last_known_chores
+            if current_chores != last_known_chores:
+                
+                last_known_chores = current_chores  # Update the global list
+                chores_changed = True
+            else:
+                print("Chores list unchanged.")
+
+        # --- Determine Overall Update Status ---
+        overall_updated = events_changed or chores_changed
+
+        with google_fetch_lock:
+            background_tasks[task_id]['updated'] = overall_updated
+            if overall_updated:
+                print(f"Data changes detected (Events: {events_changed}, Chores: {chores_changed}) for {month}/{year}, notifying client")
+            else:
+                print(f"No data changes detected for {month}/{year}")
 
     except Exception as e:
         print(f"An unexpected error occurred in background task {task_id}: {e}")
-        # Optionally mark as error state
         with google_fetch_lock:
             background_tasks[task_id]['status'] = 'error'
-            background_tasks[task_id]['updated'] = False # Ensure no refresh on error
+            background_tasks[task_id]['updated'] = False  # Ensure no refresh on error
 
     finally:
-        # Mark task as complete (unless already marked as error)
         with google_fetch_lock:
             if background_tasks[task_id]['status'] != 'error':
-                 background_tasks[task_id]['status'] = 'complete'
+                background_tasks[task_id]['status'] = 'complete'
         print(f"Background task {task_id} finished with status: {background_tasks[task_id]['status']}")
 
 
@@ -137,7 +149,7 @@ def calendar_view(year=None, month=None):
     start_background_task = False
     with google_fetch_lock:
         if task_id not in background_tasks or background_tasks[task_id]['status'] not in ['running', 'complete']:
-             start_background_task = True
+            start_background_task = True
         elif background_tasks[task_id]['status'] == 'complete' and not background_tasks[task_id].get('updated', False):
             pass
 
@@ -200,6 +212,10 @@ def calendar_view(year=None, month=None):
     if today_date.year == current_year and today_date.month == current_month:
         today_events = events_by_day.get(today_date.day, [])
 
+    # --- Get Chores (from the last known state) --- #
+    with google_fetch_lock:  # Access the global variable safely
+        chores_to_display = list(last_known_chores)  # Pass a copy to the template
+
     # Get month name for the *displayed* month
     month_name = calendar.month_name[current_month]
 
@@ -207,6 +223,7 @@ def calendar_view(year=None, month=None):
         'index.html',
         weeks=weeks_data,
         today_events=today_events,
+        chores=chores_to_display,  # <-- Pass chores to template
         month_name=month_name,
         month_number=current_month,
         year=current_year,
@@ -216,15 +233,32 @@ def calendar_view(year=None, month=None):
         next_month=next_month,
         today_actual_day=today_date.day,
         today_actual_month=today_date.month,
-        today_actual_year=today_date.year
+        today_actual_year=today_date.year,
     )
+
+
+@app.route('/api/random-photo')
+def random_photo():
+    """API endpoint to get a random background photo URL."""
+    filename = slideshow_db.get_random_photo_filename()
+    if filename:
+        try:
+            # Construct the URL relative to the static folder
+            photo_url = url_for('static', filename=f'{slideshow_db.PHOTOS_STATIC_REL_PATH}/{filename}')
+            return jsonify({"url": photo_url})
+        except Exception as e:
+            print(f"Error generating URL for {filename}: {e}")
+            return jsonify({"error": "Could not generate photo URL"}), 500
+    else:
+        # Return a 404 or a default image URL if no photos are found
+        return jsonify({"error": "No photos found in database"}), 404
 
 
 @app.route('/check-updates/<int:year>/<int:month>')
 def check_updates(year, month):
-    """API endpoint to check if calendar updates are available."""
+    """API endpoint to check if calendar or task updates are available."""
     task_id = f"{month}.{year}"
-
+    slideshow_db.sync_photos(app.static_folder)
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
 
@@ -237,10 +271,16 @@ def check_updates(year, month):
                 "updates_available": False
             }
 
-            # If task is complete and there were updates, tell client to refresh
             if status == 'complete' and updated:
                 task_info['updated'] = False
                 response["updates_available"] = True
+                print(f"Notifying client about available updates for {month}/{year}.")
+            elif status == 'complete' and not updated:
+                print(f"Checked updates for {month}/{year}: Task complete, no changes found.")
+            elif status == 'running':
+                print(f"Checked updates for {month}/{year}: Task still running.")
+            elif status == 'error':
+                print(f"Checked updates for {month}/{year}: Task encountered an error.")
 
             return jsonify(response)
 
@@ -248,4 +288,7 @@ def check_updates(year, month):
 
 
 if __name__ == '__main__':
+    print("Performing initial chore fetch on startup...")
+    last_known_chores = tasks_api.get_chores()
+    print(f"Initial chores fetched: {len(last_known_chores)} items")
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -27,6 +27,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let initialLoadComplete = false; // Flag to track whether we've completed initial load
     let inDebounce = false; // Debounce flag
 
+    // Slideshow variables
+    let slideshowInterval = null;
+    const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
+
     // --- Helper Functions ---
 
     function highlightToday() {
@@ -251,10 +255,50 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000);
     }
 
+    // --- Slideshow Functions ---
+
+    function fetchAndSetBackgroundPhoto() {
+        console.log("Fetching new background photo...");
+        fetch('/api/random-photo')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.url) {
+                    document.body.style.backgroundImage = `url(${data.url})`;
+                } else if (data.error) {
+                    console.error("Error fetching photo URL:", data.error);
+                    // Optionally clear background or set a default
+                    document.body.style.backgroundImage = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Could not fetch or set background photo:', error);
+                // Optionally clear background or set a default
+                document.body.style.backgroundImage = 'none';
+            });
+    }
+
+    function startSlideshow() {
+        // Clear any existing interval
+        if (slideshowInterval) {
+            clearInterval(slideshowInterval);
+        }
+        // Fetch the first photo immediately
+        fetchAndSetBackgroundPhoto();
+        // Set interval to fetch new photos
+        slideshowInterval = setInterval(fetchAndSetBackgroundPhoto, SLIDESHOW_INTERVAL_MS);
+        console.log(`Started background slideshow (interval: ${SLIDESHOW_INTERVAL_MS / 1000}s)`);
+    }
+
     // --- Initialization ---
 
     highlightToday(); // Highlight today on load
     startGoogleUpdateTimer(); // Start checking for Google updates
+    startSlideshow(); // Start the background photo slideshow
     
     // Add data attributes to the calendar for the current displayed month/year
     if (calendar) {

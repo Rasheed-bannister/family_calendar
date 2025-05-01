@@ -13,3 +13,5 @@ wheels/
 credentials.json
 token.json
 calendar.db
+slideshow.db
+src/static/photos/*

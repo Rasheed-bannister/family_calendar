@@ -9,7 +9,10 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+SCOPES = [
+          "https://www.googleapis.com/auth/calendar.readonly",
+          "https://www.googleapis.com/auth/tasks.readonly" # <-- Add Tasks scope
+          ]
 
 def parse_google_datetime(google_date_obj):
     """Parses Google API's date or dateTime object into a timezone-aware datetime."""
