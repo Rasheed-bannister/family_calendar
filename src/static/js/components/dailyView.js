@@ -8,6 +8,8 @@ const DailyView = (function() {
     // Private variables
     let dailyViewContainer;
     let initialDailyViewHTML;
+    let updateTimer = null;
+    const UPDATE_INTERVAL = 300000; // 5 minutes in milliseconds
     
     // Private methods
     function formatEventHTML(eventData) {
@@ -133,6 +135,32 @@ const DailyView = (function() {
             if (dailyViewContainer && initialDailyViewHTML) {
                 dailyViewContainer.innerHTML = initialDailyViewHTML;
             }
+        },
+        
+        pause: function() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+            console.log("DailyView updates paused");
+        },
+        
+        resume: function() {
+            // Clear any existing timer
+            if (updateTimer) {
+                clearInterval(updateTimer);
+            }
+            
+            // Restart update timer if needed
+            updateTimer = setInterval(() => {
+                // If we have a valid day cell selected, refresh its events
+                const selectedCell = document.querySelector('.calendar td.selected');
+                if (selectedCell) {
+                    this.renderEvents(selectedCell);
+                }
+            }, UPDATE_INTERVAL);
+            
+            console.log("DailyView updates resumed");
         }
     };
 })();

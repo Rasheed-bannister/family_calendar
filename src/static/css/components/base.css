@@ -25,6 +25,8 @@ html, body {
     padding: 10px; 
     gap: 10px; 
     box-sizing: border-box; 
+    opacity: 1;
+    transition: opacity 1s ease-in-out;
 }
 
 /* Left Column (Weather + Calendar) */
@@ -44,4 +46,17 @@ html, body {
     display: flex; 
     flex-direction: column;
     gap: 10px; 
+}
+
+/* Long Inactivity Mode Styles */
+body.long-inactivity-mode .calendar-container,
+body.long-inactivity-mode .daily-view-container,
+body.long-inactivity-mode .weather-container,
+body.long-inactivity-mode .chores-container {
+    display: none !important;
+}
+
+body.long-inactivity-mode .main-container {
+    opacity: 0;
+    transition: opacity 1s ease-in-out;
 }

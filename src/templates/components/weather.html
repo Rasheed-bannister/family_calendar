@@ -3,7 +3,7 @@
     {% if weather and weather.current and weather.daily %}
         {# Current Weather (Left - flex: 1) #}
         <div class="current-weather" data-is-day="{{ weather.current.is_day }}">
-            <div class="weather-day-title">Today</div>
+            <div class="weather-day-title">Today  <span id="current-time"></span></div>
             <div class="weather-day-contents">
                 <div class="weather-icon-container">
                     <div class="sunrise-time">☀️ {{ weather.daily[0].sunrise.strftime('%-I:%M %p') }}</div>
