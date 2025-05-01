@@ -1,13 +1,9 @@
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import datetime
-from .api import authenticate # Reuse the existing authentication
+from .api import authenticate
 
-# --- Constants ---
-# You might want to make the target list name configurable
 TARGET_TASK_LIST_NAME = "Chores"
-
-# --- Functions ---
 
 def get_tasks_service():
     """Authenticates and builds the Google Tasks API service."""
@@ -28,11 +24,10 @@ def get_tasks_service():
 def find_task_list_id(service, list_name):
     """Finds the ID of a task list by its name."""
     try:
-        results = service.tasklists().list().execute() # Adjust maxResults if needed
+        results = service.tasklists().list().execute()
         items = results.get('items', [])
         for item in items:
             if item['title'] == list_name:
-                # print(f"Found task list '{list_name}' with ID: {item['id']}")
                 return item['id']
         print(f"Task list '{list_name}' not found.")
         return None
@@ -44,26 +39,25 @@ def find_task_list_id(service, list_name):
         return None
 
 
-def fetch_tasks_from_list(service, task_list_id):
+def fetch_tasks_from_list(service, task_list_id) -> list[dict]:
     """Fetches tasks from a specific task list."""
     if not task_list_id:
         return []
     try:
-        # Fetch only tasks that are for today or earlier
         today = datetime.datetime.now().isoformat() + "Z"
         tomorrow = (datetime.datetime.now() + datetime.timedelta(days=2)).isoformat() + "Z"
         yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).isoformat() + "Z"
 
         results = service.tasks().list(
             tasklist=task_list_id,
-            dueMax=tomorrow, # Keep filtering by due date if desired
+            dueMax=tomorrow,
             showCompleted=True, # Include completed tasks in the API response
             showHidden=True
         ).execute()
         items = results.get('items', [])
         # print(f"Fetched {len(items)} tasks (including completed) from list ID {task_list_id}.")
         # print(items)
-        # Return a list of dictionaries with task details: title, notes, status, due
+        
         return [
             {
                 'title': item.get('title'),
@@ -84,11 +78,10 @@ def get_chores():
     """Fetches tasks from the target chore list."""
     service = get_tasks_service()
     if not service:
-        return [] # Return empty list if service failed
-
+        return []
     task_list_id = find_task_list_id(service, TARGET_TASK_LIST_NAME)
     if not task_list_id:
-        return [] # Return empty list if list not found
+        return []
 
     chores = fetch_tasks_from_list(service, task_list_id)
     return chores

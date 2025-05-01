@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let selectedCell = null;
     let inactivityTimer = null;
-    let monthInactivityTimer = null; // New timer for month navigation
+    let monthInactivityTimer = null;
     const INACTIVITY_TIMEOUT = 60 * 1000; // 1 minute
     const MONTH_INACTIVITY_TIMEOUT = 300 * 1000; // 5 minutes for month navigation
     
@@ -31,6 +31,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let slideshowInterval = null;
     const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
 
+    // Weather update variables
+    let weatherUpdateTimer = null;
+    const WEATHER_UPDATE_INTERVAL = 300000; // Check for weather updates every 5 minutes (300000ms)
+    let lastWeatherUpdate = new Date().getTime();
+
     // Modal variables
     const eventModal = document.getElementById('event-modal');
     const modalCloseButton = eventModal.querySelector('.close-button');
@@ -47,17 +52,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function applyWeatherGradient() {
         const currentWeatherDiv = document.querySelector('.current-weather');
         if (currentWeatherDiv && currentWeatherDiv.dataset.isDay !== undefined) {
-            const isDay = currentWeatherDiv.dataset.isDay === '1' || currentWeatherDiv.dataset.isDay.toLowerCase() === 'true'; // Handle '1' or 'true'
-            currentWeatherDiv.classList.remove('day-gradient', 'night-gradient'); // Remove existing
+            // Convert various possible values to a boolean
+            // The Open-Meteo API uses numeric 0 and 1, which need to be properly handled
+            const rawValue = currentWeatherDiv.dataset.isDay;
+            
+            // Handle all possible values: 1, "1", true, "true", or any non-zero number
+            const isDay = rawValue === 1 || 
+                         rawValue === "1" || 
+                         rawValue.toLowerCase() === "true" ||
+                         (parseInt(rawValue, 10) && parseInt(rawValue, 10) !== 0);
+            
+            currentWeatherDiv.classList.remove('day-gradient', 'night-gradient');
             if (isDay) {
                 currentWeatherDiv.classList.add('day-gradient');
-                console.log("Applied day gradient.");
             } else {
                 currentWeatherDiv.classList.add('night-gradient');
-                console.log("Applied night gradient.");
             }
-        } else {
-            console.warn("Could not find .current-weather div or data-is-day attribute.");
         }
     }
 
@@ -72,8 +82,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function removeHighlight(cell) {
         if (cell) {
-            cell.classList.remove('today'); // Remove today highlight if present
-            cell.classList.remove('selected'); // Remove selected highlight
+            cell.classList.remove('today'); 
+            cell.classList.remove('selected'); 
         }
     }
 
@@ -141,28 +151,25 @@ document.addEventListener('DOMContentLoaded', function() {
     function resetToToday() {
         console.log("Inactivity timeout reached. Reverting to today.");
         if (selectedCell) {
-            removeHighlight(selectedCell); // Remove highlight from previously selected
+            removeHighlight(selectedCell); 
             selectedCell = null;
         }
-        highlightToday(); // Re-apply today's highlight
-        dailyViewContainer.innerHTML = initialDailyViewHTML; // Restore initial right panel
+        highlightToday(); 
+        dailyViewContainer.innerHTML = initialDailyViewHTML; 
         clearTimeout(inactivityTimer);
         inactivityTimer = null;
     }
 
     function startInactivityTimer() {
-        clearTimeout(inactivityTimer); // Clear existing timer
-        console.log(`Starting inactivity timer (${INACTIVITY_TIMEOUT / 1000}s)`);
+        clearTimeout(inactivityTimer); 
         inactivityTimer = setTimeout(resetToToday, INACTIVITY_TIMEOUT);
     }
 
     function isCurrentMonthDisplayed() {
-        // Check if the month/year being viewed is the current month/year
         return (currentDisplayedMonth === currentMonth && currentDisplayedYear === currentYear);
     }
 
     function resetToCurrentMonth() {
-        console.log("Month inactivity timeout reached. Navigating back to current month.");
         if (!isCurrentMonthDisplayed()) {
             // Only navigate if we're not already on the current month
             window.location.href = `/calendar/${currentYear}/${currentMonth}`;
@@ -170,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function startMonthInactivityTimer() {
-        clearTimeout(monthInactivityTimer); // Clear existing timer
+        clearTimeout(monthInactivityTimer); 
         
         // Only start the timer if we're not on the current month
         if (!isCurrentMonthDisplayed()) {
@@ -185,29 +192,23 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
             .then(response => response.json())
             .then(data => {
-                console.log(`Update check: status=${data.status}, updates=${data.updates_available}`);
                 
                 // Handle first load differently from regular checks
                 if (!initialLoadComplete) {
                     // If the task is complete, switch to regular interval
                     if (data.status === 'complete') {
-                        console.log("Initial Google Calendar task completed.");
                         clearInterval(googleUpdateTimer);
                         googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
-                        console.log(`Switched to regular update interval (${UPDATE_CHECK_INTERVAL/1000}s)`);
                         initialLoadComplete = true;
                         
                         // If updates were found during initial load, refresh the page
                         if (data.updates_available) {
-                            console.log("✅ Found new events during initial load, refreshing page");
                             refreshPage();
                         }
                     }
-                    // Continue checking frequently until task completes
                 } else {
                     // Only refresh during regular checks if updates are available AND we're not in a debounce period
                     if (data.updates_available && !inDebounce) {
-                        console.log("✅ New Google Calendar events found during regular check");
                         refreshPage();
                     }
                 }
@@ -218,10 +219,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function refreshPage() {
-        // Show notification
         showUpdateNotification();
-        
-        // Temporarily disable further checks
+
         updateCheckEnabled = false;
         
         // Use a more reliable reload method
@@ -235,7 +234,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function startGoogleUpdateTimer() {
-        // Clear any existing timer
         if (googleUpdateTimer) {
             clearInterval(googleUpdateTimer);
         }
@@ -254,7 +252,6 @@ document.addEventListener('DOMContentLoaded', function() {
         notification.classList.add('update-notification');
         notification.textContent = 'New calendar events found! Refreshing...';
         
-        // Style the notification
         Object.assign(notification.style, {
             position: 'fixed',
             top: '10px',
@@ -269,7 +266,6 @@ document.addEventListener('DOMContentLoaded', function() {
             transition: 'opacity 0.3s ease'
         });
         
-        // Add to the page
         document.body.appendChild(notification);
         
         // Remove after the page refreshes or 3 seconds (whichever comes first)
@@ -281,6 +277,47 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }, 300);
         }, 3000);
+    }
+
+    // New function to fetch and update weather data
+    function updateWeatherData() {
+        console.log("Checking for weather updates...");
+        
+        fetch('/api/weather-update')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(html => {
+                // The response is the weather fragment HTML
+                const currentWeatherContainer = document.querySelector('.weather-container');
+                if (currentWeatherContainer) {
+                    currentWeatherContainer.outerHTML = html;
+                    console.log("Weather data updated successfully");
+                    
+                    // Apply the weather gradient to the new container
+                    applyWeatherGradient();
+                    
+                    // Update timestamp
+                    lastWeatherUpdate = new Date().getTime();
+                }
+            })
+            .catch(error => {
+                console.error("Error updating weather data:", error);
+            });
+    }
+
+    function startWeatherUpdateTimer() {
+        // Clear any existing timer
+        if (weatherUpdateTimer) {
+            clearInterval(weatherUpdateTimer);
+        }
+        
+        // Set interval to check for weather updates
+        weatherUpdateTimer = setInterval(updateWeatherData, WEATHER_UPDATE_INTERVAL);
+        console.log(`Started weather update timer (checking every ${WEATHER_UPDATE_INTERVAL/60000} minutes)`);
     }
 
     // --- Modal Functions ---
@@ -348,11 +385,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function startSlideshow() {
-        // Clear any existing interval
         if (slideshowInterval) {
             clearInterval(slideshowInterval);
         }
-        // Fetch the first photo immediately
         fetchAndSetBackgroundPhoto();
         // Set interval to fetch new photos
         slideshowInterval = setInterval(fetchAndSetBackgroundPhoto, SLIDESHOW_INTERVAL_MS);
@@ -365,6 +400,7 @@ document.addEventListener('DOMContentLoaded', function() {
     startGoogleUpdateTimer(); // Start checking for Google updates
     startSlideshow(); // Start the background photo slideshow
     applyWeatherGradient(); // Apply initial weather gradient
+    startWeatherUpdateTimer(); // Start checking for weather updates
 
     // Add data attributes to the calendar for the current displayed month/year
     if (calendar) {
@@ -525,14 +561,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(googleUpdateTimer);
                 googleUpdateTimer = null;
             }
-            console.log("Page hidden, paused Google Calendar update checks");
+            // Also pause weather updates
+            if (weatherUpdateTimer) {
+                clearInterval(weatherUpdateTimer);
+                weatherUpdateTimer = null;
+            }
+            console.log("Page hidden, paused update checks");
         } else {
             // Page is visible again, resume update checks
             updateCheckEnabled = true;
             // Reset initial load status to check immediately
             initialLoadComplete = false;
             startGoogleUpdateTimer();
-            console.log("Page visible, resumed Google Calendar update checks");
+            
+            // Resume weather updates and do an immediate check if it's been more than 5 minutes
+            const currentTime = new Date().getTime();
+            if (currentTime - lastWeatherUpdate > WEATHER_UPDATE_INTERVAL) {
+                updateWeatherData(); // Immediate update if it's been a while
+            }
+            startWeatherUpdateTimer();
+            
+            console.log("Page visible, resumed update checks");
         }
     });
 });

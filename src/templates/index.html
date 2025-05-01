@@ -12,7 +12,6 @@
             <div class="weather-container"> {# Main flex container #}
                 {% if weather and weather.current and weather.daily %}
                     {# Current Weather (Left - flex: 1) #}
-                    {# Add data-is-day attribute #}
                     <div class="current-weather" data-is-day="{{ weather.current.is_day }}">
                         <div class="weather-day-title">Today</div>
                         <div class="weather-day-contents">

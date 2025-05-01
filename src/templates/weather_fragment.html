@@ -1,0 +1,46 @@
+{# Weather container fragment for AJAX updates #}
+<div class="weather-container">
+    {% if weather and weather.current and weather.daily %}
+        {# Current Weather (Left - flex: 1) #}
+        <div class="current-weather" data-is-day="{{ weather.current.is_day }}">
+            <div class="weather-day-title">Today</div>
+            <div class="weather-day-contents">
+                <div class="weather-icon-container">
+                    <div class="sunrise-time">☀️ {{ weather.daily[0].sunrise.strftime('%-I:%M %p') }}</div>
+                    {{ get_weather_icon(weather.current.weather_code) }}
+                    <div class="sunset-time">🌙 {{ weather.daily[0].sunset.strftime('%-I:%M %p') }}</div>
+                </div>
+                <div class="weather-text-container">
+                    <div class="temp-high">{{ weather.daily[0].apparent_temperature_max | round(0) | int }}°</div>
+                    <div class="temp-current">
+                        {{ weather.current.apparent_temperature | round(0) | int }}°
+                    </div>
+                    <div class="temp-low">{{ weather.daily[0].apparent_temperature_min | round(0) | int }}°</div>
+                </div>
+            </div>
+        </div>
+
+        {# Forecast (Right - flex: 3) #}
+        <div class="forecast-weather">
+            {% for day_forecast in weather.daily[1:4] %}
+            <div class="forecast-day">
+                <div class="weather-day-title">{{ day_forecast.date.strftime('%a') }}</div>
+                <div class="weather-day-contents">
+                    <div class="weather-icon-container">
+                        <div class="sunrise-time">☀️ {{ day_forecast.sunrise.strftime('%-I:%M %p') }}</div>
+                        {{ get_weather_icon(day_forecast.weather_code) }}
+                        <div class="sunset-time">🌙 {{ day_forecast.sunset.strftime('%-I:%M %p') }}</div>
+                    </div>
+                    <div class="weather-text-container">
+                        <div class="temp-high">{{ day_forecast.apparent_temperature_max | round(0) | int }}°</div>
+                        <div class="precip-chance">🌧️ {{ day_forecast.precipitation_probability_max | round(0) | int }}%</div>
+                        <div class="temp-low">{{ day_forecast.apparent_temperature_min | round(0) | int }}°</div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>Weather data unavailable.</p>
+    {% endif %}
+</div>

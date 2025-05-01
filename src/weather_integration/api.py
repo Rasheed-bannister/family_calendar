@@ -7,7 +7,7 @@ from datetime import datetime
 def get_weather_data():
     """Fetches current weather and daily forecast from Open-Meteo API."""
     # Setup the Open-Meteo API client with cache and retry on error
-    cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+    cache_session = requests_cache.CachedSession('.cache', expire_after=300)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 

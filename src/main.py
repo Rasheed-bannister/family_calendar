@@ -2,7 +2,7 @@ import datetime
 import calendar
 import threading
 import os
-from flask import Flask, render_template, redirect, url_for, jsonify
+from flask import Flask, render_template, redirect, url_for, jsonify, request
 
 from google_integration import api as google_api
 from google_integration import tasks_api  # <-- Import tasks_api
@@ -68,15 +68,28 @@ def fetch_google_events_background(month, year):
                 events_changed = calendars_changed  # Only calendar info might have changed
         else:
             print(f"No events fetched or processed for {month}/{year}.")
-            events_changed = False  # No event changes if nothing was fetched
+            events_changed = False  
 
         # --- Fetch Google Tasks (Chores) ---
         print(f"Fetching Google Tasks (Chores) for background task {task_id}...")
         current_chores = tasks_api.get_chores()
         chores_changed = False
         with google_fetch_lock:  # Protect access to last_known_chores
-            if current_chores != last_known_chores:
-                
+            # Convert to sets for order-independent comparison
+            # Assumes chores are hashable (e.g., strings, tuples, or objects implementing __hash__ and __eq__)
+            # If chores are dicts, a more complex conversion might be needed (e.g., set(tuple(sorted(d.items())) for d in chores))
+            try:
+                last_known_set = set(last_known_chores)
+                current_set = set(current_chores)
+            except TypeError:
+                 # Fallback for unhashable types (e.g., lists or dicts) - sort and compare strings
+                 print("Warning: Chores list contains unhashable items. Comparing sorted string representations.")
+                 last_known_set = str(sorted(str(item) for item in last_known_chores))
+                 current_set = str(sorted(str(item) for item in current_chores))
+
+
+            if current_set != last_known_set:
+                print(f"Chores list changed. Old: {len(last_known_chores)} items, New: {len(current_chores)} items.")
                 last_known_chores = current_chores  # Update the global list
                 chores_changed = True
             else:
@@ -252,14 +265,29 @@ def calendar_view(year=None, month=None):
     # --- Fetch Weather Data --- #
     weather_data = None
     try:
+        # Check if this is a weather update request from the JavaScript
+        is_weather_update = 'Weather-Update-Request' in request.headers
+        
+        # If it's a weather update request, bypass any caching
+        if is_weather_update:
+            import importlib
+            from weather_integration import api as weather_api
+            # Reload the module to ensure fresh data
+            importlib.reload(weather_api)
+            print("Weather update requested. Fetching fresh weather data...")
+        
         weather_data = get_weather_data()
+        
+        # If it's just a weather update, we could return a minimal response
+        # with only the weather data, but for simplicity we'll return the full page
+        if is_weather_update:
+            print("Returning fresh weather data")
     except Exception as e:
         print(f"Error fetching weather data: {e}")
-        # Handle error appropriately, maybe log it or pass a default value
 
     # --- Get Chores (from the last known state) --- #
     with google_fetch_lock:  # Access the global variable safely
-        chores_to_display = list(last_known_chores)  # Pass a copy to the template
+        chores_to_display = list(last_known_chores) 
 
     # Get month name for the *displayed* month
     month_name = calendar.month_name[current_month]
@@ -268,8 +296,8 @@ def calendar_view(year=None, month=None):
         'index.html',
         weeks=weeks_data,
         today_events=today_events,
-        chores=chores_to_display,  # <-- Pass chores to template
-        weather=weather_data,  # <-- Pass weather data to template
+        chores=chores_to_display, 
+        weather=weather_data, 
         month_name=month_name,
         month_number=current_month,
         year=current_year,
@@ -302,35 +330,94 @@ def random_photo():
 
 @app.route('/check-updates/<int:year>/<int:month>')
 def check_updates(year, month):
-    """API endpoint to check if calendar or task updates are available."""
+    """API endpoint to check if calendar event or task updates are available."""
     task_id = f"{month}.{year}"
-    slideshow_db.sync_photos(app.static_folder)
+    slideshow_db.sync_photos(app.static_folder) # Keep slideshow sync
+
+    event_updates_available = False
+    chore_updates_available = False
+    task_status = "not_tracked"
+    global last_known_chores # Ensure we can modify the global
+
+    # 1. Check background task status for EVENT updates
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
-
         if task_info:
-            status = task_info['status']
-            updated = task_info.get('updated', False)
+            task_status = task_info['status']
+            event_updated_flag = task_info.get('updated', False)
 
-            response = {
-                "status": status,
-                "updates_available": False
-            }
+            if task_status == 'complete' and event_updated_flag:
+                # Reset the flag only if we are confirming an update based on it
+                task_info['updated'] = False 
+                event_updates_available = True
+                print(f"Background task for {month}/{year} reported event updates.")
+            elif task_status == 'complete':
+                 print(f"Checked event updates for {month}/{year}: Task complete, no *new* event changes reported by background task.")
+            elif task_status == 'running':
+                print(f"Checked event updates for {month}/{year}: Background task still running.")
+            elif task_status == 'error':
+                 print(f"Checked event updates for {month}/{year}: Background task encountered an error.")
 
-            if status == 'complete' and updated:
-                task_info['updated'] = False
-                response["updates_available"] = True
-                print(f"Notifying client about available updates for {month}/{year}.")
-            elif status == 'complete' and not updated:
-                print(f"Checked updates for {month}/{year}: Task complete, no changes found.")
-            elif status == 'running':
-                print(f"Checked updates for {month}/{year}: Task still running.")
-            elif status == 'error':
-                print(f"Checked updates for {month}/{year}: Task encountered an error.")
+    # 2. Actively check for CHORE updates NOW
+    try:
+        print(f"Actively fetching chores for update check ({month}/{year})...")
+        current_chores = tasks_api.get_chores()
+        
+        with google_fetch_lock: # Protect access to last_known_chores
+             # Use the same set comparison logic as the background task
+            try:
+                last_known_set = set(last_known_chores)
+                current_set = set(current_chores)
+            except TypeError:
+                 # Fallback for unhashable types
+                 print("Warning (check-updates): Chores list contains unhashable items. Comparing sorted string representations.")
+                 last_known_set = str(sorted(str(item) for item in last_known_chores))
+                 current_set = str(sorted(str(item) for item in current_chores))
 
-            return jsonify(response)
+            if current_set != last_known_set:
+                print(f"Chore changes detected by check-updates. Old: {len(last_known_chores)}, New: {len(current_chores)}")
+                last_known_chores = current_chores # Update the global list
+                chore_updates_available = True
+            else:
+                 print("No chore changes detected by check-updates.")
 
-    return jsonify({"status": "not_tracked", "updates_available": False})
+    except Exception as e:
+        print(f"Error fetching chores during update check: {e}")
+        # Decide if you want to trigger an update on error or just log it
+        # chore_updates_available = False # Keep it false on error for now
+
+    # 3. Combine results and respond
+    updates_available = event_updates_available or chore_updates_available
+    
+    print(f"Update check result for {month}/{year}: Events={event_updates_available}, Chores={chore_updates_available}, Overall={updates_available}")
+
+    return jsonify({
+        "status": task_status, # Still useful to know background task state
+        "updates_available": updates_available
+    })
+
+
+@app.route('/api/weather-update')
+def weather_update():
+    """API endpoint to get fresh weather data."""
+    try:
+        # Force bypassing of cache by manually clearing it first
+        import os
+        if os.path.exists('.cache'):
+            os.remove('.cache')
+            print("Removed weather cache file")
+        
+        # Get fresh weather data
+        weather_data = get_weather_data()
+        
+        if weather_data and weather_data.get('current') and weather_data.get('daily'):
+            # Return just the weather portion as a fragment
+            return render_template('weather_fragment.html', weather=weather_data)
+        else:
+            return jsonify({"error": "Could not fetch weather data"}), 500
+    except Exception as e:
+        print(f"Error updating weather data: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
