@@ -31,6 +31,17 @@ document.addEventListener('DOMContentLoaded', function() {
     let slideshowInterval = null;
     const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
 
+    // Modal variables
+    const eventModal = document.getElementById('event-modal');
+    const modalCloseButton = eventModal.querySelector('.close-button');
+    const modalTitle = document.getElementById('modal-title');
+    const modalCalendar = document.getElementById('modal-calendar');
+    const modalTime = document.getElementById('modal-time');
+    const modalLocation = document.getElementById('modal-location');
+    const modalDescription = document.getElementById('modal-description');
+    let modalCloseTimer = null;
+    const MODAL_TIMEOUT = 15000; // 15 seconds
+
     // --- Helper Functions ---
 
     function highlightToday() {
@@ -255,7 +266,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000);
     }
 
-    // --- Slideshow Functions ---
+    // --- Modal Functions ---
+
+    function showModal(eventData) {
+        modalTitle.textContent = eventData.title || 'Event Details';
+        modalCalendar.textContent = `Calendar: ${eventData.calendarName || 'N/A'}`;
+
+        let timeString = 'N/A';
+        if (eventData.allDay === 'true') {
+            timeString = 'All Day';
+        } else if (eventData.startTime && eventData.endTime) {
+            timeString = `${eventData.startTime} - ${eventData.endTime}`;
+        } else if (eventData.startTime) {
+            timeString = `Starts at ${eventData.startTime}`;
+        } else if (eventData.endTime) {
+            timeString = `Ends at ${eventData.endTime}`;
+        }
+        modalTime.textContent = `Time: ${timeString}`;
+
+        modalLocation.textContent = `Location: ${eventData.location || 'Not specified'}`;
+        modalDescription.textContent = `Description: ${eventData.description || 'None'}`;
+
+        // Set color border based on event color
+        eventModal.querySelector('.modal-content').style.borderLeft = `5px solid ${eventData.color || '#ccc'}`;
+
+        eventModal.style.display = 'block';
+
+        // Start auto-close timer
+        clearTimeout(modalCloseTimer); // Clear any existing timer
+        modalCloseTimer = setTimeout(closeModal, MODAL_TIMEOUT);
+        console.log(`Modal opened. Auto-closing in ${MODAL_TIMEOUT / 1000}s.`);
+    }
+
+    function closeModal() {
+        eventModal.style.display = 'none';
+        clearTimeout(modalCloseTimer); // Clear timer if closed manually
+        modalCloseTimer = null;
+        console.log("Modal closed.");
+    }
 
     function fetchAndSetBackgroundPhoto() {
         console.log("Fetching new background photo...");
@@ -316,7 +364,16 @@ document.addEventListener('DOMContentLoaded', function() {
             // Reset both inactivity timers on any calendar interaction
             startInactivityTimer();
             startMonthInactivityTimer();
-            
+
+            // Check if the click was on an event element
+            const clickedEvent = event.target.closest('.event');
+            if (clickedEvent) {
+                console.log("Clicked on calendar event:", clickedEvent.dataset.title);
+                const eventData = { ...clickedEvent.dataset }; // Clone dataset
+                showModal(eventData);
+                return; // Stop further processing for this click
+            }
+
             // Find the closest parent TD element that has a data-day attribute
             const clickedCell = event.target.closest('td[data-day]');
 
@@ -357,6 +414,68 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error("Calendar element not found!");
     }
+
+    // Add event listener for clicks within the daily view
+    if (dailyViewContainer) {
+        dailyViewContainer.addEventListener('click', function(event) {
+            // Reset inactivity timer on interaction
+            startInactivityTimer();
+
+            // Check if the click was on an event list item (li)
+            // We need to reconstruct the event data slightly differently here
+            const clickedListItem = event.target.closest('li');
+            if (clickedListItem) {
+                console.log("Clicked on daily view event:", clickedListItem.querySelector('strong').textContent);
+                // Attempt to find the corresponding event in the main calendar data
+                // This is a bit tricky as the daily view has slightly different structure
+                // A better approach might be to add data attributes to the daily view LI elements too
+                // For now, we'll show a simplified modal or indicate data might be missing
+
+                // Let's try to find the original event data if possible
+                // This requires searching the DOM, which isn't ideal but works for now
+                const title = clickedListItem.querySelector('strong').textContent;
+                let originalEventElement = null;
+
+                // Search within the selected cell first (if one exists)
+                if (selectedCell) {
+                    originalEventElement = selectedCell.querySelector(`.event[data-title="${title}"]`);
+                }
+                // If not found in selected cell, search today's cell (if applicable)
+                if (!originalEventElement && todayCell) {
+                     originalEventElement = todayCell.querySelector(`.event[data-title="${title}"]`);
+                }
+
+                if (originalEventElement) {
+                     const eventData = { ...originalEventElement.dataset };
+                     showModal(eventData);
+                } else {
+                    // Fallback if original data can't be easily found
+                    console.warn("Could not find original data for daily view event. Showing basic info.");
+                    const eventData = {
+                        title: title,
+                        // Extract other info from the LI if needed, though it's less structured
+                        calendarName: clickedListItem.textContent.match(/\((.*?)\)/)?.[1] || 'N/A',
+                        // ... other fields would need parsing from the text content ...
+                        color: clickedListItem.style.borderLeftColor || '#ccc' // Get color from style
+                    };
+                    showModal(eventData); // Show with potentially limited data
+                }
+                return; // Stop further processing
+            }
+        });
+    }
+
+    // Modal Close Button Listener
+    if (modalCloseButton) {
+        modalCloseButton.addEventListener('click', closeModal);
+    }
+
+    // Close modal if clicked outside the content area
+    window.addEventListener('click', function(event) {
+        if (event.target == eventModal) {
+            closeModal();
+        }
+    });
 
     // Reset both inactivity timers when user interacts with the page
     document.addEventListener('click', function() {

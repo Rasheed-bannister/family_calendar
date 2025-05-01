@@ -164,24 +164,6 @@ def calendar_view(year=None, month=None):
     # --- Fetch Events from Local Database for the *Displayed* Month --- #
     db_events = db.get_all_events(current_calendar_month)
 
-    # --- Organize Events by Day --- #
-    events_by_day = {}
-    for event in db_events:
-        start_dt = event['start_datetime']
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
-
-        event_date = start_dt.date()
-
-        if event_date.year == current_year and event_date.month == current_month:
-            day_num = event_date.day
-            if day_num not in events_by_day:
-                events_by_day[day_num] = []
-            events_by_day[day_num].append(event)
-
-    for day_num in events_by_day:
-        events_by_day[day_num].sort(key=lambda x: (not x['all_day'], x['start_datetime']))
-
     # --- Generate Calendar Weeks Structure --- #
     calendar.setfirstweekday(calendar.SUNDAY)
     month_calendar = calendar.monthcalendar(current_year, current_month)
@@ -199,18 +181,70 @@ def calendar_view(year=None, month=None):
             else:
                 day_date = datetime.date(current_year, current_month, day_num)
                 is_today = (day_date == today_date)
+                
+                # --- Filter events for *this specific day* ---
+                day_events = []
+                for event in db_events:
+                    start_dt = event['start_datetime']
+                    end_dt = event['end_datetime']
+                    
+                    # Ensure timezone awareness for comparison (assuming UTC if naive)
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=datetime.timezone.utc)
+
+                    start_date = start_dt.date()
+                    end_date = end_dt.date()
+
+                    # Google API end date for all-day events is exclusive.
+                    # Example: An all-day event on May 1st has end date May 2nd.
+                    # So, we check if day_date is >= start_date AND < end_date.
+                    if start_date <= day_date < end_date:
+                         day_events.append(event)
+                    # Handle single all-day events where start and end date might be the same in the raw data
+                    # or where the event technically ends at 00:00 on the next day.
+                    elif event['all_day'] and start_date == day_date and start_date == end_date:
+                         day_events.append(event)
+                    # Handle non-all-day events that might start and end on the same day
+                    elif not event['all_day'] and start_date == day_date and start_date == end_date:
+                         day_events.append(event)
+
+
+                # Sort events for the day: All-day first, then by start time
+                day_events.sort(key=lambda x: (not x['all_day'], x['start_datetime']))
+
                 week_data.append({
                     'day_number': day_num,
                     'is_current_month': True,
-                    'events': events_by_day.get(day_num, []),
+                    'events': day_events, # Use the filtered and sorted list
                     'is_today': is_today
                 })
         weeks_data.append(week_data)
 
     # --- Filter Events for Today's List (Right Panel) --- #
     today_events = []
-    if today_date.year == current_year and today_date.month == current_month:
-        today_events = events_by_day.get(today_date.day, [])
+    for event in db_events:
+        start_dt = event['start_datetime']
+        end_dt = event['end_datetime']
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=datetime.timezone.utc)
+            
+        start_date = start_dt.date()
+        end_date = end_dt.date()
+
+        # Check if today falls within the event's range
+        if start_date <= today_date < end_date:
+             today_events.append(event)
+        elif event['all_day'] and start_date == today_date and start_date == end_date:
+             today_events.append(event)
+        elif not event['all_day'] and start_date == today_date and start_date == end_date:
+             today_events.append(event)
+
+    # Sort today's events as well
+    today_events.sort(key=lambda x: (not x['all_day'], x['start_datetime']))
 
     # --- Get Chores (from the last known state) --- #
     with google_fetch_lock:  # Access the global variable safely
