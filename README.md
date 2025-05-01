@@ -2,6 +2,9 @@
 
 A wall-mounted family calendar and photo slideshow application designed to run on a Raspberry Pi with a touchscreen monitor, built with Flask and JavaScript.
 
+![main view](main_view.png)
+![modal view](modal_view.png)
+
 ## Description
 
 This open source project provides families with an interactive digital calendar and photo slideshow system that can be mounted in common areas of your home. It integrates with Google Calendar and Google Tasks, displays weather information, and transforms into a photo slideshow during periods of inactivity.
