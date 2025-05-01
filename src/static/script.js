@@ -44,6 +44,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Helper Functions ---
 
+    function applyWeatherGradient() {
+        const currentWeatherDiv = document.querySelector('.current-weather');
+        if (currentWeatherDiv && currentWeatherDiv.dataset.isDay !== undefined) {
+            const isDay = currentWeatherDiv.dataset.isDay === '1' || currentWeatherDiv.dataset.isDay.toLowerCase() === 'true'; // Handle '1' or 'true'
+            currentWeatherDiv.classList.remove('day-gradient', 'night-gradient'); // Remove existing
+            if (isDay) {
+                currentWeatherDiv.classList.add('day-gradient');
+                console.log("Applied day gradient.");
+            } else {
+                currentWeatherDiv.classList.add('night-gradient');
+                console.log("Applied night gradient.");
+            }
+        } else {
+            console.warn("Could not find .current-weather div or data-is-day attribute.");
+        }
+    }
+
     function highlightToday() {
         if (todayCell) {
             // Ensure 'today' class isn't removed if it's also selected
@@ -347,7 +364,8 @@ document.addEventListener('DOMContentLoaded', function() {
     highlightToday(); // Highlight today on load
     startGoogleUpdateTimer(); // Start checking for Google updates
     startSlideshow(); // Start the background photo slideshow
-    
+    applyWeatherGradient(); // Apply initial weather gradient
+
     // Add data attributes to the calendar for the current displayed month/year
     if (calendar) {
         calendar.dataset.month = currentDisplayedMonth;

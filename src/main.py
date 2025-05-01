@@ -1,7 +1,7 @@
 import datetime
 import calendar
 import threading
-import os  # <-- Add os import
+import os
 from flask import Flask, render_template, redirect, url_for, jsonify
 
 from google_integration import api as google_api
@@ -10,8 +10,11 @@ from calendar_app import database as db
 from calendar_app import utils as calendar_utils
 from calendar_app.models import CalendarMonth
 from slideshow import database as slideshow_db
+from weather_integration.api import get_weather_data  # <-- Import weather function
+from weather_integration.utils import get_weather_icon # <-- Import the helper
 
 app = Flask(__name__)
+app.jinja_env.globals.update(get_weather_icon=get_weather_icon) # <-- Register helper
 
 # Initialize the database if it doesn't exist
 calendar_utils.initialize_db()
@@ -246,6 +249,14 @@ def calendar_view(year=None, month=None):
     # Sort today's events as well
     today_events.sort(key=lambda x: (not x['all_day'], x['start_datetime']))
 
+    # --- Fetch Weather Data --- #
+    weather_data = None
+    try:
+        weather_data = get_weather_data()
+    except Exception as e:
+        print(f"Error fetching weather data: {e}")
+        # Handle error appropriately, maybe log it or pass a default value
+
     # --- Get Chores (from the last known state) --- #
     with google_fetch_lock:  # Access the global variable safely
         chores_to_display = list(last_known_chores)  # Pass a copy to the template
@@ -258,6 +269,7 @@ def calendar_view(year=None, month=None):
         weeks=weeks_data,
         today_events=today_events,
         chores=chores_to_display,  # <-- Pass chores to template
+        weather=weather_data,  # <-- Pass weather data to template
         month_name=month_name,
         month_number=current_month,
         year=current_year,

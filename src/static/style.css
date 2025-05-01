@@ -59,6 +59,187 @@ html, body {
     min-height: 150px;;
 }
 
+/* Weather Container */
+.weather-container {
+    display: flex;
+    align-items: stretch; /* Make columns same height */
+    background-color: rgba(59, 164, 250, 0.3); /* Semi-transparent light blue */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    margin-bottom: 15px;
+    min-height: 100px;
+    border: 1px solid rgba(204, 204, 204, 0.5); 
+    overflow: hidden;
+}
+
+.current-weather {
+    flex: 1 1 25%; /* Grow 1, Shrink 1, Basis 25% */
+    display: flex; /* Use flex for title/content layout */
+    flex-direction: column; /* Stack title and content vertically */
+    align-items: stretch; /* Stretch children to fill width */
+    border-right: 1px solid #ccc; /* Separator line */
+    position: relative; /* Keep for potential future use, but not strictly needed now */
+    transition: background-image 0.5s ease-in-out; /* Add transition for smooth gradient change */
+    padding: 5px; /* Add some padding */
+    box-sizing: border-box;
+}
+
+/* New style for the title within current/forecast day */
+.weather-day-title {
+    text-align: center;
+    font-weight: bold;
+    color: #ffffff;
+    padding-bottom: 5px;
+    flex-shrink: 0; /* Prevent title from shrinking */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3); /* Optional separator */
+    margin-bottom: 5px; /* Space below title */
+}
+
+/* New style for the content wrapper below the title */
+.weather-day-contents {
+    display: flex;
+    flex-direction: row; /* Icon and text side-by-side */
+    align-items: center; /* Vertically center icon and text block */
+    flex-grow: 1; /* Allow content to fill remaining space */
+    width: 100%;
+}
+
+.weather-icon-container {
+    flex: 1 1 50%; /* Take up 50% of the width */
+    display: flex;
+    flex-direction: column; /* Stack sunrise, icon, sunset vertically */
+    justify-content: center; /* Center items vertically */
+    align-items: center; /* Center items horizontally */
+    font-size: 3.5em; /* Slightly smaller icon */
+    color: #ffffff; /* Icon color */
+}
+
+/* New styles for sunrise/sunset */
+.sunrise-time,
+.sunset-time {
+    font-size: 0.3em; /* Smaller font size relative to icon */
+    color: #f0f0f0; /* Light color */
+    text-align: center;
+    width: 100%; /* Ensure it takes full width */
+    line-height: 1.2; /* Adjust line height */
+}
+
+.sunrise-time {
+    margin-bottom: 3px; /* Space below sunrise */
+}
+
+.sunset-time {
+    margin-top: 3px; /* Space above sunset */
+}
+
+.weather-text-container {
+    flex: 1 1 50%; /* Take up 50% of the width */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around; /* Distribute text vertically */
+    align-items: center; /* Center text horizontally */
+    height: 100%; /* Ensure it fills the parent height */
+    padding: 0 5px; /* Add some horizontal padding */
+    box-sizing: border-box;
+}
+
+.current-weather .temp-high{
+    font-size: 1.1em;
+    color: #e86e0a;
+    text-align: center;
+}
+
+.current-weather .temp-low {
+    font-size: 1.1em;
+    color: #0659a5;
+    text-align: center;
+}
+
+.current-weather .temp-current {
+    font-size: 2.8em; /* Large current temperature */
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+}
+
+/* Gradient Backgrounds for Current Weather */
+.day-gradient {
+    background-image: linear-gradient(to bottom, #87CEEB, #4682B4); /* Sky Blue to Steel Blue */
+}
+
+.night-gradient {
+    background-image: linear-gradient(to bottom, #1c233f, #0a0e1a); /* Dark Blue/Indigo to Very Dark Blue */
+}
+
+/* Forecast Weather Area */
+.forecast-weather {
+    flex: 3 1 75%; /* Takes up 3 parts of the space (~75%) */
+    display: flex; /* Nested flex container */
+    justify-content: space-around;
+    align-items: stretch; /* Make forecast days same height */
+    padding-left: 10px;
+    position: relative; /* Ensure it's layered correctly */
+    background-color: transparent; /* Ensure transparency */
+}
+
+/* Individual Forecast Day */
+.forecast-day {
+    flex: 1; /* Each day takes equal space within forecast-weather */
+    display: flex; /* Use flex for title/content layout */
+    flex-direction: column; /* Stack title and content vertically */
+    align-items: stretch; /* Stretch children */
+    padding: 5px;
+    box-sizing: border-box;
+}
+
+.forecast-day:first-child {
+    border-left: none; /* Remove separator from the first forecast day */
+}
+
+.forecast-day .weather-day-title {
+    text-align: center;
+    font-weight: bold;
+    color: #ffffff;
+    padding-bottom: 5px;
+    flex-shrink: 0; /* Prevent title from shrinking */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3); /* Optional separator */
+    margin-bottom: 5px; /* Space below title */
+}
+
+.forecast-day .weather-icon-container {
+    font-size: 2.5em; /* Smaller icon for forecast */
+    /* Inherits flex-direction: column and alignment */
+}
+
+/* Adjust forecast sunrise/sunset font size relative to smaller icon */
+.forecast-day .sunrise-time,
+.forecast-day .sunset-time {
+    font-size: 0.5em; /* Slightly larger relative font size for forecast */
+}
+
+.forecast-day .temp-high{
+    font-size: 1.1em;
+    color: #e86e0a;
+    width: 100%; /* Ensure temps take full width of their container */
+    text-align: center;
+}
+
+.forecast-day .temp-low {
+    font-size: 1.1em;
+    color: #0659a5;
+    width: 100%; /* Ensure temps take full width of their container */
+    text-align: center;
+}
+
+.forecast-day .precip-chance {
+    font-size: 1.2em;
+    color: #000000; 
+    margin: 3px 0;
+    width: 100%; /* Ensure precip takes full width of its container */
+    text-align: center;
+}
+
 /* Main Calendar Area (Title + Grid) */
 #main-calendar-area {
     flex-grow: 1;
@@ -213,7 +394,7 @@ html, body {
 .chores-list {
     padding: 15px;
     overflow-y: auto;
-    flex: 1; 
+    flex: 2; 
     height: 100%; 
     box-sizing: border-box; 
     border-left: 1px solid #ccc;

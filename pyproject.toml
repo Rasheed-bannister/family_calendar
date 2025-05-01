@@ -10,6 +10,11 @@ dependencies = [
     "google-api-python-client>=2.169.0",
     "google-auth-httplib2>=0.2.0",
     "google-auth-oauthlib>=1.2.2",
+    "numpy>=2.2.5",
+    "openmeteo-requests>=1.4.0",
+    "pandas>=2.2.3",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
 ]
 
 [dependency-groups]
