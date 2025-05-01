@@ -3,186 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Family Calendar</title>
+    <title>{% block title %}Family Calendar{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <div class="main-container"> {# New overall container #}
-        <div class="left-column"> {# Left side (Weather + Calendar) #}
-            <div class="weather-container"> {# Main flex container #}
-                {% if weather and weather.current and weather.daily %}
-                    {# Current Weather (Left - flex: 1) #}
-                    <div class="current-weather" data-is-day="{{ weather.current.is_day }}">
-                        <div class="weather-day-title">Today</div>
-                        <div class="weather-day-contents">
-                            <div class="weather-icon-container">
-                                {# Add sunrise time above icon #}
-                                <div class="sunrise-time">☀️ {{ weather.daily[0].sunrise.strftime('%-I:%M %p') }}</div>
-                                {{ get_weather_icon(weather.current.weather_code) }}
-                                {# Add sunset time below icon #}
-                                <div class="sunset-time">🌙 {{ weather.daily[0].sunset.strftime('%-I:%M %p') }}</div>
-                            </div>
-                            <div class="weather-text-container">
-                                <div class="temp-high">{{ weather.daily[0].apparent_temperature_max | round(0) | int }}°</div>
-                                <div class="temp-current">
-                                    {{ weather.current.apparent_temperature | round(0) | int }}°
-                                </div>
-                                <div class="temp-low">{{ weather.daily[0].apparent_temperature_min | round(0) | int }}°</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {# Forecast (Right - flex: 3) - Also a flex container #}
-                    <div class="forecast-weather">
-                        {% for day_forecast in weather.daily[1:4] %} {# Next 3 days #}
-                        {# Forecast Day (flex: 1 within forecast-weather) #}
-                        {# Remove data-weather-icon attribute, add inner containers #}
-                        <div class="forecast-day">
-                            {# Use the common title class #}
-                            <div class="weather-day-title">{{ day_forecast.date.strftime('%a') }}</div>
-                            <div class="weather-day-contents">
-                                <div class="weather-icon-container">
-                                    {# Add sunrise time above icon #}
-                                    <div class="sunrise-time">☀️ {{ day_forecast.sunrise.strftime('%-I:%M %p') }}</div>
-                                    {{ get_weather_icon(day_forecast.weather_code) }}
-                                    {# Add sunset time below icon #}
-                                    <div class="sunset-time">🌙 {{ day_forecast.sunset.strftime('%-I:%M %p') }}</div>
-                                </div>
-                                <div class="weather-text-container">
-                                    <div class="temp-high">{{ day_forecast.apparent_temperature_max | round(0) | int }}°</div>
-                                    <div class="precip-chance">🌧️ {{ day_forecast.precipitation_probability_max | round(0) | int }}%</div>
-                                    <div class="temp-low">{{ day_forecast.apparent_temperature_min | round(0) | int }}°</div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                {% else %}
-                    <p>Weather data unavailable.</p>
-                {% endif %}
-            </div>
-            <div id="main-calendar-area">
-                <div class="calendar-header-nav">
-                    <a href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
-                    <h1>Bannister Family - {{ month_name }} {{ year }}</h1>
-                    <a href="{{ url_for('calendar_view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
-                </div>
-                <div class="calendar-container">
-                    <!-- Calendar view will go here -->
-                    <table class="calendar" data-month="{{ month_number }}" data-year="{{ year }}">
-                        <thead>
-                            <tr>
-                                <th>Sun</th>
-                                <th>Mon</th>
-                                <th>Tue</th>
-                                <th>Wed</th>
-                                <th>Thu</th>
-                                <th>Fri</th>
-                                <th>Sat</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for week in weeks %}
-                            <tr>
-                                {% for day in week %}
-                                <td 
-                                    class="{{ 'current-month' if day.is_current_month else 'other-month' }}" 
-                                    {% if day.is_current_month %}
-                                    data-day="{{ day.day_number }}" 
-                                    data-month="{{ month_number }}" 
-                                    data-year="{{ year }}"
-                                    {% endif %}
-                                >
-                                    <div class="day-content"> {# New wrapper div #}
-                                        <div class="day-header">{{ day.day_number }}</div> {# Renamed from day-number for clarity #}
-                                        <div class="events">
-                                            {% for event in day.events %}
-                                            <div class="event"
-                                                 style="background-color: {{ event.calendar_color or '#eee' }}; border-left: 3px solid {{ event.calendar_color or '#ccc' }};"
-                                                 data-title="{{ event.title }}"
-                                                 data-calendar-name="{{ event.calendar_name }}"
-                                                 data-all-day="{{ 'true' if event.all_day else 'false' }}"
-                                                 data-start-time="{{ event.start_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
-                                                 data-end-time="{{ event.end_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
-                                                 data-location="{{ event.location or '' }}"
-                                                 data-description="{{ event.description or '' }}"
-                                                 data-color="{{ event.calendar_color or '#ccc' }}">
-                                                <span class="event-time">
-                                                    {% if event.all_day %}
-                                                        All Day
-                                                    {% else %}
-                                                        {{ event.start_datetime.strftime('%-I:%M%p') }}
-                                                    {% endif %}
-                                                </span>
-                                                <span class="event-title">{{ event.title }}</span>
-                                            </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div> {# End new wrapper div #}
-                                </td>
-                                {% endfor %}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+    <div class="main-container">
+        <div class="left-column">
+            {% block weather %}
+                {% include 'components/weather.html' %}
+            {% endblock %}
+            
+            {% block calendar %}
+                {% include 'components/calendar.html' %}
+            {% endblock %}
         </div>
-        <div class="right-column"> {# Right side (Daily View) #}
-            <div class="daily-view-container">
-                <h2>Today's Events</h2>
-                {% if today_events %}
-                    <ul>
-                        {% for event in today_events %}
-                            <li style="border-left: 5px solid {{ event.calendar_color or '#ccc' }}; padding-left: 10px; margin-bottom: 10px;">
-                                <strong>{{ event.title }}</strong> ({{ event.calendar_name }})<br>
-                                {% if event.all_day %}
-                                    All Day
-                                {% else %}
-                                    {{ event.start_datetime.strftime('%I:%M %p') }} - {{ event.end_datetime.strftime('%I:%M %p') }}
-                                {% endif %}<br>
-                                {% if event.location %}
-                                    <small>Location: {{ event.location }}</small><br>
-                                {% endif %}
-                                {% if event.description %}
-                                    <small>Notes: {{ event.description }}</small>
-                                {% endif %}
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p>No events found for today.</p>
-                {% endif %}
-            </div>
-            <div class="chores-list">
-                <h2>Chores</h2>
-                {% if chores %}
-                    {% set grouped_chores = chores|groupby('title') %} {# Group chores by person (title) #}
-                    {% for person, person_chores in grouped_chores %}
-                        <div class="chore-person-group">
-                            <h3>{{ person }}</h3>
-                            <ul>
-                                {% for chore in person_chores %}
-                                    {# Add class based on status #}
-                                    <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'pending' }}">
-                                        {{ chore.notes }} {# Display the chore description #}
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    {% endfor %}
-                {% else %}
-                    <p>No chores found or assigned.</p> {# Updated message #}
-                {% endif %}
-            </div>
+        <div class="right-column">
+            {% block daily_view %}
+                {% include 'components/daily_view.html' %}
+            {% endblock %}
+            
+            {% block chores %}
+                {% include 'components/chores.html' %}
+            {% endblock %}
         </div>
     </div>
 
+    {% block slideshow %}
     <div class="slideshow-container" style="display: none;">
         <!-- Photo slideshow will go here -->
         <p>Photo Slideshow Area</p>
     </div>
+    {% endblock %}
 
+    {% block modals %}
     {# Modal for Event Details #}
     <div id="event-modal" class="modal" style="display: none;">
         <div class="modal-content">
@@ -194,7 +48,9 @@
             <p id="modal-description">Description: </p>
         </div>
     </div>
+    {% endblock %}
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>

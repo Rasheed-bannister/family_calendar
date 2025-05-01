@@ -1,0 +1,67 @@
+{% block calendar_content %}
+<div id="main-calendar-area">
+    <div class="calendar-header-nav">
+        <a href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
+        <h1>Bannister Family - {{ month_name }} {{ year }}</h1>
+        <a href="{{ url_for('calendar_view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
+    </div>
+    <div class="calendar-container">
+        <table class="calendar" data-month="{{ month_number }}" data-year="{{ year }}">
+            <thead>
+                <tr>
+                    <th>Sun</th>
+                    <th>Mon</th>
+                    <th>Tue</th>
+                    <th>Wed</th>
+                    <th>Thu</th>
+                    <th>Fri</th>
+                    <th>Sat</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in weeks %}
+                <tr>
+                    {% for day in week %}
+                    <td 
+                        class="{{ 'current-month' if day.is_current_month else 'other-month' }}" 
+                        {% if day.is_current_month %}
+                        data-day="{{ day.day_number }}" 
+                        data-month="{{ month_number }}" 
+                        data-year="{{ year }}"
+                        {% endif %}
+                    >
+                        <div class="day-content"> 
+                            <div class="day-header">{{ day.day_number }}</div>
+                            <div class="events">
+                                {% for event in day.events %}
+                                <div class="event"
+                                     style="background-color: {{ event.calendar_color or '#eee' }}; border-left: 3px solid {{ event.calendar_color or '#ccc' }};"
+                                     data-title="{{ event.title }}"
+                                     data-calendar-name="{{ event.calendar_name }}"
+                                     data-all-day="{{ 'true' if event.all_day else 'false' }}"
+                                     data-start-time="{{ event.start_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
+                                     data-end-time="{{ event.end_datetime.strftime('%I:%M %p') if not event.all_day else '' }}"
+                                     data-location="{{ event.location or '' }}"
+                                     data-description="{{ event.description or '' }}"
+                                     data-color="{{ event.calendar_color or '#ccc' }}">
+                                    <span class="event-time">
+                                        {% if event.all_day %}
+                                            All Day
+                                        {% else %}
+                                            {{ event.start_datetime.strftime('%-I:%M%p') }}
+                                        {% endif %}
+                                    </span>
+                                    <span class="event-title">{{ event.title }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

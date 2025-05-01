@@ -1,0 +1,27 @@
+{% block daily_view_content %}
+<div class="daily-view-container">
+    <h2>Today's Events</h2>
+    {% if today_events %}
+        <ul>
+            {% for event in today_events %}
+                <li style="border-left: 5px solid {{ event.calendar_color or '#ccc' }}; padding-left: 10px; margin-bottom: 10px;">
+                    <strong>{{ event.title }}</strong> ({{ event.calendar_name }})<br>
+                    {% if event.all_day %}
+                        All Day
+                    {% else %}
+                        {{ event.start_datetime.strftime('%I:%M %p') }} - {{ event.end_datetime.strftime('%I:%M %p') }}
+                    {% endif %}<br>
+                    {% if event.location %}
+                        <small>Location: {{ event.location }}</small><br>
+                    {% endif %}
+                    {% if event.description %}
+                        <small>Notes: {{ event.description }}</small>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No events found for today.</p>
+    {% endif %}
+</div>
+{% endblock %}

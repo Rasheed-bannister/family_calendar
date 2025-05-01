@@ -1,0 +1,35 @@
+/* Responsive CSS for different screen sizes */
+
+/* Medium screens */
+@media screen and (min-width: 1200px) {
+    html, body {
+        font-size: 16px; /* Larger base font for medium screens */
+    }
+    
+    .main-container {
+        padding: 15px; /* More padding for medium screens */
+        gap: 15px; /* More gap for medium screens */
+    }
+    
+    .left-column,
+    .right-column {
+        gap: 15px; /* More gap for medium screens */
+    }
+}
+
+/* Large screens */
+@media screen and (min-width: 1500px) {
+    html, body {
+        font-size: 18px; /* Even larger base font for large screens */
+    }
+    
+    .main-container {
+        padding: 20px; /* More padding for large screens */
+        gap: 20px; /* More gap for large screens */
+    }
+    
+    .left-column,
+    .right-column {
+        gap: 20px; /* More gap for large screens */
+    }
+}

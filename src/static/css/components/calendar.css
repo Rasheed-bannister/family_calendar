@@ -1,0 +1,161 @@
+/* Calendar Component Styles */
+
+/* Main Calendar Area */
+#main-calendar-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid #ccc;
+    border-left: 1px solid #ccc;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Calendar Header */
+#main-calendar-area h1 {
+    text-align: center;
+    margin: 8px 0;
+    flex-shrink: 0;
+    flex-grow: 1;
+    font-size: 1.3em;
+}
+
+/* Header Navigation */
+.calendar-header-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+    margin-bottom: 8px;
+    backdrop-filter: blur(5px);
+}
+
+/* Navigation Arrows */
+.nav-arrow {
+    font-size: 1.3em;
+    font-weight: bold;
+    text-decoration: none;
+    color: #000;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.nav-arrow:hover {
+    background-color: #eee;
+    color: #23527c;
+}
+
+/* Calendar Container */
+.calendar-container {
+    flex-grow: 1;
+    overflow: hidden;
+    padding: 0 8px 8px 8px;
+    display: flex;
+}
+
+/* Calendar Table */
+.calendar {
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    border-top-right-radius: 5px;
+    border-top-left-radius: 5px;
+    overflow: hidden; 
+}
+
+/* Calendar Headers */
+.calendar th {
+    text-align: center;
+    padding: 5px;
+    background-color: rgba(101, 107, 113, 0.6);
+    font-size: 0.9em;
+}
+
+/* Calendar Cells */
+.calendar td {
+    vertical-align: top;
+    overflow: hidden; 
+    height: calc(100% / 6);
+    border-radius: 5px; 
+    border-left: 1px solid #ccc; 
+    border-bottom: 1px solid #ccc; 
+    border-right: 1px solid #ccc; 
+    overflow: hidden; 
+}
+
+/* Day Content Container */
+.day-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%; 
+    width: 100%; 
+}
+
+/* Day Header */
+.day-header {
+    padding: 2px;
+    text-align: right;
+    font-weight: bold;
+    background-color: rgba(144, 165, 185, 0.8);
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
+    font-size: 0.9em;
+}
+
+/* Other Month Day Header */
+.other-month .day-header {
+    color: #aaa;
+    background-color: rgba(144, 165, 185, 0.8);
+}
+
+/* Events Container */
+.events {
+    padding: 2px;
+    flex-grow: 1; 
+    overflow-y: auto; 
+    font-size: 0.7em;
+}
+
+/* Individual Event */
+.event {
+    margin-bottom: 2px;
+    padding: 1px 3px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.event-time {
+    font-weight: bold;
+    margin-right: 3px;
+}
+
+/* Today's Cell */
+.calendar td.today {
+    background-color: #ffffcc;
+    border: 2px solid #f0e68c;
+}
+
+.calendar td.today .day-header {
+    font-weight: bold;
+    color: #000;
+    background-color: #f0e68c;
+}
+
+/* Selected Cell */
+.calendar td.selected {
+    background-color: #d0eaff;
+    border: 2px solid #99ccff;
+}
+
+.calendar td.selected .day-header {
+    font-weight: bold;
+    color: #000;
+    background-color: #b3d9ff;
+}

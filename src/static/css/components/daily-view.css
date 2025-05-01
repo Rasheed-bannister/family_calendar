@@ -1,0 +1,46 @@
+/* Daily View Component Styles */
+
+/* Daily View Container */
+.daily-view-container {
+    padding: 10px;
+    overflow-y: auto;
+    flex: 1; 
+    height: 100%; 
+    box-sizing: border-box; 
+    border-left: 1px solid #ccc;
+    overflow: hidden;
+    border-radius: 8px; 
+    background-color: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Daily View Header */
+.daily-view-container h2 {
+    margin-top: 0;
+    font-size: 1.1em;
+    margin-bottom: 8px;
+}
+
+/* Remove bullet points */
+.daily-view-container ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+/* List items styling */
+.daily-view-container li {
+    font-size: 0.9em;
+    margin-bottom: 8px;
+    padding-left: 8px;
+}
+
+/* Event title in list */
+.daily-view-container li strong {
+    font-size: 1em;
+}
+
+/* Event notes in list */
+.daily-view-container li small {
+    font-size: 0.85em;
+}

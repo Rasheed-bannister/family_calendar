@@ -1,4 +1,4 @@
-{# Weather container fragment for AJAX updates #}
+{% block weather_content %}
 <div class="weather-container">
     {% if weather and weather.current and weather.daily %}
         {# Current Weather (Left - flex: 1) #}
@@ -44,3 +44,4 @@
         <p>Weather data unavailable.</p>
     {% endif %}
 </div>
+{% endblock %}

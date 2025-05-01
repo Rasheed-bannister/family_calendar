@@ -1,0 +1,84 @@
+/* Chores Component Styles */
+
+/* Chores List Container */
+.chores-list {
+    padding: 10px;
+    overflow-y: auto;
+    flex: 2; 
+    height: 100%; 
+    box-sizing: border-box; 
+    border-left: 1px solid #ccc;
+    overflow: hidden;
+    border-radius: 8px; 
+    background-color: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Chores Header */
+.chores-list h2 {
+    margin-top: 0;
+    font-size: 1.1em;
+    margin-bottom: 8px;
+}
+
+/* Chores List */
+.chores-list ul {
+    list-style-type: none; 
+    padding-left: 0; 
+    margin-top: 3px;
+}
+
+/* Person Group Container */
+.chore-person-group {
+    margin-bottom: 10px;
+}
+
+/* Person Header */
+.chore-person-group h3 {
+    margin-bottom: 3px;
+    border-radius: 5px;
+    background-color: rgba(144, 165, 185, 0.8);
+    padding: 2px;
+    font-size: 1em;
+}
+
+/* Individual Chore Item */
+.chore-item {
+    padding: 2px 0;
+    margin-bottom: 1px;
+    position: relative;
+    padding-left: 15px;
+    font-size: 0.9em;
+}
+
+/* Chore Item Marker */
+.chore-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-right: 5px;
+    font-size: 0.9em;
+}
+
+/* Completed Chores */
+.chore-item.completed {
+    color: green;
+}
+
+.chore-item.completed::before {
+    content: '😊'; 
+}
+
+/* Pending Chores */
+.chore-item.pending {
+    font-weight: bold;
+}
+
+.chore-item.pending::before {
+    content: '○';
+    color: #f8f8f8;
+    font-weight: bold;
+}
