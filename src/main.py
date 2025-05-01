@@ -38,16 +38,16 @@ def fetch_google_events_background(month, year):
     """Fetches Google Calendar events and Tasks in a background thread and updates the local DB/cache."""
     global last_known_chores 
     task_id = f"{month}.{year}"
+    events_changed_in_task = False 
+    chores_changed_in_task = False
 
     # Skip if a task is already running for this month/year
     with google_fetch_lock:
         if task_id in background_tasks and background_tasks[task_id]['status'] == 'running':
-            print(f"Task {task_id} already running. Skipping.")
             return
 
         # Mark task as running
         background_tasks[task_id] = {'status': 'running', 'updated': False}
-        print(f"Starting background task {task_id}...")
 
     try:
         # --- Fetch Calendar Events ---
@@ -57,64 +57,73 @@ def fetch_google_events_background(month, year):
 
         events_to_add_or_update = []
         calendars_changed = False
-        events_changed = False 
+        events_changed = False
+        events_changed_in_task = events_changed 
 
         if processed_google_events_data:
             events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
                 processed_google_events_data, current_calendar_month
             )
             if events_to_add_or_update:
-                print(f"Processing {len(events_to_add_or_update)} events in database for {month}/{year}...")
                 db_changes = calendar_utils.add_events(events_to_add_or_update)
-                events_changed = calendars_changed or db_changes  # Combine calendar info and DB changes
+                events_changed_in_task = calendars_changed or db_changes  # Combine calendar info and DB changes
             else:
-                events_changed = calendars_changed  # Only calendar info might have changed
+                events_changed_in_task = calendars_changed  # Only calendar info might have changed
         else:
-            events_changed = False  
+            events_changed_in_task = False  
 
         # --- Fetch Google Tasks (Chores) ---
         current_chores = tasks_api.get_chores()
-        chores_changed = False
         with google_fetch_lock:  # Protect access to last_known_chores
-            # Convert to sets for order-independent comparison
-            # If chores are dicts, a more complex conversion might be needed (e.g., set(tuple(sorted(d.items())) for d in chores))
             try:
-                last_known_set = set(last_known_chores)
-                current_set = set(current_chores)
-            except TypeError:
-                 # Fallback for unhashable types (e.g., lists or dicts) - sort and compare strings
+                def make_comparable(chore_list):
+                    comparable_items = []
+                    for item in chore_list:
+                        if isinstance(item, dict):
+                            comparable_items.append(tuple(sorted(item.items())))
+                        elif isinstance(item, list):
+                             comparable_items.append(tuple(item))
+                        else:
+                             comparable_items.append(item)
+                    return set(comparable_items)
+
+                last_known_set = make_comparable(last_known_chores)
+                current_set = make_comparable(current_chores)
+
+            except TypeError as te:
                  last_known_set = str(sorted(str(item) for item in last_known_chores))
                  current_set = str(sorted(str(item) for item in current_chores))
 
-
             if current_set != last_known_set:
                 last_known_chores = current_chores  # Update the global list
-                chores_changed = True
+                chores_changed_in_task = True
             else:
-                print("Chores list unchanged.")
+                pass # Keep the pass to avoid empty else block
 
         # --- Determine Overall Update Status ---
-        overall_updated = events_changed or chores_changed
+        overall_updated = events_changed_in_task or chores_changed_in_task
 
         with google_fetch_lock:
             background_tasks[task_id]['updated'] = overall_updated
+            background_tasks[task_id]['events_changed'] = events_changed_in_task
+            background_tasks[task_id]['chores_changed'] = chores_changed_in_task
             if overall_updated:
-                print(f"Data changes detected (Events: {events_changed}, Chores: {chores_changed}) for {month}/{year}, notifying client")
+                pass # Keep the pass
             else:
-                print(f"No data changes detected for {month}/{year}")
+                pass # Keep the pass
 
     except Exception as e:
-        print(f"An unexpected error occurred in background task {task_id}: {e}")
         with google_fetch_lock:
             background_tasks[task_id]['status'] = 'error'
-            background_tasks[task_id]['updated'] = False  # Ensure no refresh on error
+            background_tasks[task_id]['updated'] = False
+            background_tasks[task_id]['events_changed'] = False
+            background_tasks[task_id]['chores_changed'] = False
 
     finally:
         with google_fetch_lock:
             if background_tasks[task_id]['status'] != 'error':
                 background_tasks[task_id]['status'] = 'complete'
-        print(f"Background task {task_id} finished with status: {background_tasks[task_id]['status']}")
-
+        pass # Keep the pass
 
 @app.route('/')
 def index_redirect():
@@ -272,16 +281,15 @@ def calendar_view(year=None, month=None):
             from weather_integration import api as weather_api
             # Reload the module to ensure fresh data
             importlib.reload(weather_api)
-            print("Weather update requested. Fetching fresh weather data...")
         
         weather_data = get_weather_data()
         
         # If it's just a weather update, we could return a minimal response
         # with only the weather data, but for simplicity we'll return the full page
         if is_weather_update:
-            print("Returning fresh weather data")
+            pass
     except Exception as e:
-        print(f"Error fetching weather data: {e}")
+        pass
 
     # --- Get Chores (from the last known state) --- #
     with google_fetch_lock:  # Access the global variable safely
@@ -319,7 +327,6 @@ def random_photo():
             photo_url = url_for('static', filename=f'{slideshow_db.PHOTOS_STATIC_REL_PATH}/{filename}')
             return jsonify({"url": photo_url})
         except Exception as e:
-            print(f"Error generating URL for {filename}: {e}")
             return jsonify({"error": "Could not generate photo URL"}), 500
     else:
         # Return a 404 or a default image URL if no photos are found
@@ -337,54 +344,94 @@ def check_updates(year, month):
     task_status = "not_tracked"
     global last_known_chores # Ensure we can modify the global
 
-    # 1. Check background task status for EVENT updates
+    # --- Get Background Task Status (Informational) ---
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
         if task_info:
             task_status = task_info['status']
-            event_updated_flag = task_info.get('updated', False)
+            # if task_status == 'running':
+                # pass
+            # elif task_status == 'error':
+                # pass
 
-            if task_status == 'complete' and event_updated_flag:
-                # Reset the flag only if we are confirming an update based on it
-                task_info['updated'] = False 
-                event_updates_available = True
-                print(f"Background task for {month}/{year} reported event updates.")
-            elif task_status == 'complete':
-                 print(f"Checked event updates for {month}/{year}: Task complete, no *new* event changes reported by background task.")
-            elif task_status == 'running':
-                print(f"Checked event updates for {month}/{year}: Background task still running.")
-            elif task_status == 'error':
-                 print(f"Checked event updates for {month}/{year}: Background task encountered an error.")
-
-    # 2. Actively check for CHORE updates NOW
+    # --- 1. Actively check for EVENT updates NOW --- #
     try:
-        print(f"Actively fetching chores for update check ({month}/{year})...")
+        current_google_events_data = calendar_api.fetch_and_process_google_events(month, year)
+
+        current_db_month = CalendarMonth(year=year, month=month)
+        db.add_month(current_db_month)
+        db_events = db.get_all_events(current_db_month)
+
+        # --- Compare Google Events vs DB Events --- #
+        try:
+            google_event_ids = {event['id'] for event in current_google_events_data if 'id' in event}
+            db_event_ids = {event['google_event_id'] for event in db_events if 'google_event_id' in event}
+
+            if google_event_ids != db_event_ids:
+                event_updates_available = True
+
+                # --- >>> APPLY EVENT CHANGES TO DATABASE <<< ---
+                if event_updates_available and current_google_events_data:
+                    events_to_add_or_update, _ = calendar_utils.create_calendar_events_from_google_data(
+                        current_google_events_data, current_db_month
+                    )
+                    if events_to_add_or_update:
+                        db_changes = calendar_utils.add_events(events_to_add_or_update)
+                        if db_changes:
+                            pass
+                        else:
+                            pass
+                    else:
+                        pass
+                # --- >>> END APPLY EVENT CHANGES <<< ---
+
+            else:
+                pass
+        except Exception as compare_e:
+            pass
+
+    except Exception as e:
+        pass
+
+    # --- 2. Actively check for CHORE updates NOW --- #
+    try:
         current_chores = tasks_api.get_chores()
-        
         with google_fetch_lock: # Protect access to last_known_chores
-             # Use the same set comparison logic as the background task
             try:
-                last_known_set = set(last_known_chores)
-                current_set = set(current_chores)
+                def make_comparable(chore_list):
+                    comparable_items = []
+                    for item in chore_list:
+                        if isinstance(item, dict):
+                            comparable_items.append( (item.get('id'), item.get('title'), item.get('status')) )
+                        else:
+                             comparable_items.append(item)
+                    return set(comparable_items)
+
+                last_known_set = make_comparable(last_known_chores)
+                current_set = make_comparable(current_chores)
+
             except TypeError:
-                 # Fallback for unhashable types
                  last_known_set = str(sorted(str(item) for item in last_known_chores))
                  current_set = str(sorted(str(item) for item in current_chores))
 
             if current_set != last_known_set:
                 last_known_chores = current_chores # Update the global list
                 chore_updates_available = True
+                # Update background task flag if needed (optional)
+                if task_info and task_status == 'complete':
+                    task_info['chores_changed'] = True
+                    task_info['updated'] = True
             else:
-                 print("No chore changes detected by check-updates.")
+                 pass
 
     except Exception as e:
-        print(f"Error fetching chores during update check: {e}")
+        pass
 
-    # 3. Combine results and respond
+    # --- 3. Combine results and respond --- #
     updates_available = event_updates_available or chore_updates_available
 
     return jsonify({
-        "status": task_status, # Still useful to know background task state
+        "status": task_status,
         "updates_available": updates_available
     })
 
@@ -407,7 +454,6 @@ def weather_update():
         else:
             return jsonify({"error": "Could not fetch weather data"}), 500
     except Exception as e:
-        print(f"Error updating weather data: {e}")
         return jsonify({"error": str(e)}), 500
 
 

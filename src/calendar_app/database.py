@@ -35,7 +35,7 @@ def create_all():
     This function is called only when it's confirmed that there is no database file.
     """
     # Create the database file in the file system
-    with open(DATABASE_FILE, 'w') as db_file:
+    with open(DATABASE_FILE, 'w'):
         pass
 
     conn = sqlite3.connect(DATABASE_FILE)
@@ -212,23 +212,26 @@ def check_event_exists(cursor, event_id: str) -> CalendarEvent | None:
     return None
 
 
-@db_connection 
-def get_all_events(cursor, month: CalendarMonth) -> list[dict]: 
+@db_connection
+def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
     """
     Retrieves all events for a specific month from the database.
+    Returns a list of dictionaries, including the event ID as 'google_event_id'.
+    Uses LEFT JOIN to include events even if their calendar entry is missing.
     """
     cursor.execute('''
         SELECT distinct
+            ev.id,
             ev.title,
             ev.start_datetime,
             ev.end_datetime,
             ev.all_day,
             ev.location,
             ev.description,
-            cal.name,
-            cal.color 
+            cal.name,  -- Might be NULL if calendar is missing
+            cal.color  -- Might be NULL if calendar is missing
         FROM CalendarEvent ev
-            JOIN Calendar cal ON ev.calendar_id = cal.calendar_id
+            LEFT JOIN Calendar cal ON ev.calendar_id = cal.calendar_id -- Changed to LEFT JOIN
         WHERE ev.month_id = ?
     ''', (month.id,))
 
@@ -236,14 +239,15 @@ def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
     events = []
     for row in rows:
         event = {
-            'calendar_color': row[7],
-            'calendar_name': row[6],
-            'title': row[0],
-            'start_datetime': datetime.datetime.fromisoformat(row[1]),
-            'end_datetime': datetime.datetime.fromisoformat(row[2]),
-            'all_day': row[3],
-            'location': row[4],
-            'description': row[5],
+            'google_event_id': row[0],
+            'title': row[1],
+            'start_datetime': datetime.datetime.fromisoformat(row[2]),
+            'end_datetime': datetime.datetime.fromisoformat(row[3]),
+            'all_day': bool(row[4]),
+            'location': row[5],
+            'description': row[6],
+            'calendar_name': row[7] if row[7] else "Unknown Calendar", # Handle potential NULL
+            'calendar_color': row[8] if row[8] else "#808080", # Handle potential NULL (default grey)
         }
         events.append(event)
 

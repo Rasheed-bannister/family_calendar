@@ -86,9 +86,15 @@ const Calendar = (function() {
 
     function checkForGoogleUpdates() {
         if (!updateCheckEnabled) return;
-        
+
         fetch(`/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    // Handle HTTP errors like 404, 500 etc.
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 // Handle first load differently from regular checks
                 if (!initialLoadComplete) {
@@ -111,7 +117,24 @@ const Calendar = (function() {
                 }
             })
             .catch(err => {
-                console.error("Error checking for Google Calendar updates:", err);
+                // Log different messages based on the error type
+                if (err instanceof TypeError && err.message === 'Failed to fetch') {
+                    // This is often a network/connection error
+                    console.error("Error checking for Google Calendar updates: Could not connect to the server (ERR_CONNECTION_REFUSED or similar). Is the Flask server running?");
+                    // Optionally, you could try to disable further checks or implement a retry
+                    // updateCheckEnabled = false; // Stop checking if connection fails
+                } else {
+                    // Other errors (e.g., JSON parsing, HTTP errors)
+                    console.error("Error checking for Google Calendar updates:", err);
+                }
+                // Stop the rapid initial checks if an error occurs
+                if (!initialLoadComplete) {
+                    clearInterval(googleUpdateTimer);
+                    // Optionally switch to the slower interval even on error, or stop completely
+                    // googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+                    console.warn("Stopping rapid initial update checks due to error.");
+                    initialLoadComplete = true; // Mark initial phase as done (even if failed)
+                }
             });
     }
 

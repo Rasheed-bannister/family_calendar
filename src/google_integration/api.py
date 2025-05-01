@@ -102,7 +102,8 @@ def authenticate():
 
 def get_events_current_month(service, month: int, year: int):
   """
-  Fetches all events for a specific month and year from all accessible calendars.
+  Fetches all events for a specific month and year from all accessible calendars,
+  handling pagination.
 
   Args:
       service: The authorized Google Calendar API service instance.
@@ -115,66 +116,88 @@ def get_events_current_month(service, month: int, year: int):
   """
   calendars = get_calendar_list(service)
   if not calendars:
+      print("No calendars found or error fetching calendar list.") # Added log
       return []
 
   # Calculate the time range for the given month and year
-  # Ensure month and day have leading zeros if needed for isoformat
   start_day = 1
   end_day = pycalendar.monthrange(year, month)[1]
   time_min_dt = datetime.datetime(year, month, start_day, 0, 0, 0, tzinfo=datetime.timezone.utc)
   time_max_dt = datetime.datetime(year, month, end_day, 23, 59, 59, tzinfo=datetime.timezone.utc)
   time_min = time_min_dt.isoformat()
   time_max = time_max_dt.isoformat()
+  # print(f"Fetching events between {time_min} and {time_max}") # Added log
 
   all_events = []
 
   for calendar in calendars:
     calendar_id = calendar["id"]
-    try:
-      events_result = (
-          service.events()
-          .list(
-              calendarId=calendar_id,
-              timeMin=time_min,
-              timeMax=time_max,
-              singleEvents=True,
-              orderBy="startTime",
-          )
-          .execute()
-      )
-      events = events_result.get("items", [])
-      all_events.extend(events)
-    except HttpError as error:
-      # Handle cases like 404 if a calendar is listed but not accessible
-      print(f"    Could not fetch events for calendar {calendar_id}: {error}")
-    except Exception as e:
-      print(f"    An unexpected error occurred fetching events for {calendar_id}: {e}")
+    calendar_summary = calendar.get("summary", calendar_id) # Get calendar name for logging
+    # print(f"  Fetching events for calendar: {calendar_summary} ({calendar_id})") # Added log
+    page_token = None
+    page_count = 0 # Track pages for debugging
+    while True: # Loop to handle pagination
+        page_count += 1
+        try:
+            events_result = (
+                service.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    pageToken=page_token, # Pass the page token
+                    maxResults=250 # Explicitly set maxResults (optional, defaults to 250)
+                )
+                .execute()
+            )
+            events = events_result.get("items", [])
+            # print(f"    Page {page_count}: Fetched {len(events)} events.") # Added log
+            all_events.extend(events)
 
+            page_token = events_result.get("nextPageToken") # Get the next page token
+            if not page_token:
+                break # Exit loop if no more pages
+
+        except HttpError as error:
+            # Handle cases like 404 if a calendar is listed but not accessible
+            print(f"    Could not fetch events for calendar {calendar_id} (Page {page_count}): {error}") # Keep error prints
+            break # Stop trying for this calendar on error
+        except Exception as e:
+            print(f"    An unexpected error occurred fetching events for {calendar_id} (Page {page_count}): {e}") # Keep error prints
+            break # Stop trying for this calendar on error
+
+  # print(f"Total events fetched across all calendars: {len(all_events)}") # Added log
 
   if not all_events:
     return []
 
   # Sort all collected events by start time
   def get_start_time(event):
-      # Handles both 'dateTime' and 'date' keys
-      start = event["start"].get("dateTime", event["start"].get("date"))
-      # Ensure 'date' strings are comparable with 'dateTime' strings
-      if 'T' not in start: # It's a date string like 'YYYY-MM-DD'
-          # Append a time part to make it comparable, assuming start of day UTC
-           start += "T00:00:00Z"
-      # Convert to datetime objects for robust comparison
-      try:
-          # Handle potential timezone info (Z or +HH:MM)
-          if start.endswith('Z'):
-              return datetime.datetime.fromisoformat(start.replace('Z', '+00:00'))
-          else:
-              # Attempt direct parsing, hoping it includes timezone or is naive UTC
-              # This might need refinement based on actual Google API date formats
-               return datetime.datetime.fromisoformat(start)
-      except ValueError:
-           # Fallback for unexpected formats - treat as minimum possible time?
-           print(f"Warning: Could not parse start time '{start}' for event '{event.get('summary', 'N/A')}'. Using epoch.")
-           return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    # Handles both 'dateTime' and 'date' keys
+    start = event["start"].get("dateTime", event["start"].get("date"))
+    # Ensure 'date' strings are comparable with 'dateTime' strings
+    if 'T' not in start: # It's a date string like 'YYYY-MM-DD'
+        # Append a time part to make it comparable, assuming start of day UTC
+        start += "T00:00:00Z"
+    # Convert to datetime objects for robust comparison
+    try:
+        # Handle potential timezone info (Z or +HH:MM)
+        if start.endswith('Z'):
+            return datetime.datetime.fromisoformat(start.replace('Z', '+00:00'))
+        else:
+            # Attempt direct parsing, hoping it includes timezone or is naive UTC
+            # This might need refinement based on actual Google API date formats
+            dt = datetime.datetime.fromisoformat(start)
+            # If naive, assume UTC (though Google usually provides offset)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+    except ValueError:
+        # Fallback for unexpected formats - treat as minimum possible time?
+        print(f"Warning: Could not parse start time '{start}' for event '{event.get('summary', 'N/A')}'. Using epoch.")
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
 
   all_events.sort(key=get_start_time)
@@ -254,8 +277,8 @@ def fetch_and_process_google_events(month: int, year: int) -> list[dict]:
         print(f"An API error occurred: {error}")
         return [] # Return empty list on API error
     except Exception as e:
-        print(f"An unexpected error occurred during Google API interaction: {e}")
+        print(f"An unexpected error occurred during Google API interaction: {e}") # Keep error prints
         return [] # Return empty list on other errors
 
-    print(f"Fetched and processed {len(processed_events)} events from Google Calendar for {month}/{year}.")
+    # print(f"Fetched and processed {len(processed_events)} events from Google Calendar for {month}/{year}.")
     return processed_events

@@ -1,56 +1,73 @@
 from .models import CalendarEvent, Calendar, CalendarMonth
 from . import database as db 
-from .database import db_connection 
+from .database import db_connection, add_event as db_add_event # Import the actual add_event
+import sqlite3 # Import sqlite3 for error handling
 
-@db_connection 
-def add_events(cursor, events: list[CalendarEvent]) -> bool: 
+@db_connection
+def add_events(cursor, events: list[CalendarEvent]) -> bool:
     """
-    Checks the sqlite database for existing events adds new events to the database.
-    
-    Returns:
-        bool: True if any events were added or updated, False otherwise.
+    Simplified version for debugging: Checks if event exists by ID and adds if not.
+    Returns True if any events were successfully inserted.
     """
     changes_made = False
-    
+    # print(f"DEBUG: Starting simplified add_events with {len(events)} events.") # Debug print
+
     for event in events:
-        existing_event = db.check_event_exists(event.id) 
-        if not existing_event:
-            # New event
-            db.add_event(event)
-            changes_made = True
-        else:
-            # If the event already exists, update it if necessary
-            # Check specific attributes that we care about for equality
-            needs_update = False
-            
-            # Compare relevant attributes directly instead of using __dict__
-            # which can contain objects that don't compare well
-            if (existing_event.title != event.title or
-                existing_event.start != event.start or
-                existing_event.end != event.end or
-                existing_event.all_day != event.all_day or
-                existing_event.location != event.location or
-                existing_event.description != event.description or
-                existing_event.calendar.calendar_id != event.calendar.calendar_id or
-                existing_event.calendar.name != event.calendar.name or
-                existing_event.calendar.color != event.calendar.color):
-                
-                needs_update = True
-                
-            if needs_update:
-                 # Update existing_event object with new values before saving
-                 existing_event.title = event.title
-                 existing_event.start = event.start
-                 existing_event.end = event.end
-                 existing_event.all_day = event.all_day
-                 existing_event.location = event.location
-                 existing_event.description = event.description
-                 # Update calendar info if needed
-                 existing_event.calendar = event.calendar
-                 
-                 db.add_event(existing_event)
-                 changes_made = True
-    
+        try:
+            # Check if event ID exists directly using the cursor from the decorator
+            cursor.execute("SELECT 1 FROM CalendarEvent WHERE id = ?", (event.id,))
+            exists = cursor.fetchone()
+
+            if not exists:
+                # print(f"DEBUG: Event {event.id} ('{event.title}') does not exist. Attempting insert.") # Debug print
+                # Directly execute the insert logic (similar to db.add_event)
+                # Ensure calendar exists and has a color first
+                calendar_obj = event.calendar
+                if not calendar_obj.color:
+                     # Assign color if missing (using logic similar to db.add_calendar)
+                     from .database import get_next_color # Local import for simplicity
+                     calendar_obj.color = get_next_color(cursor=cursor) # Pass cursor
+                     # Update calendar in DB as well
+                     cursor.execute(
+                         'INSERT OR REPLACE INTO Calendar (calendar_id, name, color) VALUES (?, ?, ?)',
+                         (calendar_obj.calendar_id, calendar_obj.name, calendar_obj.color)
+                     )
+
+                cursor.execute(
+                    '''
+                    INSERT INTO CalendarEvent (
+                        id, calendar_id, month_id,
+                        title, start_datetime, end_datetime,
+                        all_day, location, description
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    (
+                        event.id,
+                        event.calendar.calendar_id,
+                        event.month.id,
+                        event.title,
+                        event.start.isoformat(),
+                        event.end.isoformat(),
+                        event.all_day,
+                        event.location,
+                        event.description
+                    )
+                )
+                changes_made = True
+                # print(f"DEBUG: Successfully inserted event {event.id}.") # Debug print
+            else:
+                # If you want to see if updates *would* happen, add comparison here
+                # For now, just log that it exists
+                # print(f"DEBUG: Event {event.id} ('{event.title}') already exists. Skipping insert.") # Debug print
+                pass # In this simplified version, we don't update
+
+        except sqlite3.Error as e:
+            print(f"DEBUG: Database error processing event {event.id}: {e}")
+            # Optionally: return False immediately on error, or just log and continue
+            continue # Continue with the next event
+
+    # print(f"DEBUG: Finished simplified add_events. changes_made = {changes_made}") # Debug print
     return changes_made
 
 def create_calendar_events_from_google_data(processed_google_events_data: list[dict], current_calendar_month: CalendarMonth) -> tuple[list[CalendarEvent], bool]:
