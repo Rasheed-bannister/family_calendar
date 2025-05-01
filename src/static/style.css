@@ -12,6 +12,7 @@ html, body {
     background-attachment: fixed; /* Keep background fixed during scroll (optional but often desired) */
     transition: background-image 1s ease-in-out; /* Smooth transition for background change */
     box-sizing: border-box; /* Include padding in element's total width/height */
+    font-size: 14px; /* Example: Reduce base font size */
 }
 
 /* Main Layout Container */
@@ -19,8 +20,8 @@ html, body {
     display: flex;
     flex-direction: row; /* Side-by-side columns */
     height: 100vh; 
-    padding: 15px; 
-    gap: 15px; 
+    padding: 10px; /* Reduced padding */
+    gap: 10px; /* Reduced gap */
     box-sizing: border-box; 
 }
 
@@ -30,7 +31,7 @@ html, body {
     height: 100%;
     display: flex;
     flex-direction: column; /* Stack weather and calendar */
-    gap: 15px; /* Add gap between weather and calendar */
+    gap: 10px; /* Reduced gap */
     box-sizing: border-box;
 }
 
@@ -40,14 +41,14 @@ html, body {
     height: 100%;
     display: flex; /* To make child fill height */
     flex-direction: column;
-    gap: 15px; /* Add gap between daily view and chores */
+    gap: 10px; /* Reduced gap */
 }
 
 /* Weather Placeholder */
 .weather-placeholder {
     border-top: 1px solid #ccc;
     border-left: 1px solid #ccc;
-    padding: 10px;
+    padding: 8px; /* Reduced padding */
     background-color: rgba(233, 245, 255, 0.2); /* Semi-transparent light blue */
     display: flex;
     align-items: center;
@@ -56,7 +57,7 @@ html, body {
     border-radius: 8px; /* Added rounded corners */
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    min-height: 150px;;
+    min-height: 120px; /* Reduced min-height */
 }
 
 /* Weather Container */
@@ -67,8 +68,8 @@ html, body {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 8px;
-    margin-bottom: 15px;
-    min-height: 100px;
+    margin-bottom: 10px; /* Reduced margin */
+    min-height: 80px; /* Reduced min-height */
     border: 1px solid rgba(204, 204, 204, 0.5); 
     overflow: hidden;
 }
@@ -81,7 +82,7 @@ html, body {
     border-right: 1px solid #ccc; /* Separator line */
     position: relative; /* Keep for potential future use, but not strictly needed now */
     transition: background-image 0.5s ease-in-out; /* Add transition for smooth gradient change */
-    padding: 5px; /* Add some padding */
+    padding: 3px; /* Reduced padding */
     box-sizing: border-box;
 }
 
@@ -90,10 +91,11 @@ html, body {
     text-align: center;
     font-weight: bold;
     color: #ffffff;
-    padding-bottom: 5px;
+    padding-bottom: 3px; /* Reduced padding */
     flex-shrink: 0; /* Prevent title from shrinking */
     border-bottom: 1px solid rgba(255, 255, 255, 0.3); /* Optional separator */
-    margin-bottom: 5px; /* Space below title */
+    margin-bottom: 3px; /* Reduced margin */
+    font-size: 0.9em; /* Reduced font size */
 }
 
 /* New style for the content wrapper below the title */
@@ -111,14 +113,14 @@ html, body {
     flex-direction: column; /* Stack sunrise, icon, sunset vertically */
     justify-content: center; /* Center items vertically */
     align-items: center; /* Center items horizontally */
-    font-size: 3.5em; /* Slightly smaller icon */
+    font-size: 2.8em; /* Reduced icon size */
     color: #ffffff; /* Icon color */
 }
 
 /* New styles for sunrise/sunset */
 .sunrise-time,
 .sunset-time {
-    font-size: 0.3em; /* Smaller font size relative to icon */
+    font-size: 0.25em; /* Reduced font size */
     color: #f0f0f0; /* Light color */
     text-align: center;
     width: 100%; /* Ensure it takes full width */
@@ -126,11 +128,11 @@ html, body {
 }
 
 .sunrise-time {
-    margin-bottom: 3px; /* Space below sunrise */
+    margin-bottom: 2px; /* Reduced margin */
 }
 
 .sunset-time {
-    margin-top: 3px; /* Space above sunset */
+    margin-top: 2px; /* Reduced margin */
 }
 
 .weather-text-container {
@@ -140,24 +142,24 @@ html, body {
     justify-content: space-around; /* Distribute text vertically */
     align-items: center; /* Center text horizontally */
     height: 100%; /* Ensure it fills the parent height */
-    padding: 0 5px; /* Add some horizontal padding */
+    padding: 0 3px; /* Reduced padding */
     box-sizing: border-box;
 }
 
 .current-weather .temp-high{
-    font-size: 1.1em;
+    font-size: 1em; /* Reduced font size */
     color: #e86e0a;
     text-align: center;
 }
 
 .current-weather .temp-low {
-    font-size: 1.1em;
+    font-size: 1em; /* Reduced font size */
     color: #0659a5;
     text-align: center;
 }
 
 .current-weather .temp-current {
-    font-size: 2.8em; /* Large current temperature */
+    font-size: 2.2em; /* Reduced font size */
     font-weight: bold;
     color: #ffffff;
     text-align: center;
@@ -178,7 +180,7 @@ html, body {
     display: flex; /* Nested flex container */
     justify-content: space-around;
     align-items: stretch; /* Make forecast days same height */
-    padding-left: 10px;
+    padding-left: 5px; /* Reduced padding */
     position: relative; /* Ensure it's layered correctly */
     background-color: transparent; /* Ensure transparency */
 }
@@ -189,7 +191,7 @@ html, body {
     display: flex; /* Use flex for title/content layout */
     flex-direction: column; /* Stack title and content vertically */
     align-items: stretch; /* Stretch children */
-    padding: 5px;
+    padding: 3px; /* Reduced padding */
     box-sizing: border-box;
 }
 
@@ -201,41 +203,42 @@ html, body {
     text-align: center;
     font-weight: bold;
     color: #ffffff;
-    padding-bottom: 5px;
+    padding-bottom: 3px; /* Reduced padding */
     flex-shrink: 0; /* Prevent title from shrinking */
     border-bottom: 1px solid rgba(255, 255, 255, 0.3); /* Optional separator */
-    margin-bottom: 5px; /* Space below title */
+    margin-bottom: 3px; /* Reduced margin */
+    font-size: 0.9em; /* Reduced font size */
 }
 
 .forecast-day .weather-icon-container {
-    font-size: 2.5em; /* Smaller icon for forecast */
+    font-size: 2em; /* Reduced icon size */
     /* Inherits flex-direction: column and alignment */
 }
 
 /* Adjust forecast sunrise/sunset font size relative to smaller icon */
 .forecast-day .sunrise-time,
 .forecast-day .sunset-time {
-    font-size: 0.5em; /* Slightly larger relative font size for forecast */
+    font-size: 0.4em; /* Reduced font size */
 }
 
 .forecast-day .temp-high{
-    font-size: 1.1em;
+    font-size: 1em; /* Reduced font size */
     color: #e86e0a;
     width: 100%; /* Ensure temps take full width of their container */
     text-align: center;
 }
 
 .forecast-day .temp-low {
-    font-size: 1.1em;
+    font-size: 1em; /* Reduced font size */
     color: #0659a5;
     width: 100%; /* Ensure temps take full width of their container */
     text-align: center;
 }
 
 .forecast-day .precip-chance {
-    font-size: 1.2em;
+    font-size: 1em; /* Reduced font size */
     color: #000000; 
-    margin: 3px 0;
+    margin: 2px 0; /* Reduced margin */
     width: 100%; /* Ensure precip takes full width of its container */
     text-align: center;
 }
@@ -256,9 +259,10 @@ html, body {
 
 #main-calendar-area h1 {
     text-align: center;
-    margin: 10px 0;
+    margin: 8px 0; /* Reduced margin */
     flex-shrink: 0; /* Prevent title from shrinking */
     flex-grow: 1; /* Allow title to take space */
+    font-size: 1.3em; /* Reduced font size */
 }
 
 /* New styles for header navigation */
@@ -266,17 +270,17 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between; /* Pushes arrows to sides */
-    padding: 0 20px; /* Add some padding */
-    margin-bottom: 10px; /* Space below header */
+    padding: 0 15px; /* Reduced padding */
+    margin-bottom: 8px; /* Reduced margin */
     backdrop-filter: blur(5px);
 }
 
 .nav-arrow {
-    font-size: 1.5em;
+    font-size: 1.3em; /* Reduced font size */
     font-weight: bold;
     text-decoration: none;
     color: #000; /* Bootstrap-like blue */
-    padding: 5px 10px;
+    padding: 3px 8px; /* Reduced padding */
     border-radius: 4px;
     transition: background-color 0.2s ease;
 }
@@ -289,7 +293,7 @@ html, body {
 .calendar-container {
     flex-grow: 1; /* Allow table container to fill remaining space */
     overflow: hidden; /* Prevent container overflow */
-    padding: 0 10px 10px 10px; /* Add some padding */
+    padding: 0 8px 8px 8px; /* Reduced padding */
     display: flex; /* Use flex to make table fill height */
 }
 
@@ -306,8 +310,9 @@ html, body {
 
 .calendar th {
     text-align: center;
-    padding: 8px;
+    padding: 5px; /* Reduced padding */
     background-color: rgba(101, 107, 113, 0.6);
+    font-size: 0.9em; /* Reduced font size */
 }
 
 .calendar td {
@@ -331,12 +336,13 @@ html, body {
 
 /* Day Cell Header (Number) */
 .day-header {
-    padding: 4px;
+    padding: 2px; /* Reduced padding */
     text-align: right;
     font-weight: bold;
     background-color: rgba(144, 165, 185, 0.8);
     border-bottom: 1px solid #eee;
     flex-shrink: 0; /* Prevent header from shrinking */
+    font-size: 0.9em; /* Reduced font size */
 }
 
 .other-month .day-header {
@@ -346,15 +352,15 @@ html, body {
 
 /* Events Area within Day Cell */
 .events {
-    padding: 4px;
+    padding: 2px; /* Reduced padding */
     flex-grow: 1; 
     overflow-y: auto; 
-    font-size: 0.8em;
+    font-size: 0.7em; /* Reduced font size */
 }
 
 .event {
-    margin-bottom: 3px;
-    padding: 2px 4px;
+    margin-bottom: 2px; /* Reduced margin */
+    padding: 1px 3px; /* Reduced padding */
     border-radius: 3px;
     white-space: nowrap;
     overflow: hidden;
@@ -363,12 +369,12 @@ html, body {
 
 .event-time {
     font-weight: bold;
-    margin-right: 5px;
+    margin-right: 3px; /* Reduced margin */
 }
 
 /* Daily View Container */
 .daily-view-container {
-    padding: 15px;
+    padding: 10px; /* Reduced padding */
     overflow-y: auto;
     flex: 1; 
     height: 100%; 
@@ -383,6 +389,8 @@ html, body {
 
 .daily-view-container h2 {
     margin-top: 0;
+    font-size: 1.1em; /* Reduced font size */
+    margin-bottom: 8px; /* Reduced margin */
 }
 
 /* Hide the bullet symbols from unordered lists */
@@ -391,8 +399,23 @@ html, body {
     padding-left: 0; /* Remove default padding */
 }
 
+/* Add styles for list items in daily view */
+.daily-view-container li {
+    font-size: 0.9em; /* Reduced font size */
+    margin-bottom: 8px; /* Reduced margin */
+    padding-left: 8px; /* Reduced padding */
+}
+
+.daily-view-container li strong {
+    font-size: 1em; /* Keep title slightly larger */
+}
+
+.daily-view-container li small {
+    font-size: 0.85em; /* Reduce note size */
+}
+
 .chores-list {
-    padding: 15px;
+    padding: 10px; /* Reduced padding */
     overflow-y: auto;
     flex: 2; 
     height: 100%; 
@@ -407,31 +430,35 @@ html, body {
 
 .chores-list h2 {
     margin-top: 0;
+    font-size: 1.1em; /* Reduced font size */
+    margin-bottom: 8px; /* Reduced margin */
 }
 
 /* Styling for grouped chores */
 .chores-list ul {
     list-style-type: none; 
     padding-left: 0; 
-    margin-top: 5px; 
+    margin-top: 3px; /* Reduced margin */
 }
 
 .chore-person-group {
-    margin-bottom: 15px; /* Space between people's chore lists */
+    margin-bottom: 10px; /* Reduced margin */
 }
 
 .chore-person-group h3 {
-    margin-bottom: 5px; /* Space between name and list */
+    margin-bottom: 3px; /* Reduced margin */
     border-radius: 5px; /* Rounded corners */
     background-color: rgba(144, 165, 185, 0.8); /* Light blue background */
-    padding: 3px;
+    padding: 2px; /* Reduced padding */
+    font-size: 1em; /* Reduced font size */
 }
 
 .chore-item {
-    padding: 3px 0; /* Add some vertical padding */
-    margin-bottom: 2px; /* Space between chores */
+    padding: 2px 0; /* Reduced padding */
+    margin-bottom: 1px; /* Reduced margin */
     position: relative; /* Needed for absolute positioning of pseudo-element if used */
-    padding-left: 20px; /* Make space for the custom marker */
+    padding-left: 15px; /* Reduced padding */
+    font-size: 0.9em; /* Reduced font size */
 }
 
 /* Add custom markers using ::before */
@@ -441,8 +468,8 @@ html, body {
     left: 0;
     top: 50%;
     transform: translateY(-50%);
-    margin-right: 8px;
-    font-size: 1em; /* Adjust size as needed */
+    margin-right: 5px; /* Reduced margin */
+    font-size: 0.9em; /* Reduced size */
 }
 
 /* Style completed chores */
