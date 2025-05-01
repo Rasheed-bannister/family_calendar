@@ -16,3 +16,5 @@ calendar.db
 slideshow.db
 src/static/photos/*
 .cache.sqlite
+
+.DS_Store

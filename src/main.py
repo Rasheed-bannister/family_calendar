@@ -1,20 +1,26 @@
 import datetime
 import calendar
 import threading
-import os
 from flask import Flask, render_template, redirect, url_for, jsonify, request
 
-from google_integration import api as google_api
-from google_integration import tasks_api  # <-- Import tasks_api
-from calendar_app import database as db
-from calendar_app import utils as calendar_utils
+from google_integration import (
+    api as calendar_api, 
+    tasks_api
+)
+
 from calendar_app.models import CalendarMonth
+from calendar_app import (
+    database as db,
+    utils as calendar_utils
+)
+
 from slideshow import database as slideshow_db
-from weather_integration.api import get_weather_data  # <-- Import weather function
-from weather_integration.utils import get_weather_icon # <-- Import the helper
+
+from weather_integration.api import get_weather_data  
+from weather_integration.utils import get_weather_icon
 
 app = Flask(__name__)
-app.jinja_env.globals.update(get_weather_icon=get_weather_icon) # <-- Register helper
+app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
 
 # Initialize the database if it doesn't exist
 calendar_utils.initialize_db()
@@ -23,17 +29,14 @@ calendar_utils.initialize_db()
 slideshow_db.init_db()
 slideshow_db.sync_photos(app.static_folder)
 
-# Global lock for Google API fetching
-google_fetch_lock = threading.Lock()
-# Dict to track background task status by month/year
-background_tasks = {}
-# Global variable to store the last known chores list
-last_known_chores = []
+google_fetch_lock = threading.Lock()    # Global lock for Google API fetching
+background_tasks = {}                   # Dict to track background task status by month/year
+last_known_chores = []                  # Global variable to store the last known chores list
 
 
 def fetch_google_events_background(month, year):
     """Fetches Google Calendar events and Tasks in a background thread and updates the local DB/cache."""
-    global last_known_chores  # Allow modification of the global variable
+    global last_known_chores 
     task_id = f"{month}.{year}"
 
     # Skip if a task is already running for this month/year
@@ -50,11 +53,11 @@ def fetch_google_events_background(month, year):
         # --- Fetch Calendar Events ---
         current_calendar_month = CalendarMonth(year=year, month=month)
         db.add_month(current_calendar_month)
-        processed_google_events_data = google_api.fetch_and_process_google_events(month, year)
+        processed_google_events_data = calendar_api.fetch_and_process_google_events(month, year)
 
         events_to_add_or_update = []
         calendars_changed = False
-        events_changed = False  # Initialize events_changed flag
+        events_changed = False 
 
         if processed_google_events_data:
             events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
@@ -67,29 +70,24 @@ def fetch_google_events_background(month, year):
             else:
                 events_changed = calendars_changed  # Only calendar info might have changed
         else:
-            print(f"No events fetched or processed for {month}/{year}.")
             events_changed = False  
 
         # --- Fetch Google Tasks (Chores) ---
-        print(f"Fetching Google Tasks (Chores) for background task {task_id}...")
         current_chores = tasks_api.get_chores()
         chores_changed = False
         with google_fetch_lock:  # Protect access to last_known_chores
             # Convert to sets for order-independent comparison
-            # Assumes chores are hashable (e.g., strings, tuples, or objects implementing __hash__ and __eq__)
             # If chores are dicts, a more complex conversion might be needed (e.g., set(tuple(sorted(d.items())) for d in chores))
             try:
                 last_known_set = set(last_known_chores)
                 current_set = set(current_chores)
             except TypeError:
                  # Fallback for unhashable types (e.g., lists or dicts) - sort and compare strings
-                 print("Warning: Chores list contains unhashable items. Comparing sorted string representations.")
                  last_known_set = str(sorted(str(item) for item in last_known_chores))
                  current_set = str(sorted(str(item) for item in current_chores))
 
 
             if current_set != last_known_set:
-                print(f"Chores list changed. Old: {len(last_known_chores)} items, New: {len(current_chores)} items.")
                 last_known_chores = current_chores  # Update the global list
                 chores_changed = True
             else:
@@ -370,12 +368,10 @@ def check_updates(year, month):
                 current_set = set(current_chores)
             except TypeError:
                  # Fallback for unhashable types
-                 print("Warning (check-updates): Chores list contains unhashable items. Comparing sorted string representations.")
                  last_known_set = str(sorted(str(item) for item in last_known_chores))
                  current_set = str(sorted(str(item) for item in current_chores))
 
             if current_set != last_known_set:
-                print(f"Chore changes detected by check-updates. Old: {len(last_known_chores)}, New: {len(current_chores)}")
                 last_known_chores = current_chores # Update the global list
                 chore_updates_available = True
             else:
@@ -383,13 +379,9 @@ def check_updates(year, month):
 
     except Exception as e:
         print(f"Error fetching chores during update check: {e}")
-        # Decide if you want to trigger an update on error or just log it
-        # chore_updates_available = False # Keep it false on error for now
 
     # 3. Combine results and respond
     updates_available = event_updates_available or chore_updates_available
-    
-    print(f"Update check result for {month}/{year}: Events={event_updates_available}, Chores={chore_updates_available}, Overall={updates_available}")
 
     return jsonify({
         "status": task_status, # Still useful to know background task state
@@ -405,14 +397,13 @@ def weather_update():
         import os
         if os.path.exists('.cache'):
             os.remove('.cache')
-            print("Removed weather cache file")
         
         # Get fresh weather data
         weather_data = get_weather_data()
         
         if weather_data and weather_data.get('current') and weather_data.get('daily'):
             # Return just the weather portion as a fragment
-            return render_template('weather_fragment.html', weather=weather_data)
+            return render_template('components/weather.html', weather=weather_data)
         else:
             return jsonify({"error": "Could not fetch weather data"}), 500
     except Exception as e:
@@ -421,7 +412,5 @@ def weather_update():
 
 
 if __name__ == '__main__':
-    print("Performing initial chore fetch on startup...")
     last_known_chores = tasks_api.get_chores()
-    print(f"Initial chores fetched: {len(last_known_chores)} items")
     app.run(host='0.0.0.0', port=5000, debug=True)
