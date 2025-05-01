@@ -1,0 +1,338 @@
+/**
+ * Calendar Component
+ * Handles display and interactions with the calendar
+ */
+import Modal from './modal.js';
+import DailyView from './dailyView.js';
+
+const Calendar = (function() {
+    // Private variables
+    let calendar;
+    let today;
+    let currentDay;
+    let currentMonth;
+    let currentYear;
+    let todayCell;
+    let selectedCell = null;
+    let inactivityTimer = null;
+    let monthInactivityTimer = null;
+    const INACTIVITY_TIMEOUT = 60 * 1000; // 1 minute
+    const MONTH_INACTIVITY_TIMEOUT = 300 * 1000; // 5 minutes for month navigation
+    let currentDisplayedMonth;
+    let currentDisplayedYear;
+    
+    // Google Calendar update checking
+    let googleUpdateTimer = null;
+    const UPDATE_CHECK_INTERVAL = 300000; // Check every 5 minutes (300000ms)
+    const INITIAL_CHECK_INTERVAL = 1000; // Check every 1 second initially until task completes
+    let updateCheckEnabled = true; // Control flag
+    let initialLoadComplete = false; // Flag to track whether we've completed initial load
+    let inDebounce = false; // Debounce flag
+    
+    // Private methods
+    function highlightToday() {
+        if (todayCell) {
+            // Ensure 'today' class isn't removed if it's also selected
+            if (!todayCell.classList.contains('selected')) {
+                todayCell.classList.add('today');
+            }
+        }
+    }
+
+    function removeHighlight(cell) {
+        if (cell) {
+            cell.classList.remove('today'); 
+            cell.classList.remove('selected'); 
+        }
+    }
+
+    function resetToToday() {
+        console.log("Inactivity timeout reached. Reverting to today.");
+        if (selectedCell) {
+            removeHighlight(selectedCell); 
+            selectedCell = null;
+        }
+        highlightToday(); 
+        DailyView.reset();
+        clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+    }
+
+    function startInactivityTimer() {
+        clearTimeout(inactivityTimer); 
+        inactivityTimer = setTimeout(resetToToday, INACTIVITY_TIMEOUT);
+    }
+
+    function isCurrentMonthDisplayed() {
+        return (currentDisplayedMonth === currentMonth && currentDisplayedYear === currentYear);
+    }
+
+    function resetToCurrentMonth() {
+        if (!isCurrentMonthDisplayed()) {
+            // Only navigate if we're not already on the current month
+            window.location.href = `/calendar/${currentYear}/${currentMonth}`;
+        }
+    }
+
+    function startMonthInactivityTimer() {
+        clearTimeout(monthInactivityTimer); 
+        
+        // Only start the timer if we're not on the current month
+        if (!isCurrentMonthDisplayed()) {
+            console.log(`Starting month inactivity timer (${MONTH_INACTIVITY_TIMEOUT / 1000}s)`);
+            monthInactivityTimer = setTimeout(resetToCurrentMonth, MONTH_INACTIVITY_TIMEOUT);
+        }
+    }
+
+    function checkForGoogleUpdates() {
+        if (!updateCheckEnabled) return;
+        
+        fetch(`/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
+            .then(response => response.json())
+            .then(data => {
+                // Handle first load differently from regular checks
+                if (!initialLoadComplete) {
+                    // If the task is complete, switch to regular interval
+                    if (data.status === 'complete') {
+                        clearInterval(googleUpdateTimer);
+                        googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+                        initialLoadComplete = true;
+                        
+                        // If updates were found during initial load, refresh the page
+                        if (data.updates_available) {
+                            refreshPage();
+                        }
+                    }
+                } else {
+                    // Only refresh during regular checks if updates are available AND we're not in a debounce period
+                    if (data.updates_available && !inDebounce) {
+                        refreshPage();
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("Error checking for Google Calendar updates:", err);
+            });
+    }
+
+    function refreshPage() {
+        showUpdateNotification();
+
+        updateCheckEnabled = false;
+        
+        // Use a more reliable reload method
+        setTimeout(() => {
+            // Add cache busting parameter to prevent browser caching
+            const cacheBuster = new Date().getTime();
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('_', cacheBuster);
+            window.location.href = currentUrl.toString();
+        }, 1500);
+    }
+
+    function startGoogleUpdateTimer() {
+        if (googleUpdateTimer) {
+            clearInterval(googleUpdateTimer);
+        }
+        
+        // Start with frequent checks until initial load completes
+        googleUpdateTimer = setInterval(checkForGoogleUpdates, INITIAL_CHECK_INTERVAL);
+        console.log(`Started initial Google Calendar update checker (checking every ${INITIAL_CHECK_INTERVAL/1000}s)`);
+        
+        // Do an immediate first check
+        checkForGoogleUpdates();
+    }
+
+    function showUpdateNotification() {
+        // Create a notification element
+        const notification = document.createElement('div');
+        notification.classList.add('update-notification');
+        notification.textContent = 'New calendar events found! Refreshing...';
+        
+        Object.assign(notification.style, {
+            position: 'fixed',
+            top: '10px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            padding: '10px 20px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            zIndex: '1000',
+            transition: 'opacity 0.3s ease'
+        });
+        
+        document.body.appendChild(notification);
+        
+        // Remove after the page refreshes or 3 seconds (whichever comes first)
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (document.body.contains(notification)) {
+                    document.body.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    function setupEventListeners() {
+        if (!calendar) return;
+        
+        calendar.addEventListener('click', function(event) {
+            // Reset both inactivity timers on any calendar interaction
+            startInactivityTimer();
+            startMonthInactivityTimer();
+
+            // Check if the click was on an event element
+            const clickedEvent = event.target.closest('.event');
+            if (clickedEvent) {
+                console.log("Clicked on calendar event:", clickedEvent.dataset.title);
+                const eventData = { ...clickedEvent.dataset }; // Clone dataset
+                Modal.show(eventData);
+                return; // Stop further processing for this click
+            }
+
+            // Find the closest parent TD element that has a data-day attribute
+            const clickedCell = event.target.closest('td[data-day]');
+
+            // Ensure we clicked a valid cell within the current month
+            if (!clickedCell || !clickedCell.classList.contains('current-month')) {
+                console.log("Click ignored: Not a valid current-month day cell.");
+                return; // Ignore clicks outside valid day cells or on other-month cells
+            }
+
+            console.log("Clicked cell:", clickedCell.dataset.year, clickedCell.dataset.month, clickedCell.dataset.day);
+            startInactivityTimer(); // Reset timer on interaction
+
+            // If clicking the already selected cell, do nothing extra
+            if (clickedCell === selectedCell) {
+                console.log("Clicked the already selected cell.");
+                return;
+            }
+
+            // Remove highlights from previous selection AND today (if it's not the clicked cell)
+            if (selectedCell) {
+                removeHighlight(selectedCell);
+                console.log("Removed highlight from previously selected:", selectedCell);
+            }
+             // Only remove today's highlight if it's not the cell being clicked
+            if (todayCell && todayCell !== clickedCell) {
+                 removeHighlight(todayCell);
+                 console.log("Removed highlight from today cell.");
+            }
+
+            // Highlight the new cell and update selection state
+            clickedCell.classList.add('selected');
+            selectedCell = clickedCell;
+            console.log("Highlighted new cell:", selectedCell);
+
+            // Render events for the clicked day
+            DailyView.renderEvents(clickedCell);
+        });
+        
+        // Also reset the month timer when clicking month navigation links
+        const navArrows = document.querySelectorAll('.nav-arrow');
+        if (navArrows.length) {
+            navArrows.forEach(arrow => {
+                arrow.addEventListener('click', function() {
+                    // When navigating months, don't immediately start the timer
+                    // It will be started on the new page load
+                    clearTimeout(monthInactivityTimer);
+                });
+            });
+        }
+        
+        // Reset month timer when user interacts with the page
+        document.addEventListener('click', function() {
+            startMonthInactivityTimer();
+        });
+
+        document.addEventListener('keydown', function() {
+            startMonthInactivityTimer();
+        });
+        
+        // Handle page visibility changes to manage update checks
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                // Page is hidden, pause update checks
+                updateCheckEnabled = false;
+                if (googleUpdateTimer) {
+                    clearInterval(googleUpdateTimer);
+                    googleUpdateTimer = null;
+                }
+                console.log("Page hidden, paused calendar update checks");
+            } else {
+                // Page is visible again, resume update checks
+                updateCheckEnabled = true;
+                // Reset initial load status to check immediately
+                initialLoadComplete = false;
+                startGoogleUpdateTimer();
+                console.log("Page visible, resumed calendar update checks");
+            }
+        });
+    }
+
+    // Public methods
+    return {
+        init: function() {
+            calendar = document.querySelector('.calendar');
+            if (!calendar) {
+                console.error("Calendar component: Calendar element not found!");
+                return false;
+            }
+            
+            today = new Date();
+            currentDay = today.getDate();
+            currentMonth = today.getMonth() + 1; // JS months are 0-indexed
+            currentYear = today.getFullYear();
+            
+            const todayCellSelector = `.calendar td[data-year="${currentYear}"][data-month="${currentMonth}"][data-day="${currentDay}"]`;
+            todayCell = document.querySelector(todayCellSelector);
+            
+            currentDisplayedMonth = parseInt(calendar.dataset.month || currentMonth);
+            currentDisplayedYear = parseInt(calendar.dataset.year || currentYear);
+            
+            // Add data attributes to the calendar for the current displayed month/year if missing
+            if (calendar) {
+                if (!calendar.dataset.month) calendar.dataset.month = currentDisplayedMonth;
+                if (!calendar.dataset.year) calendar.dataset.year = currentDisplayedYear;
+            }
+            
+            setupEventListeners();
+            highlightToday(); // Highlight today on load
+            startGoogleUpdateTimer(); // Start checking for Google updates
+            startMonthInactivityTimer(); // Start the month inactivity timer
+            
+            return true;
+        },
+        
+        pause: function() {
+            updateCheckEnabled = false;
+            if (googleUpdateTimer) {
+                clearInterval(googleUpdateTimer);
+                googleUpdateTimer = null;
+            }
+        },
+        
+        resume: function() {
+            updateCheckEnabled = true;
+            initialLoadComplete = false;
+            startGoogleUpdateTimer();
+        },
+        
+        getTodayCell: function() {
+            return todayCell;
+        },
+        
+        getCurrentDate: function() {
+            return {
+                day: currentDay,
+                month: currentMonth,
+                year: currentYear
+            };
+        }
+    };
+})();
+
+export default Calendar;

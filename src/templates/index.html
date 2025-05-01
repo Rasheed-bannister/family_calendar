@@ -50,7 +50,8 @@
     </div>
     {% endblock %}
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <!-- Load the new modular JavaScript instead of the old script.js -->
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

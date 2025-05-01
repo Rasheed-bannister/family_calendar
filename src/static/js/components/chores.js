@@ -1,0 +1,69 @@
+/**
+ * Chores Component
+ * Handles the display and interactions with the chores section
+ */
+const Chores = (function() {
+    // Private variables
+    let choresContainer;
+    
+    // Private methods
+    function setupEventListeners() {
+        if (!choresContainer) return;
+        
+        // Add event listeners for chore interactions, if any
+        choresContainer.addEventListener('click', function(event) {
+            const choreItem = event.target.closest('.chore-item');
+            if (choreItem) {
+                // If we implement toggling of chore completion status, it would go here
+                console.log("Clicked on chore:", choreItem.textContent.trim());
+            }
+        });
+    }
+    
+    function updateChoresList() {
+        // This function would be used to refresh chores list via AJAX
+        console.log("Updating chores list...");
+        fetch('/api/chores/list')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(html => {
+                // Replace the chores container with new HTML
+                if (choresContainer) {
+                    choresContainer.outerHTML = html;
+                    // Re-get the container since we just replaced it
+                    choresContainer = document.querySelector('.chores-list');
+                    // Re-setup event listeners on the new elements
+                    setupEventListeners();
+                    console.log("Chores list updated successfully");
+                }
+            })
+            .catch(error => {
+                console.error("Error updating chores list:", error);
+            });
+    }
+
+    // Public methods
+    return {
+        init: function() {
+            choresContainer = document.querySelector('.chores-list');
+            if (!choresContainer) {
+                console.error("Chores component: chores-list element not found!");
+                return false;
+            }
+            
+            setupEventListeners();
+            
+            return true;
+        },
+        
+        refresh: function() {
+            updateChoresList();
+        }
+    };
+})();
+
+export default Chores;
