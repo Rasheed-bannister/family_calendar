@@ -253,7 +253,6 @@ def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
 
     return events
 
-@db_connection
 def get_next_color(cursor) -> str:
     """Gets the next default color from the database and increments the index."""
     # Get current index and total number of colors

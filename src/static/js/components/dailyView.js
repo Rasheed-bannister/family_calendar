@@ -7,7 +7,8 @@ import Modal from './modal.js';
 const DailyView = (function() {
     // Private variables
     let dailyViewContainer;
-    let initialDailyViewHTML;
+    let initialDailyViewHTML; // Keep this to potentially reset later if needed
+    let placeholderHTML = `<h2>Select a day</h2><p>Click on a day in the calendar to see its events.</p>`; // Define placeholder
     let updateTimer = null;
     const UPDATE_INTERVAL = 300000; // 5 minutes in milliseconds
     
@@ -78,10 +79,17 @@ const DailyView = (function() {
                 return false;
             }
             
-            initialDailyViewHTML = dailyViewContainer.innerHTML;
+            // Store the initial HTML (which might be today's events from server)
+            initialDailyViewHTML = dailyViewContainer.innerHTML; 
             setupEventListeners();
             
             return true;
+        },
+
+        resetToPlaceholder: function() {
+            if (dailyViewContainer) {
+                dailyViewContainer.innerHTML = placeholderHTML;
+            }
         },
         
         renderEvents: function(dayCell) {
@@ -132,8 +140,11 @@ const DailyView = (function() {
         },
         
         reset: function() {
+            // Reset to the initial HTML captured when the component was initialized.
+            // This should be the server-rendered content (e.g., Today's Events).
             if (dailyViewContainer && initialDailyViewHTML) {
                 dailyViewContainer.innerHTML = initialDailyViewHTML;
+                console.log("DailyView reset to initial server-rendered content.");
             }
         },
         

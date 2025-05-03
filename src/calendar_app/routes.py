@@ -1,7 +1,7 @@
 import datetime
 import calendar
 import threading
-from flask import Blueprint, render_template, redirect, url_for, jsonify, current_app
+from flask import Blueprint, render_template, jsonify, current_app
 
 from .models import CalendarMonth
 from . import (

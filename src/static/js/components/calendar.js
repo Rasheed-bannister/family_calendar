@@ -32,28 +32,36 @@ const Calendar = (function() {
     // Private methods
     function highlightToday() {
         if (todayCell) {
-            // Ensure 'today' class isn't removed if it's also selected
-            if (!todayCell.classList.contains('selected')) {
-                todayCell.classList.add('today');
-            }
+            todayCell.classList.add('today');
         }
     }
 
     function removeHighlight(cell) {
+        // Only remove 'selected', keep 'today' if present
         if (cell) {
-            cell.classList.remove('today'); 
-            cell.classList.remove('selected'); 
+            cell.classList.remove('selected');
         }
     }
 
     function resetToToday() {
         console.log("Inactivity timeout reached. Reverting to today.");
-        if (selectedCell) {
-            removeHighlight(selectedCell); 
-            selectedCell = null;
+        // No need to manually remove highlight here, the click handler will manage it.
+        
+        if (todayCell) {
+            // Simulate a click on today's cell to reset state and view
+            todayCell.click(); 
+            console.log("Triggered click on today's cell to reset.");
+        } else {
+            // If today is not visible (different month), reset to placeholder
+            // Also clear selection state if something else was selected
+            if (selectedCell) {
+                removeHighlight(selectedCell);
+                selectedCell = null;
+            }
+            DailyView.resetToPlaceholder();
+            console.log("Reset view to placeholder as today is not visible.");
         }
-        highlightToday(); 
-        DailyView.reset();
+
         clearTimeout(inactivityTimer);
         inactivityTimer = null;
     }
@@ -226,26 +234,17 @@ const Calendar = (function() {
             }
 
             console.log("Clicked cell:", clickedCell.dataset.year, clickedCell.dataset.month, clickedCell.dataset.day);
-            startInactivityTimer(); // Reset timer on interaction
+            // No need to reset inactivity timer here, already done at the start
 
-            // If clicking the already selected cell, do nothing extra
-            if (clickedCell === selectedCell) {
-                console.log("Clicked the already selected cell.");
-                return;
+            // Remove selected class from the previous selection
+            if (selectedCell && selectedCell !== clickedCell) {
+                removeHighlight(selectedCell); // Now only removes 'selected'
+                console.log("Removed selected highlight from previously selected:", selectedCell);
             }
-
-            // Remove highlights from previous selection AND today (if it's not the clicked cell)
-            if (selectedCell) {
-                removeHighlight(selectedCell);
-                console.log("Removed highlight from previously selected:", selectedCell);
-            }
-             // Only remove today's highlight if it's not the cell being clicked
-            if (todayCell && todayCell !== clickedCell) {
-                 removeHighlight(todayCell);
-                 console.log("Removed highlight from today cell.");
-            }
-
+            
             // Highlight the new cell and update selection state
+            // Ensure 'today' class is preserved if clicking today
+            highlightToday(); // Re-apply today class just in case
             clickedCell.classList.add('selected');
             selectedCell = clickedCell;
             console.log("Highlighted new cell:", selectedCell);
@@ -322,8 +321,25 @@ const Calendar = (function() {
                 if (!calendar.dataset.year) calendar.dataset.year = currentDisplayedYear;
             }
             
+            // Initialize DailyView first to capture initial HTML
+            DailyView.init();
+
+            // Setup listeners before triggering the initial click
             setupEventListeners();
-            highlightToday(); // Highlight today on load
+            
+            // Apply base 'today' styling
+            highlightToday(); 
+
+            // Simulate a click on today's cell if it exists on the current view
+            if (todayCell) {
+                console.log("Triggering initial click on today's cell.");
+                todayCell.click(); // This will handle selection and rendering via the click listener
+            } else {
+                 // If today is not on this month view, clear the daily view initially.
+                 DailyView.resetToPlaceholder(); 
+                 console.log("Today not visible, reset daily view to placeholder.");
+            }
+            
             startGoogleUpdateTimer(); // Start checking for Google updates
             startMonthInactivityTimer(); // Start the month inactivity timer
             
