@@ -7,11 +7,11 @@ DATABASE_FILE = Path(__file__).parent / "calendar.db"
 
 # Default colors list
 DEFAULT_COLORS = [
-    "#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#A133FF",
-    "#FFC300", "#DAF7A6", "#581845", "#900C3F", "#C70039"
+    "#3D5A80", "#8336E7", "#616042", "#CD3813", "#293241",
+    "#9D4348", "#088745", "#68710A", "#A84710", "#EE1B49"
 ]
 
-# create a decorator to wrap database functions in a connection and close after use
+# create a decorator to wrap database functions in a connection and close aft er use
 def db_connection(func):
     def wrapper(*args, **kwargs):
         conn = sqlite3.connect(DATABASE_FILE)

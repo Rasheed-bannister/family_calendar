@@ -8,7 +8,7 @@ const Weather = (function() {
     let weatherUpdateTimer = null;
     let timeUpdateTimer = null;
     const WEATHER_UPDATE_INTERVAL = 300000; // Check for weather updates every 5 minutes (300000ms)
-    const TIME_UPDATE_INTERVAL = 5000; // Update time display every 5 seconds (5000ms)
+    const TIME_UPDATE_INTERVAL = 60000; // Update time display every 60 seconds (60000ms)
     let lastWeatherUpdate = new Date().getTime();
     
     // Private methods
@@ -32,7 +32,7 @@ const Weather = (function() {
         // Update time immediately
         updateTimeDisplay();
         
-        // Set interval to update time every 5 seconds
+        // Set interval to update time every 60 seconds
         timeUpdateTimer = setInterval(updateTimeDisplay, TIME_UPDATE_INTERVAL);
         console.log(`Started time update timer (updating every ${TIME_UPDATE_INTERVAL/1000} seconds)`);
     }
