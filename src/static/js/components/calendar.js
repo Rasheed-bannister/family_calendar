@@ -87,7 +87,7 @@ const Calendar = (function() {
     function checkForGoogleUpdates() {
         if (!updateCheckEnabled) return;
 
-        fetch(`/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
+        fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
             .then(response => {
                 if (!response.ok) {
                     // Handle HTTP errors like 404, 500 etc.

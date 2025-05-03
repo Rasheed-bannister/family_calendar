@@ -1,9 +1,9 @@
 {% block calendar_content %}
 <div id="main-calendar-area">
     <div class="calendar-header-nav">
-        <a href="{{ url_for('calendar_view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
+        <a href="{{ url_for('calendar.view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
         <h1>Bannister Family - {{ month_name }} {{ year }}</h1>
-        <a href="{{ url_for('calendar_view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
+        <a href="{{ url_for('calendar.view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
     </div>
     <div class="calendar-container">
         <table class="calendar" data-month="{{ month_number }}" data-year="{{ year }}">
