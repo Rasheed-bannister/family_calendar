@@ -4,7 +4,6 @@ from flask import Flask, redirect, url_for
 
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
-from src.google_integration.tasks_api import get_chores
 
 # Shared resources across components
 google_fetch_lock = threading.Lock()    # Global lock for Google API fetching
@@ -34,8 +33,12 @@ def create_app():
     app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
     
     # Initialize database for calendar
-    from src.calendar_app.utils import initialize_db
-    initialize_db()
+    from src.calendar_app.utils import initialize_db as initialize_calendar_db
+    initialize_calendar_db()
+
+    # Initialize database for chores
+    from src.chores_app.utils import initialize_db as initialize_chores_db
+    initialize_chores_db()
     
     # Initialize and sync the slideshow database
     from src.slideshow import database as slideshow_db
@@ -46,10 +49,13 @@ def create_app():
     from src.calendar_app.routes import calendar_bp
     from src.slideshow.routes import slideshow_bp
     from src.weather_integration.routes import weather_bp
-    
+    from src.chores_app.routes import chores_bp
+    from src.google_integration.routes import google_bp
     app.register_blueprint(calendar_bp)
     app.register_blueprint(slideshow_bp)
     app.register_blueprint(weather_bp)
+    app.register_blueprint(chores_bp)
+    app.register_blueprint(google_bp)
     
     @app.route('/')
     def index_redirect():
@@ -63,6 +69,7 @@ def create_app():
 if __name__ == '__main__':
     # Initialize the global last_known_chores before creating the app
     # Can't use global in the top level of a module
+    from src.google_integration.tasks_api import get_chores
     last_known_chores = get_chores()
     
     app = create_app()

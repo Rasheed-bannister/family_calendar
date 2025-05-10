@@ -28,6 +28,8 @@ const Calendar = (function() {
     let updateCheckEnabled = true; // Control flag
     let initialLoadComplete = false; // Flag to track whether we've completed initial load
     let inDebounce = false; // Debounce flag
+    let initialLoadTimeout = null; // Timeout to force refresh if initial load takes too long
+    const INITIAL_LOAD_TIMEOUT = 15000; // Force refresh after 15 seconds if no update received
     
     // Private methods
     function highlightToday() {
@@ -98,22 +100,33 @@ const Calendar = (function() {
         fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
             .then(response => {
                 if (!response.ok) {
-                    // Handle HTTP errors like 404, 500 etc.
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 return response.json();
             })
             .then(data => {
+                console.log("Update check response:", data);
+                
                 // Handle first load differently from regular checks
                 if (!initialLoadComplete) {
-                    // If the task is complete, switch to regular interval
-                    if (data.status === 'complete') {
+                    // If there are no calendar cells with events, we need to wait for data
+                    const hasCalendarEvents = document.querySelectorAll('.calendar .event').length > 0;
+                    
+                    if (data.calendar_status === 'complete') {
+                        // Clear any pending initial load timeout
+                        if (initialLoadTimeout) {
+                            clearTimeout(initialLoadTimeout);
+                            initialLoadTimeout = null;
+                        }
+                        
+                        // Switch to regular interval - we're done with initial loading
                         clearInterval(googleUpdateTimer);
                         googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
                         initialLoadComplete = true;
                         
-                        // If updates were found during initial load, refresh the page
-                        if (data.updates_available) {
+                        // If updates were found or the page has no events yet but the fetch is complete,
+                        // refresh the page to show the newly loaded events
+                        if (data.events_changed || (!hasCalendarEvents && data.calendar_status === 'complete')) {
                             refreshPage();
                         }
                     }
@@ -127,19 +140,14 @@ const Calendar = (function() {
             .catch(err => {
                 // Log different messages based on the error type
                 if (err instanceof TypeError && err.message === 'Failed to fetch') {
-                    // This is often a network/connection error
-                    console.error("Error checking for Google Calendar updates: Could not connect to the server (ERR_CONNECTION_REFUSED or similar). Is the Flask server running?");
-                    // Optionally, you could try to disable further checks or implement a retry
-                    // updateCheckEnabled = false; // Stop checking if connection fails
+                    console.error("Error checking for Google Calendar updates: Could not connect to the server. Is the Flask server running?");
                 } else {
-                    // Other errors (e.g., JSON parsing, HTTP errors)
                     console.error("Error checking for Google Calendar updates:", err);
                 }
+                
                 // Stop the rapid initial checks if an error occurs
                 if (!initialLoadComplete) {
                     clearInterval(googleUpdateTimer);
-                    // Optionally switch to the slower interval even on error, or stop completely
-                    // googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
                     console.warn("Stopping rapid initial update checks due to error.");
                     initialLoadComplete = true; // Mark initial phase as done (even if failed)
                 }
@@ -148,7 +156,6 @@ const Calendar = (function() {
 
     function refreshPage() {
         showUpdateNotification();
-
         updateCheckEnabled = false;
         
         // Use a more reliable reload method
@@ -170,6 +177,18 @@ const Calendar = (function() {
         googleUpdateTimer = setInterval(checkForGoogleUpdates, INITIAL_CHECK_INTERVAL);
         console.log(`Started initial Google Calendar update checker (checking every ${INITIAL_CHECK_INTERVAL/1000}s)`);
         
+        // Set timeout to force refresh if initial load takes too long
+        if (initialLoadTimeout) {
+            clearTimeout(initialLoadTimeout);
+        }
+        
+        initialLoadTimeout = setTimeout(() => {
+            console.log("Initial load timeout reached, forcing refresh");
+            if (!initialLoadComplete) {
+                refreshPage();
+            }
+        }, INITIAL_LOAD_TIMEOUT);
+        
         // Do an immediate first check
         checkForGoogleUpdates();
     }
@@ -178,7 +197,7 @@ const Calendar = (function() {
         // Create a notification element
         const notification = document.createElement('div');
         notification.classList.add('update-notification');
-        notification.textContent = 'New calendar events found! Refreshing...';
+        notification.textContent = 'Calendar events loading... Please wait.';
         
         Object.assign(notification.style, {
             position: 'fixed',
@@ -340,6 +359,16 @@ const Calendar = (function() {
                  console.log("Today not visible, reset daily view to placeholder.");
             }
             
+            // Check if we're viewing a different month than the current one
+            const isCurrentMonth = currentDisplayedMonth === currentMonth && currentDisplayedYear === currentYear;
+            
+            // Always ensure we have events loaded when navigating to a different month
+            const hasEvents = document.querySelectorAll('.calendar .event').length > 0;
+            if (!isCurrentMonth && !hasEvents) {
+                console.log("Navigated to a new month with no events yet, ensuring data loads");
+                initialLoadComplete = false; // Force initial load behavior
+            }
+            
             startGoogleUpdateTimer(); // Start checking for Google updates
             startMonthInactivityTimer(); // Start the month inactivity timer
             
@@ -351,6 +380,10 @@ const Calendar = (function() {
             if (googleUpdateTimer) {
                 clearInterval(googleUpdateTimer);
                 googleUpdateTimer = null;
+            }
+            if (initialLoadTimeout) {
+                clearTimeout(initialLoadTimeout);
+                initialLoadTimeout = null;
             }
         },
         

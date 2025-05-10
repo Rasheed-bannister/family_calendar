@@ -109,7 +109,7 @@ def create_all():
 def add_calendar(cursor, calendar: Calendar): 
     """Adds or replaces a Calendar in the database."""
     if calendar.color is None:
-        calendar.color = get_next_color()
+        calendar.color = get_next_color(cursor)
 
     cursor.execute('''
         INSERT OR REPLACE INTO Calendar (calendar_id, name, color)
@@ -251,6 +251,65 @@ def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
         }
         events.append(event)
 
+    return events
+
+@db_connection
+def get_all_events_for_month_range(cursor, year: int, month: int) -> list[dict]:
+    """
+    Retrieves all events that overlap with the specified month.
+    This includes events that:
+    1. Start in the current month
+    2. End in the current month
+    3. Span across the current month (start before and end after)
+    """
+    # Calculate the date range for the month
+    from calendar import monthrange
+    month_start = f"{year}-{month:02d}-01T00:00:00+00:00"
+    _, last_day = monthrange(year, month)
+    month_end = f"{year}-{month:02d}-{last_day}T23:59:59+00:00"
+    
+    # Query events that overlap with this month
+    cursor.execute('''
+        SELECT distinct
+            ev.id,
+            ev.title,
+            ev.start_datetime,
+            ev.end_datetime,
+            ev.all_day,
+            ev.location,
+            ev.description,
+            cal.name,
+            cal.color
+        FROM CalendarEvent ev
+        LEFT JOIN Calendar cal ON ev.calendar_id = cal.calendar_id
+        WHERE 
+            -- Event starts during this month
+            (ev.start_datetime >= ? AND ev.start_datetime <= ?)
+            OR
+            -- Event ends during this month
+            (ev.end_datetime >= ? AND ev.end_datetime <= ?)
+            OR
+            -- Event spans across this month (starts before, ends after)
+            (ev.start_datetime <= ? AND ev.end_datetime >= ?)
+        ORDER BY ev.start_datetime
+    ''', (month_start, month_end, month_start, month_end, month_start, month_end))
+    
+    rows = cursor.fetchall()
+    events = []
+    for row in rows:
+        event = {
+            'google_event_id': row[0],
+            'title': row[1],
+            'start_datetime': datetime.datetime.fromisoformat(row[2]),
+            'end_datetime': datetime.datetime.fromisoformat(row[3]),
+            'all_day': bool(row[4]),
+            'location': row[5],
+            'description': row[6],
+            'calendar_name': row[7] if row[7] else "Unknown Calendar",
+            'calendar_color': row[8] if row[8] else "#808080",
+        }
+        events.append(event)
+        
     return events
 
 def get_next_color(cursor) -> str:

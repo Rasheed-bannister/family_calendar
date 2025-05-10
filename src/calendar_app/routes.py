@@ -9,10 +9,8 @@ from . import (
     utils as calendar_utils
 )
 
-from src.google_integration import (
-    api as calendar_api,
-    tasks_api
-)
+# Now only importing the calendar API
+from src.google_integration import api as calendar_api
 
 # Shared resources
 from src.main import google_fetch_lock, background_tasks, last_known_chores
@@ -34,11 +32,32 @@ def _filter_events_for_day(events, target_date):
         start_date = start_dt.date()
         end_date = end_dt.date()
 
+        # Handle events ending exactly at midnight (00:00) of the end day
+        is_midnight_end = end_dt.hour == 0 and end_dt.minute == 0 and end_dt.second == 0
+        
+        # If event ends exactly at midnight, include it on the previous day
+        adjusted_end_date = end_date
+        if is_midnight_end:
+            adjusted_end_date = end_date
+
         is_relevant = False
-        if start_date <= target_date < end_date:
-            is_relevant = True
-        elif start_date == target_date and start_date == end_date:
-            is_relevant = True
+        
+        # Case 1: For single-day events (start and end on same day)
+        if start_date == end_date:
+            is_relevant = (target_date == start_date)
+            
+        # Case 2: For multi-day events
+        else:
+            # Check if the target date falls within the event's range
+            # The end date is inclusive now
+            if start_date <= target_date <= end_date:
+                # Special case for midnight endings
+                if target_date == end_date and is_midnight_end and start_date != end_date:
+                    # Don't show events that end at 00:00 on their end date
+                    # (unless it's a same-day event)
+                    is_relevant = False
+                else:
+                    is_relevant = True
 
         if is_relevant:
             day_events.append(event)
@@ -81,7 +100,8 @@ def view(year=None, month=None):
     current_calendar_month = CalendarMonth(year=current_year, month=current_month)
     db.add_month(current_calendar_month)
 
-    task_id = f"{current_month}.{current_year}"
+    # Only fetch calendar events, not tasks
+    task_id = f"calendar.{current_month}.{current_year}"
     start_background_task = False
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
@@ -97,7 +117,25 @@ def view(year=None, month=None):
         google_thread.daemon = True
         google_thread.start()
 
-    db_events = db.get_all_events(current_calendar_month)
+    # Start a separate background task for chores/tasks if not already running
+    chores_task_id = "tasks"
+    start_chores_background_task = False
+    with google_fetch_lock:
+        chores_task_info = background_tasks.get(chores_task_id)
+        if not chores_task_info or chores_task_info['status'] not in ['running', 'complete']:
+            start_chores_background_task = True
+
+    if start_chores_background_task:
+        from src.google_integration.routes import fetch_google_tasks_background
+        chores_thread = threading.Thread(
+            target=fetch_google_tasks_background
+        )
+        chores_thread.daemon = True
+        chores_thread.start()
+
+    # Use the new function to get all events that overlap with this month
+    # This ensures we get multi-day events that span across month boundaries
+    db_events = db.get_all_events_for_month_range(current_year, current_month)
 
     calendar.setfirstweekday(calendar.SUNDAY)
     month_calendar = calendar.monthcalendar(current_year, current_month)
@@ -133,8 +171,9 @@ def view(year=None, month=None):
     except Exception as e:
         pass
 
-    with google_fetch_lock:
-        chores_to_display = list(last_known_chores)
+    # Get chores from database instead of direct API call
+    from src.chores_app import database as chores_db
+    chores_to_display = chores_db.get_chores()
 
     month_name = calendar.month_name[current_month]
 
@@ -162,32 +201,42 @@ def check_updates(year, month):
     """API endpoint to check if the background task detected calendar or chore updates."""
     from src.slideshow import database as slideshow_db
     
-    task_id = f"{month}.{year}"
-    slideshow_db.sync_photos(current_app.static_folder)  # Using current_app instead of app
+    calendar_task_id = f"calendar.{month}.{year}"
+    chores_task_id = "tasks"
+    slideshow_db.sync_photos(current_app.static_folder)
 
     updates_available = False
-    task_status = "not_tracked"
+    calendar_task_status = "not_tracked"
+    chores_task_status = "not_tracked"
     events_changed = False
     chores_changed = False
 
     with google_fetch_lock:
-        task_info = background_tasks.get(task_id)
-        if task_info:
-            task_status = task_info['status']
-            if task_status == 'complete':
-                # Read the update status
-                updates_available = task_info.get('updated', False)
-                events_changed = task_info.get('events_changed', False)
-                chores_changed = task_info.get('chores_changed', False)
-
-                # Reset the flags after reading to prevent re-triggering
-                if updates_available:
-                    task_info['updated'] = False
-                    task_info['events_changed'] = False
-                    task_info['chores_changed'] = False
+        # Check calendar task
+        calendar_task_info = background_tasks.get(calendar_task_id)
+        if calendar_task_info:
+            calendar_task_status = calendar_task_info['status']
+            if calendar_task_status == 'complete':
+                events_changed = calendar_task_info.get('events_changed', False)
+                if events_changed:
+                    updates_available = True
+                    calendar_task_info['events_changed'] = False
+                    calendar_task_info['updated'] = False
+        
+        # Check chores task
+        chores_task_info = background_tasks.get(chores_task_id)
+        if chores_task_info:
+            chores_task_status = chores_task_info['status']
+            if chores_task_status == 'complete':
+                chores_changed = chores_task_info.get('chores_changed', False)
+                if chores_changed:
+                    updates_available = True
+                    chores_task_info['chores_changed'] = False
+                    chores_task_info['updated'] = False
 
     return jsonify({
-        "status": task_status,
+        "calendar_status": calendar_task_status,
+        "chores_status": chores_task_status,
         "updates_available": updates_available,
         "events_changed": events_changed,
         "chores_changed": chores_changed

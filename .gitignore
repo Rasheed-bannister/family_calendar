@@ -11,9 +11,8 @@ wheels/
 
 # secrets
 credentials.json
-token.json
-src/calendar_app/calendar.db
-src/slideshow/slideshow.db
+*token.json
+*.db
 src/static/photos/*
 .cache.sqlite
 

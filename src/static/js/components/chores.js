@@ -5,92 +5,91 @@
 const Chores = (function() {
     // Private variables
     let choresContainer;
-    // let choresUpdateTimer = null;
-    // const CHORES_UPDATE_INTERVAL = 3 * 60 * 1000; // Check for chores updates every 3 minutes
-    
+
     // Private methods
+    async function updateChoreStatus(choreId, newStatus) {
+        try {
+            const response = await fetch(`/chores/update_status/${choreId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (!result.success) {
+                console.error(`Failed to update chore ${choreId} status to ${newStatus}:`, result.error);
+                return false;
+            }
+            console.log(`Chore ${choreId} status updated to ${newStatus}`);
+            return true;
+        } catch (error) {
+            console.error(`Error updating chore ${choreId} status to ${newStatus}:`, error);
+            return false;
+        }
+    }
+
     function setupEventListeners() {
         if (!choresContainer) return;
-        
-        // Add event listeners for chore interactions, if any
-        choresContainer.addEventListener('click', function(event) {
-            const choreItem = event.target.closest('.chore-item');
-            if (choreItem) {
-                // If we implement toggling of chore completion status, it would go here
-                console.log("Clicked on chore:", choreItem.textContent.trim());
+
+        // Listener for checkbox changes (completion status)
+        choresContainer.addEventListener('change', async (event) => {
+            if (event.target.classList.contains('chore-complete-checkbox')) {
+                const choreItem = event.target.closest('.chore-item');
+                const choreId = choreItem.dataset.choreId;
+                const isCompleted = event.target.checked;
+                const newStatus = isCompleted ? 'completed' : 'needsAction';
+
+                const success = await updateChoreStatus(choreId, newStatus);
+                if (success) {
+                    choreItem.classList.toggle('completed', isCompleted);
+                } else {
+                    // Revert checkbox state on failure
+                    event.target.checked = !isCompleted;
+                }
+            }
+        });
+
+        // Listener for clearing chores (setting status to invisible)
+        choresContainer.addEventListener('click', async (event) => {
+            // Example: Using a specific button class for clearing
+            if (event.target.classList.contains('chore-clear-button')) { 
+                const choreItem = event.target.closest('.chore-item');
+                const choreId = choreItem.dataset.choreId;
+                const newStatus = 'invisible';
+
+                if (!confirm('Are you sure you want to clear this chore?')) {
+                    return;
+                }
+
+                const success = await updateChoreStatus(choreId, newStatus);
+                if (success) {
+                    choreItem.remove(); // Remove the item from the list visually
+                } else {
+                    // Handle failure - maybe show an error message to the user
+                    alert('Failed to clear the chore. Please try again.');
+                }
             }
         });
     }
-    
-    // function updateChoresList() {
-    //     // This function would be used to refresh chores list via AJAX
-    //     console.log("Updating chores list...");
-    //     fetch('/api/chores/list')
-    //         .then(response => {
-    //             if (!response.ok) {
-    //                 throw new Error(`HTTP error! status: ${response.status}`);
-    //             }
-    //             return response.text();
-    //         })
-    //         .then(html => {
-    //             // Replace the chores container with new HTML
-    //             if (choresContainer) {
-    //                 choresContainer.outerHTML = html;
-    //                 // Re-get the container since we just replaced it
-    //                 choresContainer = document.querySelector('.chores-list');
-    //                 // Re-setup event listeners on the new elements
-    //                 setupEventListeners();
-    //                 console.log("Chores list updated successfully");
-    //             }
-    //         })
-    //         .catch(error => {
-    //             console.error("Error updating chores list:", error);
-    //         });
-    // }
-    
-    // function startChoresUpdateTimer() {
-    //     // Clear any existing timer
-    //     if (choresUpdateTimer) {
-    //         clearInterval(choresUpdateTimer);
-    //     }
-        
-    //     // Set interval to check for chores updates
-    //     choresUpdateTimer = setInterval(updateChoresList, CHORES_UPDATE_INTERVAL);
-    //     console.log(`Started chores update timer (checking every ${CHORES_UPDATE_INTERVAL/60000} minutes)`);
-    // }
 
     // Public methods
     return {
         init: function() {
             choresContainer = document.querySelector('.chores-list');
             if (!choresContainer) {
-                console.error("Chores component: chores-list element not found!");
+                console.warn("Chores component: .chores-list element not found during init!");
                 return false;
             }
-            
             setupEventListeners();
-            // startChoresUpdateTimer(); // Start the update timer
-            
             return true;
         },
-        
-        // refresh: function() {
-        //     updateChoresList();
-        // },
-        
-        // pause: function() {
-        //     if (choresUpdateTimer) {
-        //         clearInterval(choresUpdateTimer);
-        //         choresUpdateTimer = null;
-        //     }
-        //     console.log("Chores updates paused");
-        // },
-        
-        // resume: function() {
-        //     updateChoresList(); // Immediately update the chores list
-        //     startChoresUpdateTimer(); // Restart the update timer
-        //     console.log("Chores updates resumed");
-        // }
+        // ... potentially other public methods like refresh, pause, resume ...
     };
 })();
 
