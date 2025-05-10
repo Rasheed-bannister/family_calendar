@@ -189,4 +189,38 @@ def mark_chore_completed(chore_id):
         'completed': datetime.datetime.utcnow().isoformat() + "Z"
     })
 
+def create_chore(title, task_list_id=None, details=None):
+    """Creates a new chore (task) in the specified task list."""
+    service = get_tasks_service()
+    if not service:
+        print("Failed to get Google Tasks service.")
+        return None
+
+    if not task_list_id:
+        task_list_id = find_task_list_id(service, TARGET_TASK_LIST_NAME)
+        if not task_list_id:
+            print(f"Task list '{TARGET_TASK_LIST_NAME}' not found.")
+            return None
+
+    task_body = {
+        'title': title,  # This will be the person assigned to do the chore
+        'status': 'needsAction'  # Default status for new tasks
+    }
+    if details:
+        task_body['notes'] = details # This is the chore description
+
+    try:
+        created_task = service.tasks().insert(
+            tasklist=task_list_id,
+            body=task_body
+        ).execute()
+        print(f"Task created in Google: '{created_task.get('title')}', ID: {created_task.get('id')}")
+        return created_task
+    except HttpError as error:
+        print(f"An API error occurred creating Google task: {error}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred creating Google task: {e}")
+        return None
+
 

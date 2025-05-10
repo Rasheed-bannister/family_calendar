@@ -1,14 +1,29 @@
 /* Chores Component Styles */
 
+/* Styles for chore header and add button - these are specific to chores.html layout */
+.chores-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.add-button { /* This is the '+' button for chores */
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    cursor: pointer;
+}
+
+
 /* Chores List Container */
 .chores-list {
     padding: 10px;
-    overflow-y: auto;
+    overflow-y: auto; /* Enable vertical scrolling */
     flex: 2;
+    max-height: calc(100vh - 200px); /* Limit height to prevent overflowing the viewport */
     height: 100%;
     box-sizing: border-box;
     border: 1px solid rgba(255, 255, 255, 0.8); 
-    overflow: hidden; 
     border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(10px);

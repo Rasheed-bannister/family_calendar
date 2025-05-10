@@ -13,16 +13,29 @@ last_known_chores = []                  # Global variable to store the last know
 
 def _make_chores_comparable(chores_list):
     """Creates a simplified, comparable representation of the chores list."""
+    if not chores_list:
+        return set() # Return empty set if there are no chores
+        
     if not isinstance(chores_list, list):
         return None 
+        
     comparable_set = set()
     for item in chores_list:
         if isinstance(item, dict):
-            comparable_set.add((item.get('id'), item.get('title'), item.get('status')))
+            # Dictionary representation (from database)
+            comparable_set.add((item.get('id'), item.get('title'), item.get('notes'), item.get('status')))
         else:
+            # Likely a Chore object (from Google)
             try:
-                comparable_set.add(str(item))
-            except Exception:
+                # Try to access attributes that would be present on a Chore object
+                if hasattr(item, 'id') and hasattr(item, 'title') and hasattr(item, 'notes') and hasattr(item, 'status'):
+                    comparable_set.add((item.get('id'), item.get('title'), item.get('notes'), item.get('status')))
+                else:
+                    # Fallback to string representation
+                    comparable_set.add(str(item))
+            except Exception as e:
+                print(f"Error making chore comparable: {e}")
+                # Just ignore items we can't process
                 pass
     return comparable_set
 

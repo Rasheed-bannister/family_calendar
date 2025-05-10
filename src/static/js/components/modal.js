@@ -86,7 +86,61 @@ const Modal = (function() {
             console.log(`Modal opened. Auto-closing in ${MODAL_TIMEOUT / 1000}s.`);
         },
         
-        close: closeModal
+        close: closeModal,
+
+        // Add Chore Modal Specific Logic
+        initAddChoreModal: function() {
+            const addChoreModal = document.getElementById('add-chore-modal');
+            const addChoreButton = document.getElementById('add-chore-button'); // The '+' button
+            const closeButton = document.querySelector('#add-chore-modal .close-button');
+            const addChoreForm = document.getElementById('add-chore-form');
+
+            if (!addChoreModal || !addChoreButton || !closeButton || !addChoreForm) {
+                console.error('Add Chore Modal: One or more required elements not found.');
+                return false;
+            }
+
+            const openModal = () => addChoreModal.style.display = 'block';
+            const closeModal = () => addChoreModal.style.display = 'none';
+
+            addChoreButton.addEventListener('click', openModal);
+            closeButton.addEventListener('click', closeModal);
+            
+            window.addEventListener('click', (event) => {
+                if (event.target === addChoreModal) {
+                    closeModal();
+                }
+            });
+
+            addChoreForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const formData = new FormData(addChoreForm);
+                const data = Object.fromEntries(formData.entries());
+
+                try {
+                    const response = await fetch('/chores/add', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(data),
+                    });
+
+                    if (response.ok) {
+                        closeModal();
+                        addChoreForm.reset();
+                        location.reload(); // Refresh to see the new chore
+                    } else {
+                        const errorData = await response.json();
+                        alert(`Error adding chore: ${errorData.message || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Error submitting chore:', error);
+                    alert('An error occurred while adding the chore.');
+                }
+            });
+            return true;
+        }
     };
 })();
 

@@ -14,7 +14,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize all components
     const componentsStatus = {
-        modal: Modal.init(),
+        modal: Modal.init(), // This initializes the event modal
+        addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true, 
         calendar: Calendar.init(),
         dailyView: DailyView.init(),
         weather: Weather.init(),

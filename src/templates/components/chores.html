@@ -1,6 +1,11 @@
 {% block chores_content %}
 <div class="chores-list">
-    <h2>Chores</h2>
+    <div class="chores-header">
+        <h2>Chores</h2>
+        <button id="add-chore-button" class="add-button">
+            <i class="fas fa-plus"></i>
+        </button>
+    </div>
     {% if chores %}
         {% set grouped_chores = chores|groupby('title') %}
         {% for person, person_chores in grouped_chores %}
@@ -22,5 +27,23 @@
     {% else %}
         <p>No chores found or assigned.</p>
     {% endif %}
+</div>
+
+<div id="add-chore-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-button">&times;</span>
+        <h2>Add New Chore</h2>
+        <form id="add-chore-form">
+            <div>
+                <label for="chore-title">Person:</label>
+                <input type="text" id="chore-title" name="title" required>
+            </div>
+            <div>
+                <label for="chore-notes">Chore:</label>
+                <textarea id="chore-notes" name="notes" required></textarea>
+            </div>
+            <button type="submit">Add Chore</button>
+        </form>
+    </div>
 </div>
 {% endblock %}
