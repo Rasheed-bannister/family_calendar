@@ -8,8 +8,12 @@
                 <h3>{{ person }}</h3>
                 <ul>
                     {% for chore in person_chores %}
-                        <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'pending' }}">
-                            {{ chore.notes }}
+                        <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'needsAction' }}" 
+                            data-chore-id="{{ chore.id }}">
+                            <span class="chore-text-content">{{ chore.notes }}</span>
+                            <div class="chore-delete-button">
+                                <i class="fas fa-trash"></i>
+                            </div>
                         </li>
                     {% endfor %}
                 </ul>

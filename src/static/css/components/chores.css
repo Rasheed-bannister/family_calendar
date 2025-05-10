@@ -4,16 +4,17 @@
 .chores-list {
     padding: 10px;
     overflow-y: auto;
-    flex: 2; 
-    height: 100%; 
-    box-sizing: border-box; 
-    border: 1px rgba(255, 255, 255, 0.8);
-    overflow: hidden;
-    border-radius: 8px; 
+    flex: 2;
+    height: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.8); 
+    overflow: hidden; 
+    border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    margin: 1rem 0;
 }
 
 /* Chores Header */
@@ -25,61 +26,116 @@
 
 /* Chores List */
 .chores-list ul {
-    list-style-type: none; 
-    padding-left: 0; 
+    list-style-type: none;
+    padding-left: 0;
     margin-top: 3px;
 }
 
 /* Person Group Container */
 .chore-person-group {
-    margin-bottom: 10px;
+    margin-bottom: 1.5rem;
 }
 
 /* Person Header */
 .chore-person-group h3 {
-    margin-bottom: 3px;
+    margin-bottom: 0.5rem;
     border-radius: 5px;
     background-color: rgba(144, 165, 185, 0.8);
     padding: 2px;
     font-size: 1em;
+    color: #000;
 }
 
 /* Individual Chore Item */
 .chore-item {
-    padding: 2px 0;
-    margin-bottom: 1px;
     position: relative;
-    padding-left: 15px;
+    margin-bottom: 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    overflow: hidden; 
+    touch-action: pan-y; 
+}
+
+/* Chore Text Content (The visible, sliding part) */
+.chore-item .chore-text-content {
+    display: flex; /* For aligning ::before icon with text */
+    align-items: center;
+    /* padding: 0.75rem 1rem; */
+    border-radius: 8px; /* Match item's conceptual radius */
+    color: inherit; 
+    transition: transform 0.3s ease-out;
+    position: relative; 
+    z-index: 1; 
+}
+
+/* Chore Item Marker (::before pseudo-element on text-content) */
+.chore-item .chore-text-content::before {
+    content: '';
+    margin-right: 0.5rem; /* Space between icon and text */
     font-size: 0.9em;
 }
 
-/* Chore Item Marker */
-.chore-item::before {
-    content: '';
+/* Delete button for swiped chores */
+.chore-delete-button {
     position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    margin-right: 5px;
-    font-size: 0.9em;
+    right: 0; /* Positioned at the right edge of chore-item */
+    top: 0;
+    width: 60px; /* Matches swipeThreshold in JS */
+    height: 100%;
+    background-color: #ff4d4d;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 0; /* Behind chore-text-content */
+    border-top-right-radius: 8px; /* Match item radius */
+    border-bottom-right-radius: 8px; /* Match item radius */
+    opacity: 0; /* Hidden by default */
+    pointer-events: none; /* Not interactive when hidden */
+    transition: opacity 0.3s ease-out; /* Smooth transition for reveal */
+}
+
+.chore-item.swiping .chore-delete-button {
+    opacity: 1; /* Visible when swiping */
+    pointer-events: auto; /* Interactive when swiping */
+}
+
+.chore-item .chore-delete-button i {
+    font-size: 24px;
+    color: white;
+    pointer-events: none;
 }
 
 /* Completed Chores */
-.chore-item.completed {
+.chore-item.completed .chore-text-content {
     color: green;
+    font: bolder;
 }
-
-.chore-item.completed::before {
-    content: '😊'; 
+.chore-item.completed .chore-text-content::before {
+    content: '😊';
 }
 
 /* Pending Chores */
-.chore-item.pending {
+.chore-item.needsAction .chore-text-content {
+    font-weight: bold;
+}
+.chore-item.needsAction .chore-text-content::before {
+    content: '○';
+    color: #555; /* Darker for better visibility on light backgrounds */
     font-weight: bold;
 }
 
-.chore-item.pending::before {
-    content: '○';
-    color: #f8f8f8;
-    font-weight: bold;
+/* Swiping Chores - transform the text-content part */
+.chore-item.swiping .chore-text-content {
+    transform: translateX(-60px); /* swipeThreshold value */
+}
+
+/* Hide delete button for uncompleted chores (JS also prevents swipe) */
+.chore-item.needsAction .chore-delete-button {
+    display: none;
+}
+
+/* Visual feedback for touch/click */
+.chore-item .chore-text-content:active {
+    background-color: rgba(0, 0, 0, 0.08); /* Darken the text content area */
 }

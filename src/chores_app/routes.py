@@ -56,10 +56,5 @@ def refresh_chores():
 
 @chores_bp.route('/')
 def display_chores():
-    # This assumes you fetch chores somewhere to pass to the template
-    # Make sure this fetch uses the updated db.get_chores() that filters invisible ones
-    chores_list = db.get_chores() # This now filters out 'invisible' chores
-    # If chores are rendered as part of another template (like index.html),
-    # ensure that template receives the filtered list.
-    # This is just an example route if you had a dedicated chores page.
+    chores_list = db.get_chores()
     return render_template('some_template_using_chores.html', chores=chores_list)

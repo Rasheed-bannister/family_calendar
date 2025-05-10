@@ -410,3 +410,82 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log("Calendar application initialized");
 });
+
+// Chore polling mechanism
+const CHORE_POLLING_INTERVAL = 30000; // 30 seconds: How often to trigger a full refresh cycle
+const CHORE_CHECK_UPDATE_INTERVAL = 5000; // 5 seconds: How often to check status after triggering
+let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
+
+async function triggerChoresRefresh() {
+    if (isCheckingChoreUpdates) {
+        return;
+    }
+    isCheckingChoreUpdates = true;
+
+    try {
+        const response = await fetch('/chores/refresh', { method: 'POST' }); // Corrected endpoint and added POST method
+        if (response.ok) {
+            setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL); // Start checking status
+        } else {
+            console.error('Chores: Failed to trigger refresh. Status:', response.status);
+            isCheckingChoreUpdates = false;
+            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
+        }
+    } catch (error) {
+        console.error('Chores: Error during triggerChoresRefresh:', error);
+        isCheckingChoreUpdates = false;
+        setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
+    }
+}
+
+async function checkChoresUpdatesLoop() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // JavaScript months are 0-indexed
+
+    try {
+        const response = await fetch(`/calendar/check-updates/${year}/${month}`); // Ensure this path is correct
+        if (!response.ok) {
+            console.error('Chores: Failed to check for updates. Status:', response.status);
+            isCheckingChoreUpdates = false;
+            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL);
+            return;
+        }
+
+        const data = await response.json();
+
+        if (data.chores_status === 'running') {
+            setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL);
+        } else if (data.chores_status === 'complete') {
+            isCheckingChoreUpdates = false;
+            if (data.chores_changed) {
+                console.log('Chores: Changes detected. Reloading page.');
+                window.location.reload();
+            } else {
+                setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+            }
+        } else if (data.chores_status === 'error') {
+            console.error('Chores: Refresh completed with an error.');
+            isCheckingChoreUpdates = false;
+            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+        } else {
+            isCheckingChoreUpdates = false;
+            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+        }
+    } catch (error) {
+        console.error('Chores: Error during checkChoresUpdatesLoop:', error);
+        isCheckingChoreUpdates = false;
+        setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+    }
+}
+
+function initChoresPolling() {
+    console.log('Chores: Initializing polling mechanism.');
+    triggerChoresRefresh(); // Start the first refresh cycle
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChoresPolling);
+} else {
+    initChoresPolling(); // DOMContentLoaded has already fired
+}

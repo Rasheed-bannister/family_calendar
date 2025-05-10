@@ -12,7 +12,7 @@ wheels/
 # secrets
 credentials.json
 *token.json
-*.db
+src/*/*.db
 src/static/photos/*
 .cache.sqlite
 

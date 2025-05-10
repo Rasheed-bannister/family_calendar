@@ -90,8 +90,8 @@ def get_chores(include_invisible=False) -> list[dict]:
     for row in rows:
         chore = {
             'id': row[0],
-            'title': row[1],         # Changed from 'assigned_to' to 'title' to match template
-            'notes': row[2],         # Changed from 'description' to 'notes' to match template
+            'title': row[1],         # the intent here is that the 'title' field of the task is the person assigned to do the chore
+            'notes': row[2],         # the description of the chore
             'status': row[3],
             'due': row[4]
         }

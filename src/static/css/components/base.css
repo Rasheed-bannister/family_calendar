@@ -17,6 +17,13 @@ html, body {
     font-size: 14px; 
 }
 
+/* Disable text selection */
+body {
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none; /* IE 10 and IE 11 */
+    user-select: none; /* Standard syntax */
+}
+
 /* Main Layout Container */
 .main-container {
     display: flex;
