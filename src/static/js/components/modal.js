@@ -100,8 +100,21 @@ const Modal = (function() {
                 return false;
             }
 
-            const openModal = () => addChoreModal.style.display = 'block';
-            const closeModal = () => addChoreModal.style.display = 'none';
+            const openModal = () => {
+                addChoreModal.style.display = 'block';
+                // Focus the first input field when the modal opens
+                setTimeout(() => {
+                    document.getElementById('chore-title').focus();
+                }, 300);
+            };
+            
+            const closeModal = () => {
+                addChoreModal.style.display = 'none';
+                // When closing modal, hide virtual keyboard
+                if (window.VirtualKeyboard && typeof window.VirtualKeyboard.hide === 'function') {
+                    window.VirtualKeyboard.hide();
+                }
+            };
 
             addChoreButton.addEventListener('click', openModal);
             closeButton.addEventListener('click', closeModal);
@@ -110,6 +123,35 @@ const Modal = (function() {
                 if (event.target === addChoreModal) {
                     closeModal();
                 }
+            });
+            
+            // Handle modal content positioning when virtual keyboard appears
+            const modalContent = addChoreModal.querySelector('.modal-content');
+            
+            // Add listeners for focusing input fields
+            document.getElementById('chore-title').addEventListener('focus', () => {
+                setTimeout(() => {
+                    if (modalContent && window.VirtualKeyboard && window.VirtualKeyboard.isOpen()) {
+                        modalContent.classList.add('keyboard-open');
+                    }
+                }, 300);
+            });
+            
+            document.getElementById('chore-notes').addEventListener('focus', () => {
+                setTimeout(() => {
+                    if (modalContent && window.VirtualKeyboard && window.VirtualKeyboard.isOpen()) {
+                        modalContent.classList.add('keyboard-open');
+                    }
+                }, 300);
+            });
+            
+            // Additional handler for when keyboard is closed
+            window.addEventListener('click', () => {
+                setTimeout(() => {
+                    if (modalContent && window.VirtualKeyboard && !window.VirtualKeyboard.isOpen()) {
+                        modalContent.classList.remove('keyboard-open');
+                    }
+                }, 100);
             });
 
             addChoreForm.addEventListener('submit', async (event) => {

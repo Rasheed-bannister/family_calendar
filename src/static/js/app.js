@@ -8,6 +8,7 @@ import Weather from './components/weather.js';
 import Slideshow from './components/slideshow.js';
 import Chores from './components/chores.js';
 import Modal from './components/modal.js';
+import VirtualKeyboard from './components/virtualKeyboard.js';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Calendar application initializing...");
@@ -20,7 +21,8 @@ document.addEventListener('DOMContentLoaded', function() {
         dailyView: DailyView.init(),
         weather: Weather.init(),
         slideshow: Slideshow.init(),
-        chores: Chores.init()
+        chores: Chores.init(),
+        virtualKeyboard: VirtualKeyboard.init() // Initialize the virtual keyboard
     };
     
     // Check if all components initialized successfully

@@ -7,10 +7,12 @@
     align-items: center;
 }
 
-.add-button { /* This is the '+' button for chores */
+.add-button { 
     background: none;
     border: none;
-    font-size: 1.5em;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    font-size: 1.4em;
+    border-radius: 8px;
     cursor: pointer;
 }
 
@@ -20,10 +22,10 @@
     padding: 10px;
     overflow-y: auto; /* Enable vertical scrolling */
     flex: 2;
-    max-height: calc(100vh - 200px); /* Limit height to prevent overflowing the viewport */
+    max-height: calc(100vh - 200px); 
     height: 100%;
     box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.8); 
+    /* border: 1px solid rgba(255, 255, 255, 0.8);  */
     border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(10px);
@@ -116,7 +118,7 @@
 }
 
 .chore-item .chore-delete-button i {
-    font-size: 24px;
+    font-size: 18px;
     color: white;
     pointer-events: none;
 }
