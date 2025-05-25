@@ -114,6 +114,7 @@ setup_application() {
   
   status "Installing UV package manager..."
  curl -LsSf https://astral.sh/uv/install.sh | sh || error "Failed to install UV"
+ source $HOME/.local/bin/env
   
   status "Creating Python virtual environment..."
   uv venv .venv || error "Failed to create virtual environment"
