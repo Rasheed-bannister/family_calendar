@@ -80,11 +80,20 @@ def create_app():
 
 
 if __name__ == '__main__':
+    import sys
+    
+    # Check for --setup-only flag
+    setup_only = '--setup-only' in sys.argv
+    
     # Initialize the global last_known_chores before creating the app
     # Can't use global in the top level of a module
     from src.google_integration.tasks_api import get_chores
     last_known_chores = get_chores()
     
     app = create_app()
-    # Ignore .db files to prevent reload loop caused by background updates
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, exclude_patterns=["**/*.db"])
+    
+    if not setup_only:
+        # Ignore .db files to prevent reload loop caused by background updates
+        app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, exclude_patterns=["**/*.db"])
+    else:
+        print("Setup completed. Exiting without starting server.")

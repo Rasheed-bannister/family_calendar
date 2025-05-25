@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Configuration variables - modify these as needed
 APP_DIR="$HOME/family-calendar"
 REPO_URL="https://github.com/Rasheed-bannister/family_calendar.git"
-PYTHON_VERSION="3.13" 
+PYTHON_VERSION="3.13" # Matches the requirement in pyproject.toml
 
 # Weather configuration defaults - can be modified during installation
 DEFAULT_LATITUDE="40.759010"
@@ -87,8 +87,9 @@ install_system_dependencies() {
   status "Installing required packages..."
   apt-get install -y \
     git \
-    python3-pip \
     python3-venv \
+    curl \
+    ca-certificates \
     xscreensaver \
     xinput-calibrator \
     chromium-browser \
@@ -111,13 +112,15 @@ setup_application() {
     cd "$APP_DIR"
   fi
   
+  status "Installing UV package manager..."
+ curl -LsSf https://astral.sh/uv/install.sh | sh || error "Failed to install UV"
+  
   status "Creating Python virtual environment..."
-  python3 -m venv .venv || error "Failed to create virtual environment"
+  uv venv .venv || error "Failed to create virtual environment"
   
   status "Installing Python dependencies..."
   source .venv/bin/activate
-  pip install --upgrade pip
-  pip install -e . || error "Failed to install Python dependencies"
+  uv pip sync || error "Failed to install Python dependencies"
   
   status "Application setup completed successfully"
 }
@@ -198,8 +201,10 @@ setup_autostart() {
   local user_home=$(eval echo ~$username)
   local autostart_dir="$user_home/.config/autostart"
   
-  status "Creating launcher script..."
-  cat > "$user_home/launch-calendar.sh" << EOF
+  status "Creating launcher scripts..."
+  
+  # Create launch-calendar.sh
+  cat > "$APP_DIR/startup/launch-calendar.sh" << EOF
 #!/bin/bash
 # Load environment variables if they exist
 if [ -f /etc/profile.d/family-calendar-env.sh ]; then
@@ -209,17 +214,41 @@ fi
 # Start the Flask server in the background
 cd $APP_DIR
 source .venv/bin/activate
-python src/main.py &
-
-# Wait for server to start
-sleep 5
-
+python -m src.main &
+EOF
+  
+  # Create launch-browser.sh
+  cat > "$APP_DIR/startup/launch-browser.sh" << EOF
+#!/bin/bash
 # Launch Chromium in kiosk mode
 chromium-browser --kiosk --incognito --disable-pinch --overscroll-history-navigation=0 http://localhost:5000
 EOF
-  
-  chmod +x "$user_home/launch-calendar.sh"
-  chown $username:$username "$user_home/launch-calendar.sh"
+
+  # Create launch-screensaver.sh (empty for now but included for completeness)
+  cat > "$APP_DIR/startup/launch-screensaver.sh" << EOF
+#!/bin/bash
+# Placeholder for screensaver settings
+EOF
+
+  # Create main launch script
+  cat > "$APP_DIR/startup/launch.sh" << EOF
+#!/bin/bash
+
+cd $APP_DIR/startup
+
+./launch-calendar.sh
+./launch-screensaver.sh
+sleep 5
+
+./launch-browser.sh
+EOF
+
+  # Make all scripts executable
+  chmod +x "$APP_DIR/startup/launch-calendar.sh"
+  chmod +x "$APP_DIR/startup/launch-browser.sh"
+  chmod +x "$APP_DIR/startup/launch-screensaver.sh"
+  chmod +x "$APP_DIR/startup/launch.sh"
+  chown $username:$username "$APP_DIR/startup/"*.sh
   
   status "Creating autostart entry..."
   mkdir -p "$autostart_dir"
@@ -227,7 +256,7 @@ EOF
 [Desktop Entry]
 Type=Application
 Name=Family Calendar Kiosk
-Exec=/bin/bash $user_home/launch-calendar.sh
+Exec=/bin/bash $APP_DIR/startup/launch.sh
 X-GNOME-Autostart-enabled=true
 EOF
   
@@ -260,7 +289,8 @@ run_initial_setup() {
   
   status "Initializing application databases..."
   cd "$APP_DIR"
-  su $username -c "cd $APP_DIR && source .venv/bin/activate && python src/main.py --setup-db"
+  # The databases are initialized automatically when main.py runs
+  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -m src.main --setup-only" 
   
   status "Initial setup completed"
   echo -e "${YELLOW}NOTE:${NC} When the application starts for the first time, you will need to authorize it with your Google account."
@@ -282,7 +312,7 @@ main() {
   section "Deployment Completed Successfully"
   echo -e "${GREEN}Family Calendar & Photo Slideshow has been successfully deployed!${NC}"
   echo -e "The application will start automatically on next boot."
-  echo -e "To start it manually, run: ${YELLOW}bash $HOME/launch-calendar.sh${NC}"
+  echo -e "To start it manually, run: ${YELLOW}bash $APP_DIR/startup/launch.sh${NC}"
   
   read -p "Would you like to reboot now to apply all changes? (y/n) " -n 1 -r
   echo
