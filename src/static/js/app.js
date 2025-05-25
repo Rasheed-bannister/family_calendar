@@ -13,6 +13,25 @@ import VirtualKeyboard from './components/virtualKeyboard.js';
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Calendar application initializing...");
     
+    // Detect if we're on a touch device and add appropriate class to body
+    function detectTouchDevice() {
+        const isTouchDevice = (
+            ('ontouchstart' in window) ||
+            (navigator.maxTouchPoints > 0) ||
+            (navigator.msMaxTouchPoints > 0)
+        );
+        
+        if (isTouchDevice) {
+            document.body.classList.add('touch-device');
+            console.log("Touch device detected, enabling touch-specific features");
+        }
+        
+        return isTouchDevice;
+    }
+    
+    // Run the detection immediately
+    const isTouchDevice = detectTouchDevice();
+    
     // Initialize all components
     const componentsStatus = {
         modal: Modal.init(), // This initializes the event modal
@@ -22,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
         weather: Weather.init(),
         slideshow: Slideshow.init(),
         chores: Chores.init(),
-        virtualKeyboard: VirtualKeyboard.init() // Initialize the virtual keyboard
+        virtualKeyboard: VirtualKeyboard.init()
     };
     
     // Check if all components initialized successfully

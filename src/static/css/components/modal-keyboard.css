@@ -1,0 +1,114 @@
+/* Modal styles for better mobile support with native virtual keyboards */
+
+/* Add touch-friendly styles for all input fields */
+input, textarea, select, [contenteditable="true"] {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    border-radius: 8px; /* Rounded corners for better touch targets */
+    padding: 10px; /* Larger touch targets */
+    transition: all 0.2s ease;
+}
+
+/* Style for touch devices (real or simulated) */
+.touch-device input:focus, 
+.touch-device textarea:focus,
+input:focus, textarea:focus {
+    outline: 2px solid #0078d7; /* Clear focus indicator */
+    outline-offset: 2px;
+    transform: translateZ(0); /* Helps with iOS rendering */
+}
+
+/* Class added when keyboard is visible - makes the input more prominent */
+.keyboard-visible input:focus,
+.keyboard-visible textarea:focus {
+    box-shadow: 0 0 0 2px rgba(0, 120, 215, 0.3);
+    transform: scale(1.01);
+}
+
+/* Use CSS environment variables for keyboard-aware layouts */
+@supports (padding: env(keyboard-inset-height)) {
+    /* Adjust modal for keyboard display */
+    .modal {
+        /* Ensure modal extends to the full screen height */
+        height: 100%;
+        /* This ensures content moves up when keyboard appears */
+        padding-bottom: env(keyboard-inset-height, 0px);
+    }
+    
+    /* Move modal content up when keyboard is active */
+    .modal-content:focus-within {
+        /* When something in the modal has focus, move content up */
+        margin-top: 5%;
+        transition: margin-top 0.3s;
+    }
+}
+
+/* Fallback for browsers without env() support but with virtualKeyboard API */
+.modal-content:focus-within {
+    margin-top: 5%;
+    transition: margin-top 0.3s;
+}
+
+/* Specific style for when keyboard is visible through our class-based detection */
+.keyboard-visible.modal-content,
+.keyboard-open.modal-content {
+    transition: transform 0.3s ease-out, margin-top 0.3s;
+    margin-top: 5%;
+    transform: translateY(-15%); /* Move it up more to avoid keyboard overlap */
+}
+
+/* Make sure the chore form fields are properly styled for touch interaction */
+#add-chore-form input,
+#add-chore-form textarea {
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 15px;
+    font-size: 16px;
+    -webkit-appearance: none; /* Remove default iOS styling */
+    appearance: none;
+}
+
+/* When keyboard is active, adjust the form layout */
+.keyboard-active #add-chore-form,
+.keyboard-visible #add-chore-form,
+.keyboard-open #add-chore-form {
+    display: flex;
+    flex-direction: column;
+    max-height: 60vh; /* Reduce max height when keyboard is shown */
+    overflow-y: auto;
+}
+
+/* Media query for mobile devices to ensure the modal doesn't get hidden by keyboard */
+@media (max-width: 768px) {
+    .modal-content {
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+    
+    .keyboard-visible.modal-content,
+    .keyboard-open.modal-content {
+        max-height: 50vh;
+        margin-top: 2%; /* Less margin to make room for keyboard on small screens */
+    }
+    
+    /* Make the submit button larger and more touch-friendly on mobile */
+    #add-chore-form button[type="submit"] {
+        padding: 12px 20px;
+        font-size: 18px;
+        margin-top: 10px;
+        width: 100%; /* Make buttons full width for easier tapping */
+        -webkit-appearance: none; /* Remove default iOS styling */
+        appearance: none;
+    }
+    
+    /* Adjust inputs for better mobile experience */
+    input, textarea {
+        font-size: 16px !important; /* Force 16px minimum to prevent zoom */
+    }
+    
+    /* Add extra space at bottom when virtual keyboard is open */
+    body.keyboard-open {
+        padding-bottom: 300px; /* Extra space for keyboard */
+    }
+}

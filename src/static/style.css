@@ -6,6 +6,8 @@
 @import url('css/components/calendar.css');
 @import url('css/components/daily-view.css');
 @import url('css/components/chores.css');
-@import url('css/components/modal.css'); /* This now includes event and add-chore modal styles */
+@import url('css/components/modal.css'); /* This includes event and add-chore modal styles */
+@import url('css/components/modal-keyboard.css'); /* Mobile keyboard support */
+@import url('css/components/virtualKeyboard.css'); /* Virtual on-screen keyboard */
 @import url('css/components/responsive.css');
 

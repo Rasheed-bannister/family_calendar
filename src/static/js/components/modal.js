@@ -2,6 +2,7 @@
  * Modal Component
  * Handles displaying event details in a popup modal
  */
+
 const Modal = (function() {
     // Private variables
     let eventModal;
@@ -110,49 +111,120 @@ const Modal = (function() {
             
             const closeModal = () => {
                 addChoreModal.style.display = 'none';
-                // When closing modal, hide virtual keyboard
-                if (window.VirtualKeyboard && typeof window.VirtualKeyboard.hide === 'function') {
-                    window.VirtualKeyboard.hide();
+                // Hide the virtual keyboard if it's visible
+                if (document.activeElement) {
+                    document.activeElement.blur();
                 }
+                
+                // Remove keyboard-related classes
+                const modalContent = addChoreModal.querySelector('.modal-content');
+                if (modalContent) {
+                    modalContent.classList.remove('keyboard-visible');
+                }
+                document.body.classList.remove('keyboard-focus-active', 'keyboard-active');
             };
 
             addChoreButton.addEventListener('click', openModal);
             closeButton.addEventListener('click', closeModal);
             
             window.addEventListener('click', (event) => {
+                // Only close if the click is directly on the modal background (not its content)
                 if (event.target === addChoreModal) {
                     closeModal();
                 }
             });
             
-            // Handle modal content positioning when virtual keyboard appears
+            // Get reference to modal content for potential later use
             const modalContent = addChoreModal.querySelector('.modal-content');
             
-            // Add listeners for focusing input fields
-            document.getElementById('chore-title').addEventListener('focus', () => {
-                setTimeout(() => {
-                    if (modalContent && window.VirtualKeyboard && window.VirtualKeyboard.isOpen()) {
-                        modalContent.classList.add('keyboard-open');
+            // Enhance inputs in the modal for better keyboard experience
+            const enhanceInputsForMobile = () => {
+                const inputs = addChoreModal.querySelectorAll('input, textarea');
+                inputs.forEach(input => {
+                    // Make sure inputs have appropriate attributes
+                    if (!input.hasAttribute('inputmode')) {
+                        input.setAttribute('inputmode', 'text');
                     }
-                }, 300);
-            });
+                    
+                    // For iOS to prevent zooming when focusing on inputs
+                    if (parseInt(window.getComputedStyle(input).fontSize) < 16) {
+                        input.style.fontSize = '16px';
+                    }
+                    
+                    // For better accessibility
+                    if (!input.hasAttribute('autocorrect')) {
+                        input.setAttribute('autocorrect', 'off');
+                    }
+                    
+                    // Add touch-specific attribute
+                    input.setAttribute('data-needs-keyboard', 'true');
+                    
+                    // Add focus/blur events for keyboard management
+                    input.addEventListener('focus', () => {
+                        // Add class to modal content for styling
+                        modalContent.classList.add('keyboard-visible');
+                        
+                        // Try to use our custom virtual keyboard first
+                        if (window.VirtualKeyboard && typeof window.VirtualKeyboard.showFor === 'function') {
+                            window.VirtualKeyboard.showFor(input);
+                        }
+                        // Fall back to native virtual keyboard API if available
+                        else if ('virtualKeyboard' in navigator && typeof navigator.virtualKeyboard.show === 'function') {
+                            navigator.virtualKeyboard.show();
+                        }
+                        
+                        // Add class to body to help with styling
+                        document.body.classList.add('keyboard-focus-active');
+                    });
+                    
+                    input.addEventListener('blur', () => {
+                        // Remove class if no other inputs are focused
+                        setTimeout(() => {
+                            if (!modalContent.contains(document.activeElement) || 
+                                !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+                                modalContent.classList.remove('keyboard-visible');
+                                document.body.classList.remove('keyboard-focus-active');
+                            }
+                        }, 100);
+                    });
+                    
+                    // Add touch event to explicitly trigger virtual keyboard on mobile
+                    input.addEventListener('touchstart', (e) => {
+                        // Add class for styling
+                        document.body.classList.add('touch-device');
+                        
+                        if (window.VirtualKeyboard && typeof window.VirtualKeyboard.showFor === 'function') {
+                            // Allow the default focus first
+                            setTimeout(() => {
+                                window.VirtualKeyboard.showFor(input);
+                            }, 10);
+                        }
+                    });
+                });
+            };
             
-            document.getElementById('chore-notes').addEventListener('focus', () => {
-                setTimeout(() => {
-                    if (modalContent && window.VirtualKeyboard && window.VirtualKeyboard.isOpen()) {
-                        modalContent.classList.add('keyboard-open');
-                    }
-                }, 300);
-            });
+            // Call the enhancement function
+            enhanceInputsForMobile();
             
-            // Additional handler for when keyboard is closed
-            window.addEventListener('click', () => {
-                setTimeout(() => {
-                    if (modalContent && window.VirtualKeyboard && !window.VirtualKeyboard.isOpen()) {
-                        modalContent.classList.remove('keyboard-open');
-                    }
-                }, 100);
-            });
+            // Set up native virtual keyboard behavior if available
+            if ('virtualKeyboard' in navigator) {
+                // Tell browser to overlay keyboard without resizing viewport
+                navigator.virtualKeyboard.overlaysContent = true;
+                
+                // Listen for keyboard geometry changes
+                if (typeof navigator.virtualKeyboard.addEventListener === 'function') {
+                    navigator.virtualKeyboard.addEventListener('geometrychange', (event) => {
+                        const keyboardHeight = event.target.boundingRect.height;
+                        if (keyboardHeight > 0) {
+                            modalContent.classList.add('keyboard-visible');
+                            document.body.classList.add('keyboard-active');
+                        } else {
+                            modalContent.classList.remove('keyboard-visible');
+                            document.body.classList.remove('keyboard-active');
+                        }
+                    });
+                }
+            }
 
             addChoreForm.addEventListener('submit', async (event) => {
                 event.preventDefault();

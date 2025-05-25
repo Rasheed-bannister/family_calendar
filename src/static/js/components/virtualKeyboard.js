@@ -204,6 +204,21 @@ const VirtualKeyboard = (function() {
         // Animate in from bottom
         keyboardContainer.classList.add('keyboard-visible');
         
+        // Add class to body
+        document.body.classList.add('keyboard-open');
+        
+        // Add class to modal content if input is inside a modal
+        const modalContent = input.closest('.modal-content');
+        if (modalContent) {
+            modalContent.classList.add('keyboard-open');
+            modalContent.classList.add('keyboard-visible');
+        }
+        
+        // Try to trigger native keyboard on mobile devices
+        if ('virtualKeyboard' in navigator && typeof navigator.virtualKeyboard.show === 'function') {
+            navigator.virtualKeyboard.show();
+        }
+        
         // Scroll to ensure input is visible above keyboard
         setTimeout(() => {
             input.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -218,6 +233,21 @@ const VirtualKeyboard = (function() {
         
         keyboardContainer.classList.remove('keyboard-visible');
         
+        // Remove class from body
+        document.body.classList.remove('keyboard-open');
+        
+        // Remove class from any modal content
+        const modalContents = document.querySelectorAll('.modal-content.keyboard-open');
+        modalContents.forEach(modalContent => {
+            modalContent.classList.remove('keyboard-open');
+            modalContent.classList.remove('keyboard-visible');
+        });
+        
+        // Try to hide native keyboard
+        if ('virtualKeyboard' in navigator && typeof navigator.virtualKeyboard.hide === 'function') {
+            navigator.virtualKeyboard.hide();
+        }
+        
         // Wait for animation to complete before hiding
         setTimeout(() => {
             keyboardContainer.style.display = 'none';
@@ -228,36 +258,30 @@ const VirtualKeyboard = (function() {
     
     // Setup event listeners for inputs
     function setupInputListeners() {
-        // Find all text inputs and textareas
-        const inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea');
-        
-        inputs.forEach(input => {
-            // Show keyboard on focus
-            input.addEventListener('focus', () => {
-                showKeyboard(input);
-            });
+        // We'll use a dynamic approach to catch inputs that are added later
+        document.addEventListener('focusin', (event) => {
+            const input = event.target;
             
-            // Don't hide immediately on blur as it might be due to clicking on keyboard
-            input.addEventListener('blur', (event) => {
-                // Check if the new focus is outside the keyboard
-                setTimeout(() => {
-                    const activeElement = document.activeElement;
-                    if (!keyboardContainer.contains(activeElement) && 
-                        !activeElement.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea')) {
-                        hideKeyboard();
-                    }
-                }, 100);
-            });
+            if (input.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') || 
+                input.getAttribute('data-needs-keyboard') === 'true') {
+                showKeyboard(input);
+            }
         });
         
-        // Handle clicks outside the keyboard and inputs to close keyboard
+        // Handle clicks outside the keyboard to close it
         document.addEventListener('click', (event) => {
             if (isOpen && 
                 !keyboardContainer.contains(event.target) && 
-                !event.target.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea')) {
+                !event.target.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') &&
+                event.target.getAttribute('data-needs-keyboard') !== 'true') {
                 hideKeyboard();
             }
         });
+        
+        // Add touch detection
+        document.addEventListener('touchstart', () => {
+            document.body.classList.add('touch-device');
+        }, { once: true });
     }
     
     // Public methods
@@ -275,7 +299,8 @@ const VirtualKeyboard = (function() {
         
         // Method to manually show keyboard for an input
         showFor: function(inputElement) {
-            if (inputElement && (inputElement.tagName === 'INPUT' || inputElement.tagName === 'TEXTAREA')) {
+            if (inputElement && (inputElement.tagName === 'INPUT' || inputElement.tagName === 'TEXTAREA' || 
+                inputElement.getAttribute('data-needs-keyboard') === 'true')) {
                 showKeyboard(inputElement);
             }
         },
