@@ -1,6 +1,7 @@
 /* Main CSS File - Imports all component styles */
 
 /* Import all component styles from their respective files */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 @import url('css/components/base.css');
 @import url('css/components/weather.css');
 @import url('css/components/calendar.css');
