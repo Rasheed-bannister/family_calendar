@@ -19,7 +19,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Configuration variables - modify these as needed
 APP_DIR="${SCRIPT_DIR}"
 REPO_URL="https://github.com/Rasheed-bannister/family_calendar.git"
-PYTHON_VERSION="3.13" # Matches the requirement in pyproject.toml
+MIN_PYTHON_VERSION="3.11" # Minimum Python version - more flexible than requiring 3.13 exactly
 
 # Weather configuration defaults - can be modified during installation
 DEFAULT_LATITUDE="40.759010"
@@ -65,7 +65,7 @@ check_python_version() {
   if command -v python3 >/dev/null; then
     python_cmd="python3"
   else
-    error "Python 3 is not installed. Please install Python ${PYTHON_VERSION} or higher."
+    error "Python 3 is not installed. Please install Python ${MIN_PYTHON_VERSION} or higher."
   fi
   
   local version
@@ -74,7 +74,7 @@ check_python_version() {
   local minor_version=$(echo "$version" | cut -d. -f2)
   
   if [ "$major_version" -lt 3 ] || ([ "$major_version" -eq 3 ] && [ "$minor_version" -lt 11 ]); then
-    error "Python ${PYTHON_VERSION} or higher is required. Found: $version"
+    error "Python ${MIN_PYTHON_VERSION} or higher is required. Found: $version"
   fi
   
   status "Python version check passed: $version"
@@ -114,16 +114,28 @@ setup_application() {
     git pull || status "Unable to update repository, continuing with current version"
   fi
   
-  status "Installing UV package manager..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh || error "Failed to install UV"
-  source $HOME/.local/bin/env
-  
+  # Get the current user for proper permissions
+  local username=$(logname)
+  local user_home=$(eval echo ~$username)
+    
   status "Creating Python virtual environment..."
-  uv venv .venv || error "Failed to create virtual environment"
+  python3 -m venv .venv || error "Failed to create virtual environment"
+  
+  # Fix permissions on the virtual environment
+  chown -R $username:$username .venv
+  
+  # Update pyproject.toml to be compatible with available Python version
+  if [ -f "pyproject.toml" ]; then
+    status "Updating Python version requirement in pyproject.toml..."
+    sed -i 's/requires-python = ">=3.13"/requires-python = ">=3.11"/' pyproject.toml || status "Could not update Python version in pyproject.toml, continuing anyway"
+  fi
   
   status "Installing Python dependencies..."
   source .venv/bin/activate
-  uv sync || error "Failed to install Python dependencies"
+  
+  # Use pip directly to avoid UV issues
+  pip install --upgrade pip
+  pip install -e . || error "Failed to install Python dependencies"
   
   status "Application setup completed successfully"
 }
@@ -254,7 +266,12 @@ EOF
   chmod +x "$APP_DIR/startup/launch-browser.sh"
   chmod +x "$APP_DIR/startup/launch-screensaver.sh"
   chmod +x "$APP_DIR/startup/launch.sh"
-  chown $username:$username "$APP_DIR/startup/"*.sh
+  
+  # Ensure the user has ownership of the startup scripts
+  chown -R $username:$username "$APP_DIR/startup/"
+  
+  # Ensure the entire app directory is owned by the user
+  chown -R $username:$username "$APP_DIR"
   
   status "Creating autostart entry..."
   mkdir -p "$autostart_dir"
