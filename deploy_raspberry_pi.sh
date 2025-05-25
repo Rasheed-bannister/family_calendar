@@ -13,8 +13,11 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 # Configuration variables - modify these as needed
-APP_DIR="$HOME/family-calendar"
+APP_DIR="${SCRIPT_DIR}"
 REPO_URL="https://github.com/Rasheed-bannister/family_calendar.git"
 PYTHON_VERSION="3.13" # Matches the requirement in pyproject.toml
 
@@ -102,26 +105,25 @@ install_system_dependencies() {
 setup_application() {
   section "Setting Up Family Calendar Application"
   
-  if [ -d "$APP_DIR" ]; then
-    status "Application directory already exists. Updating..."
-    cd "$APP_DIR"
-    git pull || error "Failed to update repository"
-  else
-    status "Cloning repository..."
-    git clone "$REPO_URL" "$APP_DIR" || error "Failed to clone repository"
-    cd "$APP_DIR"
+  status "Using application directory: $APP_DIR"
+  cd "$APP_DIR"
+  
+  # Check if we're in a git repo and update if possible
+  if [ -d ".git" ]; then
+    status "Updating repository..."
+    git pull || status "Unable to update repository, continuing with current version"
   fi
   
   status "Installing UV package manager..."
- curl -LsSf https://astral.sh/uv/install.sh | sh || error "Failed to install UV"
- source $HOME/.local/bin/env
+  curl -LsSf https://astral.sh/uv/install.sh | sh || error "Failed to install UV"
+  source $HOME/.local/bin/env
   
   status "Creating Python virtual environment..."
   uv venv .venv || error "Failed to create virtual environment"
   
   status "Installing Python dependencies..."
   source .venv/bin/activate
-  uv pip sync || error "Failed to install Python dependencies"
+  uv sync || error "Failed to install Python dependencies"
   
   status "Application setup completed successfully"
 }
@@ -203,6 +205,9 @@ setup_autostart() {
   local autostart_dir="$user_home/.config/autostart"
   
   status "Creating launcher scripts..."
+  
+  # Ensure startup directory exists
+  mkdir -p "$APP_DIR/startup"
   
   # Create launch-calendar.sh
   cat > "$APP_DIR/startup/launch-calendar.sh" << EOF
@@ -300,6 +305,8 @@ run_initial_setup() {
 # Main deployment process
 main() {
   section "Family Calendar & Photo Slideshow - Deployment Script"
+  
+  status "Deploying from: $APP_DIR"
   
   check_sudo
   install_system_dependencies
