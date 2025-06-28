@@ -231,7 +231,17 @@ const VirtualKeyboard = (function() {
     
     // Show the keyboard and link it to the input that has focus
     function showKeyboard(input) {
-        if (!keyboardContainer) return;
+        if (!keyboardContainer) {
+            console.warn('Virtual keyboard: keyboard container not found');
+            return;
+        }
+        
+        if (!input) {
+            console.warn('Virtual keyboard: no input element provided');
+            return;
+        }
+        
+        console.log('Virtual keyboard: showing keyboard for input', input.id || input.tagName);
         
         currentInput = input;
         keyboardContainer.style.display = 'block';
@@ -247,6 +257,14 @@ const VirtualKeyboard = (function() {
         if (modalContent) {
             modalContent.classList.add('keyboard-open');
             modalContent.classList.add('keyboard-visible');
+            
+            // Also add class to the modal itself
+            const modal = input.closest('.modal');
+            if (modal) {
+                modal.classList.add('keyboard-active');
+            }
+            
+            console.log('Virtual keyboard: added keyboard classes to modal content');
         }
         
         // Try to trigger native keyboard on mobile devices
@@ -265,7 +283,12 @@ const VirtualKeyboard = (function() {
     
     // Hide the keyboard
     function hideKeyboard() {
-        if (!keyboardContainer || !isOpen) return;
+        if (!keyboardContainer || !isOpen) {
+            console.log('Virtual keyboard: hide called but keyboard not open or not found');
+            return;
+        }
+        
+        console.log('Virtual keyboard: hiding keyboard');
         
         keyboardContainer.classList.remove('keyboard-visible');
         
@@ -279,6 +302,12 @@ const VirtualKeyboard = (function() {
             modalContent.classList.remove('keyboard-visible');
         });
         
+        // Remove class from any modal
+        const modals = document.querySelectorAll('.modal.keyboard-active');
+        modals.forEach(modal => {
+            modal.classList.remove('keyboard-active');
+        });
+        
         // Try to hide native keyboard
         if ('virtualKeyboard' in navigator && typeof navigator.virtualKeyboard.hide === 'function') {
             navigator.virtualKeyboard.hide();
@@ -289,6 +318,7 @@ const VirtualKeyboard = (function() {
             keyboardContainer.style.display = 'none';
             currentInput = null;
             isOpen = false;
+            console.log('Virtual keyboard: successfully hidden');
         }, 300);
     }
     
@@ -300,16 +330,45 @@ const VirtualKeyboard = (function() {
             
             if (input.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') || 
                 input.getAttribute('data-needs-keyboard') === 'true') {
-                showKeyboard(input);
+                // Add a small delay to ensure the input is properly focused
+                setTimeout(() => {
+                    showKeyboard(input);
+                }, 50);
+            }
+        });
+        
+        // Handle focus out events - but only hide if focus moves completely outside modal
+        document.addEventListener('focusout', (event) => {
+            const input = event.target;
+            
+            if (isOpen && (input.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') || 
+                input.getAttribute('data-needs-keyboard') === 'true')) {
+                
+                // Wait a bit to see if focus moves to another input in the same modal
+                setTimeout(() => {
+                    const activeElement = document.activeElement;
+                    const modalContent = input.closest('.modal-content');
+                    
+                    // Only hide keyboard if focus moved outside the modal or to a non-input element
+                    if (!modalContent || 
+                        !modalContent.contains(activeElement) || 
+                        (!activeElement.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') &&
+                         activeElement.getAttribute('data-needs-keyboard') !== 'true')) {
+                        hideKeyboard();
+                    }
+                }, 100);
             }
         });
         
         // Handle clicks outside the keyboard to close it
         document.addEventListener('click', (event) => {
-            if (isOpen && 
-                !keyboardContainer.contains(event.target) && 
-                !event.target.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') &&
-                event.target.getAttribute('data-needs-keyboard') !== 'true') {
+            // Don't hide keyboard if clicking within modal content or on the keyboard itself
+            const isModalContent = event.target.closest('.modal-content');
+            const isKeyboard = keyboardContainer && keyboardContainer.contains(event.target);
+            const isInput = event.target.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') ||
+                          event.target.getAttribute('data-needs-keyboard') === 'true';
+            
+            if (isOpen && !isKeyboard && !isInput && !isModalContent) {
                 hideKeyboard();
             }
         });

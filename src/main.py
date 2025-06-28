@@ -1,5 +1,6 @@
 import datetime
 import threading
+import logging
 from flask import Flask, redirect, url_for
 
 # Import utility functions
@@ -64,11 +65,13 @@ def create_app():
     from src.weather_integration.routes import weather_bp
     from src.chores_app.routes import chores_bp
     from src.google_integration import google_bp
+    from src.pir_sensor.routes import pir_bp
     app.register_blueprint(calendar_bp)
     app.register_blueprint(slideshow_bp)
     app.register_blueprint(weather_bp)
     app.register_blueprint(chores_bp)
     app.register_blueprint(google_bp)
+    app.register_blueprint(pir_bp)
     
     @app.route('/')
     def index_redirect():
@@ -92,7 +95,25 @@ if __name__ == '__main__':
     
     app = create_app()
     
+    # Initialize PIR sensor with activity callback
+    from src.pir_sensor.sensor import initialize_pir_sensor
+    
+    def on_motion_detected():
+        """Callback function when PIR sensor detects motion"""
+        logging.info("Motion detected - activity registered")
+        # The frontend will handle the actual activity registration
+        # This is just for backend logging
+    
+    pir_sensor = initialize_pir_sensor(pin=18, callback=on_motion_detected)
+    
     if not setup_only:
+        # Start PIR monitoring
+        from src.pir_sensor.sensor import start_pir_monitoring
+        if start_pir_monitoring():
+            logging.info("PIR sensor monitoring started")
+        else:
+            logging.warning("Failed to start PIR sensor monitoring")
+        
         # Ignore .db files to prevent reload loop caused by background updates
         app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, exclude_patterns=["**/*.db"])
     else:

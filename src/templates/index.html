@@ -55,6 +55,21 @@
         </div>
     </div>
     {% endblock %}
+    
+    <!-- Debug Panel for PIR Sensor (hidden by default) -->
+    <div id="debug-panel" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 5px; display: none; z-index: 2000;">
+        <div style="margin-bottom: 10px;">
+            <strong>PIR Sensor Debug</strong>
+        </div>
+        <button id="pir-test-btn" style="margin-right: 5px;">Test Motion</button>
+        <button id="pir-toggle-debug">Toggle Debug</button>
+        <div id="pir-status" style="margin-top: 5px; font-size: 12px;"></div>
+    </div>
+    
+    <!-- Debug toggle button -->
+    <div id="debug-toggle" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 3px; cursor: pointer; z-index: 1999; font-size: 12px;">
+        Debug
+    </div>
 
     <!-- Load the new modular JavaScript instead of the old script.js -->
     <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>

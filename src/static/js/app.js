@@ -9,6 +9,7 @@ import Slideshow from './components/slideshow.js';
 import Chores from './components/chores.js';
 import Modal from './components/modal.js';
 import VirtualKeyboard from './components/virtualKeyboard.js';
+import PIRSensor from './components/pirSensor.js';
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Calendar application initializing...");
@@ -41,7 +42,10 @@ document.addEventListener('DOMContentLoaded', function() {
         weather: Weather.init(),
         slideshow: Slideshow.init(),
         chores: Chores.init(),
-        virtualKeyboard: VirtualKeyboard.init()
+        virtualKeyboard: VirtualKeyboard.init(),
+        pirSensor: PIRSensor.init((activityType) => {
+            registerActivity(`pir-${activityType}`);
+        })
     };
     
     // Check if all components initialized successfully
@@ -511,3 +515,72 @@ if (document.readyState === 'loading') {
 } else {
     initChoresPolling(); // DOMContentLoaded has already fired
 }
+
+// PIR Sensor Debug Panel Setup
+function setupPIRDebugPanel() {
+    const debugToggle = document.getElementById('debug-toggle');
+    const debugPanel = document.getElementById('debug-panel');
+    const pirTestBtn = document.getElementById('pir-test-btn');
+    const pirToggleDebug = document.getElementById('pir-toggle-debug');
+    const pirStatus = document.getElementById('pir-status');
+    
+    if (!debugToggle || !debugPanel) return;
+    
+    let debugVisible = false;
+    
+    debugToggle.addEventListener('click', () => {
+        debugVisible = !debugVisible;
+        debugPanel.style.display = debugVisible ? 'block' : 'none';
+        debugToggle.style.display = debugVisible ? 'none' : 'block';
+    });
+    
+    if (pirToggleDebug) {
+        pirToggleDebug.addEventListener('click', () => {
+            debugVisible = false;
+            debugPanel.style.display = 'none';
+            debugToggle.style.display = 'block';
+        });
+    }
+    
+    if (pirTestBtn) {
+        pirTestBtn.addEventListener('click', async () => {
+            pirTestBtn.disabled = true;
+            pirTestBtn.textContent = 'Testing...';
+            
+            try {
+                const success = await PIRSensor.triggerTestMotion();
+                if (success) {
+                    pirTestBtn.textContent = 'Test Success!';
+                    setTimeout(() => {
+                        pirTestBtn.textContent = 'Test Motion';
+                        pirTestBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    pirTestBtn.textContent = 'Test Failed';
+                    setTimeout(() => {
+                        pirTestBtn.textContent = 'Test Motion';
+                        pirTestBtn.disabled = false;
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('PIR test error:', error);
+                pirTestBtn.textContent = 'Error';
+                setTimeout(() => {
+                    pirTestBtn.textContent = 'Test Motion';
+                    pirTestBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
+    
+    // Update PIR status periodically
+    if (pirStatus) {
+        setInterval(() => {
+            const status = PIRSensor.getStatus();
+            pirStatus.textContent = `Initialized: ${status.initialized}, Monitoring: ${status.monitoring}`;
+        }, 2000);
+    }
+}
+
+// Setup debug panel after components are initialized
+setTimeout(setupPIRDebugPanel, 1000);

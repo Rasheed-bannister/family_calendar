@@ -105,13 +105,17 @@ const Modal = (function() {
                 addChoreModal.style.display = 'block';
                 // Focus the first input field when the modal opens
                 setTimeout(() => {
-                    document.getElementById('chore-person').focus();
+                    document.getElementById('chore-title').focus();
                 }, 300);
             };
             
             const closeModal = () => {
                 addChoreModal.style.display = 'none';
                 // Hide the virtual keyboard if it's visible
+                if (window.VirtualKeyboard && typeof window.VirtualKeyboard.hide === 'function') {
+                    window.VirtualKeyboard.hide();
+                }
+                
                 if (document.activeElement) {
                     document.activeElement.blur();
                 }
@@ -129,13 +133,24 @@ const Modal = (function() {
             
             window.addEventListener('click', (event) => {
                 // Only close if the click is directly on the modal background (not its content)
-                if (event.target === addChoreModal) {
+                // and not on the virtual keyboard
+                const isVirtualKeyboard = event.target.closest('#virtual-keyboard') || 
+                                        event.target.closest('.virtual-keyboard');
+                
+                if (event.target === addChoreModal && !isVirtualKeyboard) {
                     closeModal();
                 }
             });
             
             // Get reference to modal content for potential later use
             const modalContent = addChoreModal.querySelector('.modal-content');
+            
+            // Prevent clicks within modal content from bubbling up and potentially hiding keyboard
+            if (modalContent) {
+                modalContent.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                });
+            }
             
             // Enhance inputs in the modal for better keyboard experience
             const enhanceInputsForMobile = () => {

@@ -42,7 +42,6 @@
 .close-button:focus {
     color: black;
     text-decoration: none;
-    cursor: pointer;
 }
 
 /* Modal Content Text */
@@ -83,10 +82,30 @@
     padding: 10px 15px;
     border: none;
     border-radius: 4px;
-    cursor: pointer;
     transition: background-color 0.3s ease;
 }
 
 #add-chore-form button:hover {
     background-color: #45a049;
+}
+
+/* Keyboard-related styling for modal */
+.modal-content.keyboard-visible {
+    margin-bottom: 280px; /* Make room for virtual keyboard */
+    transition: margin-bottom 0.3s ease-in-out;
+}
+
+/* Ensure modal content doesn't interfere with keyboard */
+.modal-content.keyboard-open {
+    position: relative;
+    z-index: 1000; /* Below keyboard but above modal background */
+}
+
+/* Prevent modal background from hiding keyboard */
+.modal.keyboard-active {
+    pointer-events: none; /* Allow clicks to pass through to keyboard */
+}
+
+.modal.keyboard-active .modal-content {
+    pointer-events: auto; /* But allow clicks on modal content */
 }
