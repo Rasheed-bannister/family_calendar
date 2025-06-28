@@ -90,8 +90,8 @@ def add_chore(assigned_to: str, description: str, status: str = 'needsAction', d
 
     new_chore = Chore(
         id=chore_id, 
-        title=assigned_to, 
-        notes=description, 
+        title=assigned_to,  # title parameter maps to assigned_to attribute
+        notes=description,  # notes parameter maps to description attribute
         status=status,
         due=due
     )

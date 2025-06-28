@@ -107,6 +107,14 @@ def view(year=None, month=None):
         task_info = background_tasks.get(task_id)
         if not task_info or task_info['status'] not in ['running', 'complete']:
             start_background_task = True
+        elif task_info['status'] == 'complete':
+            # Check if it's been more than 5 minutes since last update
+            import time
+            last_update_time = task_info.get('last_update_time', 0)
+            current_time = time.time()
+            if current_time - last_update_time > 300:  # 5 minutes = 300 seconds
+                start_background_task = True
+                task_info['status'] = 'pending_refresh'  # Mark for refresh
 
     if start_background_task:
         from src.google_integration.routes import fetch_google_events_background
@@ -200,6 +208,8 @@ def view(year=None, month=None):
 def check_updates(year, month):
     """API endpoint to check if the background task detected calendar or chore updates."""
     from src.slideshow import database as slideshow_db
+    import threading
+    import time
     
     calendar_task_id = f"calendar.{month}.{year}"
     chores_task_id = "tasks"
@@ -210,6 +220,7 @@ def check_updates(year, month):
     chores_task_status = "not_tracked"
     events_changed = False
     chores_changed = False
+    should_trigger_refresh = False
 
     with google_fetch_lock:
         # Check calendar task
@@ -222,6 +233,16 @@ def check_updates(year, month):
                     updates_available = True
                     calendar_task_info['events_changed'] = False
                     calendar_task_info['updated'] = False
+                    
+                # Check if we need to trigger a refresh due to time elapsed
+                last_update_time = calendar_task_info.get('last_update_time', 0)
+                current_time = time.time()
+                if current_time - last_update_time > 300:  # 5 minutes = 300 seconds
+                    should_trigger_refresh = True
+                    calendar_task_info['status'] = 'pending_refresh'
+        else:
+            # No task exists, we should create one
+            should_trigger_refresh = True
         
         # Check chores task
         chores_task_info = background_tasks.get(chores_task_id)
@@ -234,10 +255,22 @@ def check_updates(year, month):
                     chores_task_info['chores_changed'] = False
                     chores_task_info['updated'] = False
 
+    # Trigger background refresh if needed
+    if should_trigger_refresh:
+        from src.google_integration.routes import fetch_google_events_background
+        google_thread = threading.Thread(
+            target=fetch_google_events_background,
+            args=(month, year)
+        )
+        google_thread.daemon = True
+        google_thread.start()
+        print(f"Triggered background refresh for {month}/{year} due to time elapsed or missing task")
+
     return jsonify({
         "calendar_status": calendar_task_status,
         "chores_status": chores_task_status,
         "updates_available": updates_available,
         "events_changed": events_changed,
-        "chores_changed": chores_changed
+        "chores_changed": chores_changed,
+        "refresh_triggered": should_trigger_refresh
     })

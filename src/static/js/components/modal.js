@@ -105,7 +105,7 @@ const Modal = (function() {
                 addChoreModal.style.display = 'block';
                 // Focus the first input field when the modal opens
                 setTimeout(() => {
-                    document.getElementById('chore-title').focus();
+                    document.getElementById('chore-person').focus();
                 }, 300);
             };
             

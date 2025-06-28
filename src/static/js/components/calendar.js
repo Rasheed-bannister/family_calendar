@@ -25,11 +25,13 @@ const Calendar = (function() {
     let googleUpdateTimer = null;
     const UPDATE_CHECK_INTERVAL = 300000; // Check every 5 minutes (300000ms)
     const INITIAL_CHECK_INTERVAL = 1000; // Check every 1 second initially until task completes
+    const FORCE_REFRESH_INTERVAL = 600000; // Force refresh every 10 minutes (600000ms)
     let updateCheckEnabled = true; // Control flag
     let initialLoadComplete = false; // Flag to track whether we've completed initial load
     let inDebounce = false; // Debounce flag
     let initialLoadTimeout = null; // Timeout to force refresh if initial load takes too long
     const INITIAL_LOAD_TIMEOUT = 15000; // Force refresh after 15 seconds if no update received
+    let lastForceRefreshTime = Date.now(); // Track when we last forced a refresh
     
     // Private methods
     function highlightToday() {
@@ -97,6 +99,30 @@ const Calendar = (function() {
     function checkForGoogleUpdates() {
         if (!updateCheckEnabled) return;
 
+        // Check if it's time for a force refresh
+        const now = Date.now();
+        const timeSinceLastForceRefresh = now - lastForceRefreshTime;
+        
+        if (timeSinceLastForceRefresh > FORCE_REFRESH_INTERVAL) {
+            console.log("Triggering force refresh of calendar data");
+            lastForceRefreshTime = now;
+            
+            // Trigger manual refresh
+            fetch(`/google/refresh-calendar/${currentDisplayedYear}/${currentDisplayedMonth}`, {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Manual refresh triggered:", data);
+                // Continue with normal update check after triggering refresh
+                setTimeout(checkForGoogleUpdates, 2000); // Check again in 2 seconds
+            })
+            .catch(err => {
+                console.error("Error triggering manual refresh:", err);
+            });
+            return;
+        }
+
         fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
             .then(response => {
                 if (!response.ok) {
@@ -131,8 +157,16 @@ const Calendar = (function() {
                         }
                     }
                 } else {
-                    // Only refresh during regular checks if updates are available AND we're not in a debounce period
-                    if (data.updates_available && !inDebounce) {
+                    // Handle regular update checks
+                    if (data.refresh_triggered) {
+                        console.log("Background refresh was triggered, checking again soon...");
+                        // Check again in 3 seconds to see if the refresh found new data
+                        setTimeout(checkForGoogleUpdates, 3000);
+                    } else if (data.updates_available && !inDebounce) {
+                        // Only refresh during regular checks if updates are available AND we're not in a debounce period
+                        refreshPage();
+                    } else if (data.calendar_status === 'complete' && data.events_changed) {
+                        // Handle case where events changed but updates_available wasn't set
                         refreshPage();
                     }
                 }

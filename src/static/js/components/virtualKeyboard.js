@@ -74,15 +74,26 @@ const VirtualKeyboard = (function() {
         // Initially hide keyboard
         keyboardContainer.style.display = 'none';
         
+        // Prevent clicks on the keyboard from closing modals
+        keyboardContainer.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        
         // Add keyboard to DOM
         document.body.appendChild(keyboardContainer);
     }
     
     // Handle key clicks
     function handleKeyClick(e, key) {
-        if (!currentInput) return;
+        console.log('Virtual keyboard: key clicked', key);
+        
+        if (!currentInput) {
+            console.warn('Virtual keyboard: no current input selected');
+            return;
+        }
         
         e.preventDefault();
+        e.stopPropagation(); // Prevent event from bubbling up to modal
         
         switch(key) {
             case 'Backspace':
@@ -162,17 +173,41 @@ const VirtualKeyboard = (function() {
                 }
                 
                 if (currentInput) {
-                    const start = currentInput.selectionStart;
-                    const end = currentInput.selectionEnd;
+                    // Focus the input to ensure proper state
+                    currentInput.focus();
                     
-                    if (start !== undefined && end !== undefined) {
-                        currentInput.value = currentInput.value.slice(0, start) + character + currentInput.value.slice(end);
-                        currentInput.selectionStart = start + 1;
-                        currentInput.selectionEnd = start + 1;
-                    } else {
-                        // Fallback for browsers that don't support selection
-                        currentInput.value += character;
+                    // Get current cursor position, defaulting to end of text if not available
+                    let start = currentInput.selectionStart;
+                    let end = currentInput.selectionEnd;
+                    
+                    // If cursor position is not available, place at end
+                    if (start === null || start === undefined) {
+                        start = currentInput.value.length;
                     }
+                    if (end === null || end === undefined) {
+                        end = currentInput.value.length;
+                    }
+                    
+                    // Build new value by inserting character at cursor position
+                    const beforeText = currentInput.value.substring(0, start);
+                    const afterText = currentInput.value.substring(end);
+                    const newValue = beforeText + character + afterText;
+                    
+                    // Set the new value
+                    currentInput.value = newValue;
+                    
+                    // Calculate new cursor position (after the inserted character)
+                    const newCursorPos = start + character.length;
+                    
+                    // Set cursor position after a brief delay to ensure value is set
+                    requestAnimationFrame(() => {
+                        try {
+                            currentInput.selectionStart = newCursorPos;
+                            currentInput.selectionEnd = newCursorPos;
+                        } catch (e) {
+                            // Silently handle cursor positioning errors on some input types
+                        }
+                    });
                 }
         }
         
@@ -225,6 +260,7 @@ const VirtualKeyboard = (function() {
         }, 300);
         
         isOpen = true;
+        console.log('Virtual keyboard: successfully shown');
     }
     
     // Hide the keyboard

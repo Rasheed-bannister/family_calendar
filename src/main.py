@@ -29,7 +29,7 @@ def _make_chores_comparable(chores_list):
             try:
                 # Try to access attributes that would be present on a Chore object
                 if hasattr(item, 'id') and hasattr(item, 'title') and hasattr(item, 'notes') and hasattr(item, 'status'):
-                    comparable_set.add((item.get('id'), item.get('title'), item.get('notes'), item.get('status')))
+                    comparable_set.add((getattr(item, 'id'), getattr(item, 'title'), getattr(item, 'notes'), getattr(item, 'status')))
                 else:
                     # Fallback to string representation
                     comparable_set.add(str(item))
@@ -63,7 +63,7 @@ def create_app():
     from src.slideshow.routes import slideshow_bp
     from src.weather_integration.routes import weather_bp
     from src.chores_app.routes import chores_bp
-    from src.google_integration.routes import google_bp
+    from src.google_integration import google_bp
     app.register_blueprint(calendar_bp)
     app.register_blueprint(slideshow_bp)
     app.register_blueprint(weather_bp)

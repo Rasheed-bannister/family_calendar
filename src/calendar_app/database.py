@@ -11,7 +11,7 @@ DEFAULT_COLORS = [
     "#9D4348", "#088745", "#68710A", "#A84710", "#EE1B49"
 ]
 
-# create a decorator to wrap database functions in a connection and close aft er use
+# create a decorator to wrap database functions in a connection and close after use
 def db_connection(func):
     def wrapper(*args, **kwargs):
         conn = sqlite3.connect(DATABASE_FILE)
@@ -46,6 +46,7 @@ def create_all():
         CREATE TABLE IF NOT EXISTS Calendar (
             calendar_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            display_name TEXT,
             color TEXT
         )
     ''')
@@ -105,6 +106,23 @@ def create_all():
     conn.commit()
     conn.close()
 
+def run_migrations():
+    """Run database migrations to update schema"""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    # Check if display_name column exists in Calendar table
+    cursor.execute("PRAGMA table_info(Calendar)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    if 'display_name' not in columns:
+        print("Adding display_name column to Calendar table...")
+        cursor.execute('ALTER TABLE Calendar ADD COLUMN display_name TEXT')
+        conn.commit()
+        print("Migration complete: display_name column added")
+    
+    conn.close()
+
 @db_connection
 def add_calendar(cursor, calendar: Calendar): 
     """Adds or replaces a Calendar in the database."""
@@ -112,16 +130,16 @@ def add_calendar(cursor, calendar: Calendar):
         calendar.color = get_next_color(cursor)
 
     cursor.execute('''
-        INSERT OR REPLACE INTO Calendar (calendar_id, name, color)
-        VALUES (?, ?, ?)
-    ''', (calendar.calendar_id, calendar.name, calendar.color))
+        INSERT OR REPLACE INTO Calendar (calendar_id, name, display_name, color)
+        VALUES (?, ?, ?, ?)
+    ''', (calendar.calendar_id, calendar.name, calendar.display_name, calendar.color))
 
 @db_connection
 def get_calendar(cursor, calendar_id: str) -> Calendar | None: 
-    cursor.execute('SELECT calendar_id, name, color FROM Calendar WHERE calendar_id = ?', (calendar_id,))
+    cursor.execute('SELECT calendar_id, name, display_name, color FROM Calendar WHERE calendar_id = ?', (calendar_id,))
     row = cursor.fetchone()
     if row:
-        return Calendar(calendar_id=row[0], name=row[1], color_hex=row[2])
+        return Calendar(calendar_id=row[0], name=row[1], display_name=row[2], color_hex=row[3])
     return None
 
 @db_connection
@@ -180,7 +198,7 @@ def check_event_exists(cursor, event_id: str) -> CalendarEvent | None:
             m.year,
             m.month,
             ev.title,
-            cal.name,
+            COALESCE(cal.display_name, cal.name) as calendar_name,
             cal.color,
             ev.start_datetime,
             ev.end_datetime,
@@ -228,7 +246,7 @@ def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
             ev.all_day,
             ev.location,
             ev.description,
-            cal.name,  -- Might be NULL if calendar is missing
+            COALESCE(cal.display_name, cal.name) as calendar_name,  -- Use display_name if available
             cal.color  -- Might be NULL if calendar is missing
         FROM CalendarEvent ev
             LEFT JOIN Calendar cal ON ev.calendar_id = cal.calendar_id -- Changed to LEFT JOIN
@@ -278,7 +296,7 @@ def get_all_events_for_month_range(cursor, year: int, month: int) -> list[dict]:
             ev.all_day,
             ev.location,
             ev.description,
-            cal.name,
+            COALESCE(cal.display_name, cal.name) as calendar_name,
             cal.color
         FROM CalendarEvent ev
         LEFT JOIN Calendar cal ON ev.calendar_id = cal.calendar_id

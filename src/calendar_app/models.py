@@ -10,10 +10,15 @@ class CalendarMonth:
         return f"CalendarMonth({self.year}, {self.month})"
 
 class Calendar:
-    def __init__(self, calendar_id, name: str, color_hex: str=None):
+    def __init__(self, calendar_id, name: str, display_name: str = None, color_hex: str = None):
         self.calendar_id = calendar_id
         self.name = name
+        self.display_name = display_name or name  # Use display_name if provided, otherwise fall back to name
         self.color = color_hex
+    
+    def get_display_name(self):
+        """Returns the display name if set, otherwise returns the original name"""
+        return self.display_name if self.display_name else self.name
 
 class CalendarEvent:
     def __init__(self,

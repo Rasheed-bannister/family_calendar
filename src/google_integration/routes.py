@@ -1,8 +1,13 @@
 import threading
 from flask import Blueprint, jsonify, request
 import datetime
-from . import api as calendar_api, tasks_api, google_bp
+from . import api as calendar_api, tasks_api
 from src.calendar_app.models import CalendarMonth
+
+# Get the blueprint reference - this will be available after __init__.py runs
+def get_google_bp():
+    from . import google_bp
+    return google_bp
 from src.calendar_app import database as calendar_db, utils as calendar_utils
 from src.chores_app import database as chores_db, utils as chores_utils
 
@@ -31,18 +36,25 @@ def fetch_google_events_background(month, year):
             events_to_add_or_update, calendars_changed = calendar_utils.create_calendar_events_from_google_data(
                 processed_google_events_data, current_calendar_month
             )
+            
+            # Clean up events that no longer exist in Google Calendar
+            google_event_ids = {event['id'] for event in processed_google_events_data}
+            deleted_events = calendar_utils.cleanup_deleted_events(month, year, google_event_ids)
+            
             if events_to_add_or_update:
                 db_changes = calendar_utils.add_events(events_to_add_or_update)
-                events_changed = calendars_changed or db_changes
+                events_changed = calendars_changed or db_changes or deleted_events
             else:
-                events_changed = calendars_changed
+                events_changed = calendars_changed or deleted_events
         else:
             events_changed = False
 
         # --- Update Task Status ---
         with google_fetch_lock:
+            import time
             background_tasks[task_id]['updated'] = events_changed
             background_tasks[task_id]['events_changed'] = events_changed
+            background_tasks[task_id]['last_update_time'] = time.time()  # Record when this sync completed
 
     except Exception as e:
         print(f"Error in calendar fetch background task {task_id}: {e}")
@@ -50,6 +62,8 @@ def fetch_google_events_background(month, year):
             background_tasks[task_id]['status'] = 'error'
             background_tasks[task_id]['updated'] = False
             background_tasks[task_id]['events_changed'] = False
+            import time
+            background_tasks[task_id]['last_update_time'] = time.time()  # Record error time too
     finally:
         with google_fetch_lock:
             if background_tasks[task_id]['status'] != 'error':
@@ -162,7 +176,7 @@ def mark_task_completed(chore_id):
         return False
 
 
-@google_bp.route('/refresh-calendar/<int:year>/<int:month>')
+@get_google_bp().route('/refresh-calendar/<int:year>/<int:month>')
 def refresh_calendar(year, month):
     """Manually trigger a refresh of calendar events for a specific month"""
     from src.main import google_fetch_lock, background_tasks
@@ -188,7 +202,7 @@ def refresh_calendar(year, month):
         'task_id': task_id
     }), 202
 
-@google_bp.route('/refresh-tasks')
+@get_google_bp().route('/refresh-tasks')
 def refresh_tasks():
     """Manually trigger a refresh of tasks/chores data"""
     from src.main import google_fetch_lock, background_tasks
@@ -213,15 +227,29 @@ def refresh_tasks():
         'task_id': task_id
     }), 202
 
-@google_bp.route('/status')
+@get_google_bp().route('/status')
 def status():
     """Get the status of all Google API background tasks"""
     from src.main import google_fetch_lock, background_tasks
+    import time
     
     with google_fetch_lock:
-        # Create a copy of the tasks for the response
-        tasks_status = {k: v.copy() for k, v in background_tasks.items()}
+        # Create a copy of the tasks for the response with human-readable timestamps
+        tasks_status = {}
+        current_time = time.time()
+        
+        for k, v in background_tasks.items():
+            task_copy = v.copy()
+            
+            # Add human-readable timestamps
+            if 'last_update_time' in task_copy:
+                last_update = task_copy['last_update_time']
+                task_copy['last_update_ago_seconds'] = int(current_time - last_update)
+                task_copy['last_update_human'] = time.ctime(last_update)
+            
+            tasks_status[k] = task_copy
     
     return jsonify({
-        'tasks': tasks_status
+        'tasks': tasks_status,
+        'current_time': time.ctime(current_time)
     })

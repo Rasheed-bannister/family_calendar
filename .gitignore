@@ -17,3 +17,5 @@ src/static/photos/*
 .cache.sqlite
 
 .DS_Store
+
+.github/
