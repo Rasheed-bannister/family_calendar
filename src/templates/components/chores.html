@@ -6,27 +6,29 @@
             <i class="fas fa-plus"></i>
         </button>
     </div>
-    {% if chores %}
-        {% set grouped_chores = chores|groupby('title') %}
-        {% for person, person_chores in grouped_chores %}
-            <div class="chore-person-group">
-                <h3>{{ person }}</h3>
-                <ul>
-                    {% for chore in person_chores %}
-                        <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'needsAction' }}" 
-                            data-chore-id="{{ chore.id }}">
-                            <span class="chore-text-content">{{ chore.notes }}</span>
-                            <div class="chore-delete-button">
-                                <i class="fas fa-trash"></i>
-                            </div>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        {% endfor %}
-    {% else %}
-        <p>No chores found or assigned.</p>
-    {% endif %}
+    <div class="chores-content">
+        {% if chores %}
+            {% set grouped_chores = chores|groupby('title') %}
+            {% for person, person_chores in grouped_chores %}
+                <div class="chore-person-group">
+                    <h3>{{ person }}</h3>
+                    <ul>
+                        {% for chore in person_chores %}
+                            <li class="chore-item {{ 'completed' if chore.status == 'completed' else 'needsAction' }}" 
+                                data-chore-id="{{ chore.id }}">
+                                <span class="chore-text-content">{{ chore.notes }}</span>
+                                <div class="chore-delete-button">
+                                    <i class="fas fa-trash"></i>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No chores found or assigned.</p>
+        {% endif %}
+    </div>
 </div>
 
 <div id="add-chore-modal" class="modal">

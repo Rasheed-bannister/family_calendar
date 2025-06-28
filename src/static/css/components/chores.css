@@ -1,44 +1,95 @@
 /* Chores Component Styles */
 
-/* Styles for chore header and add button - these are specific to chores.html layout */
+/* Styles for chore header and add button */
 .chores-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 12px 12px 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.05);
 }
 
 .add-button { 
-    background: none;
-    border: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     font-size: 1.4em;
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
+    color: #ffffff;
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+}
+
+.add-button:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
 }
 
 
 /* Chores List Container */
 .chores-list {
-    padding: 10px;
-    overflow-y: auto; /* Enable vertical scrolling */
+    display: flex;
+    flex-direction: column;
     flex: 2;
     max-height: calc(100vh - 200px); 
     height: 100%;
     box-sizing: border-box;
-    /* border: 1px solid rgba(255, 255, 255, 0.8);  */
-    border-radius: 8px;
-    background-color: rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border-radius: 12px;
+    background-color: rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     margin: 1rem 0;
+    overflow: hidden;
+}
+
+/* Scrollable Chores Content Area */
+.chores-content {
+    flex: 1;
+    overflow-y: scroll;
+    padding: 2px 12px 12px 12px;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+    height: 100%;
+}
+
+/* Custom Scrollbar Styling for Chores Content */
+.chores-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chores-content::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    margin: 4px;
+}
+
+.chores-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chores-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.chores-content::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 /* Chores Header */
 .chores-list h2 {
-    margin-top: 0;
-    font-size: 1.1em;
-    margin-bottom: 8px;
+    margin: 0;
+    font-size: 1.2em;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    letter-spacing: 0.5px;
 }
 
 /* Chores List */
@@ -50,39 +101,50 @@
 
 /* Person Group Container */
 .chore-person-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.chore-person-group:first-child {
+    margin-top: 0;
 }
 
 /* Person Header */
 .chore-person-group h3 {
-    margin-bottom: 0.5rem;
-    border-radius: 5px;
-    background-color: rgba(144, 165, 185, 0.8);
-    padding: 2px;
-    font-size: 1em;
-    color: #000;
+    margin-bottom: 0.3rem;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.25);
+    padding: 6px 10px;
+    font-size: 1.05em;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 /* Individual Chore Item */
 .chore-item {
     position: relative;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.3rem;
     border-radius: 8px;
     cursor: pointer;
     overflow: hidden; 
-    touch-action: pan-y; 
+    touch-action: manipulation;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Chore Text Content (The visible, sliding part) */
+/* Chore Text Content */
 .chore-item .chore-text-content {
-    display: flex; /* For aligning ::before icon with text */
+    display: flex;
     align-items: center;
-    /* padding: 0.75rem 1rem; */
-    border-radius: 8px; /* Match item's conceptual radius */
-    color: inherit; 
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     transition: transform 0.3s ease-out;
     position: relative; 
-    z-index: 1; 
+    z-index: 1;
+    font-weight: 500;
 }
 
 /* Chore Item Marker (::before pseudo-element on text-content) */
@@ -125,8 +187,9 @@
 
 /* Completed Chores */
 .chore-item.completed .chore-text-content {
-    color: green;
-    font: bolder;
+    color: #90ee90;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 .chore-item.completed .chore-text-content::before {
     content: '😊';
@@ -134,12 +197,14 @@
 
 /* Pending Chores */
 .chore-item.needsAction .chore-text-content {
-    font-weight: bold;
+    font-weight: 500;
+    color: #ffffff;
 }
 .chore-item.needsAction .chore-text-content::before {
     content: '○';
-    color: #555; /* Darker for better visibility on light backgrounds */
+    color: #ffffff;
     font-weight: bold;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 /* Swiping Chores - transform the text-content part */
@@ -154,5 +219,5 @@
 
 /* Visual feedback for touch/click */
 .chore-item .chore-text-content:active {
-    background-color: rgba(0, 0, 0, 0.08); /* Darken the text content area */
+    background-color: rgba(255, 255, 255, 0.1);
 }
