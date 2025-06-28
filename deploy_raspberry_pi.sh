@@ -96,9 +96,30 @@ install_system_dependencies() {
     xscreensaver \
     xinput-calibrator \
     chromium-browser \
+    python3-rpi.gpio \
     || error "Failed to install required packages"
     
   status "System dependencies installed successfully"
+}
+
+# Configure GPIO permissions for PIR sensor
+setup_gpio_permissions() {
+  section "Configuring GPIO Permissions for PIR Sensor"
+  
+  local username=$(logname)
+  
+  status "Adding user to gpio group..."
+  usermod -a -G gpio $username || error "Failed to add user to gpio group"
+  
+  status "Setting GPIO permissions..."
+  if [ -e /dev/gpiomem ]; then
+    chmod 666 /dev/gpiomem || error "Failed to set GPIO permissions"
+    status "GPIO permissions configured successfully"
+  else
+    status "GPIO device not found, skipping permissions setup"
+  fi
+  
+  status "PIR sensor GPIO configuration completed"
 }
 
 # Set up the Family Calendar application
@@ -315,8 +336,12 @@ run_initial_setup() {
   # The databases are initialized automatically when main.py runs
   su $username -c "cd $APP_DIR && source .venv/bin/activate && python -m src.main --setup-only" 
   
+  status "Testing PIR sensor connectivity..."
+  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -c 'from src.pir_sensor.sensor import PIRSensor; sensor = PIRSensor(); print(\"PIR sensor GPIO available:\", sensor.gpio_available)'" || status "PIR sensor test failed, check hardware connection"
+  
   status "Initial setup completed"
   echo -e "${YELLOW}NOTE:${NC} When the application starts for the first time, you will need to authorize it with your Google account."
+  echo -e "${YELLOW}PIR SENSOR:${NC} Connect PIR sensor OUT pin to GPIO 18 (Pin 12) for motion detection."
 }
 
 # Main deployment process
@@ -327,6 +352,7 @@ main() {
   
   check_sudo
   install_system_dependencies
+  setup_gpio_permissions
   setup_application
   configure_google_api
   configure_weather_settings
@@ -338,6 +364,19 @@ main() {
   echo -e "${GREEN}Family Calendar & Photo Slideshow has been successfully deployed!${NC}"
   echo -e "The application will start automatically on next boot."
   echo -e "To start it manually, run: ${YELLOW}bash $APP_DIR/startup/launch.sh${NC}"
+  echo ""
+  echo -e "${BLUE}PIR Sensor Setup:${NC}"
+  echo -e "• Connect PIR sensor VCC to Pin 2 or 4 (5V)"
+  echo -e "• Connect PIR sensor GND to Pin 6 (Ground)"
+  echo -e "• Connect PIR sensor OUT to Pin 12 (GPIO 18)"
+  echo -e "• Position sensor to detect motion in desired area"
+  echo ""
+  echo -e "${BLUE}Features Available:${NC}"
+  echo -e "• Touch-optimized calendar and task management"
+  echo -e "• Motion-activated display wake-up"
+  echo -e "• Google Calendar and Tasks integration"
+  echo -e "• Weather display and photo slideshow"
+  echo -e "• Debug panel for PIR sensor testing"
   
   read -p "Would you like to reboot now to apply all changes? (y/n) " -n 1 -r
   echo

@@ -15,6 +15,7 @@ dependencies = [
     "pandas>=2.2.3",
     "requests-cache>=1.2.1",
     "retry-requests>=2.0.0",
+    "RPi.GPIO>=0.7.1; sys_platform == 'linux'",
 ]
 
 [dependency-groups]

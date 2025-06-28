@@ -23,8 +23,21 @@ This open source project provides families with an interactive digital calendar 
   - Background synchronization to keep tasks up to date
 - **Smart Activity Detection**:
   - Detects user interaction via touch, mouse, and keyboard
+  - **PIR Motion Sensor Integration**: Automatically detects motion and wakes display
   - Automatically switches between active and inactive modes
   - Different timeout settings for day and night
+
+### Motion Detection & Power Management
+- **PIR Sensor Integration**:
+  - Connects to GPIO pin 18 on Raspberry Pi 5
+  - Real-time motion detection with configurable sensitivity
+  - Automatic display wake-up when people approach
+  - Debounce protection to prevent false triggers
+- **Intelligent Power Saving**:
+  - Automatic dimming during inactivity periods
+  - PIR sensor disrupts inactivity timers instantly
+  - Different brightness levels for day and night modes
+  - Seamless transition between sleep and active states
 
 ### Weather Integration
 - **Current Weather Display**: 
@@ -49,9 +62,18 @@ This open source project provides families with an interactive digital calendar 
 - **Flask Web Application**: 
   - Python backend with Flask routing
   - Modular JavaScript frontend
-- **Responsive Design**: Adapts to different monitor sizes
+- **Responsive Design**: Adapts to different monitor sizes and is optimized for touchscreen use
+- **True Touchscreen Experience**: 
+  - Hidden mouse cursor for touch-only interaction
+  - Virtual keyboard support for text input
+  - Touch-optimized UI components
+- **Hardware Integration**:
+  - PIR motion sensor support via GPIO
+  - Automatic fallback to simulation mode for development
+  - Real-time sensor communication via Server-Sent Events
 - **Energy Efficiency**:
   - Power-saving modes during periods of inactivity
+  - Motion-activated display wake-up
   - Different brightness levels based on time of day
 - **Database-Backed**: SQLite databases for efficient data storage and retrieval
 - **Background Processing**: 
@@ -79,17 +101,30 @@ The application is built using the following technologies:
   - `google_integration`: Google Calendar and Tasks API integration
   - `slideshow`: Photo management and display
   - `weather_integration`: Weather data fetching and formatting
+  - `pir_sensor`: PIR motion sensor integration and GPIO control
 
 ## Installation
 
 ### Prerequisites
-- Raspberry Pi 4 (2GB+ RAM recommended)
+- Raspberry Pi 5 (4GB+ RAM recommended for optimal performance)
+- PIR motion sensor (HC-SR501 or compatible)
 - Touchscreen monitor with appropriate cables
-- SD card (16GB+ recommended)
+- SD card (32GB+ recommended)
 - Power supply for Raspberry Pi
 - Internet connection
 - Python 3.13+
 - Google Cloud OAuth credentials
+
+### Hardware Setup
+1. **Connect PIR Sensor**:
+   - Connect VCC to 5V pin (Pin 2 or 4)
+   - Connect GND to Ground pin (Pin 6, 9, 14, 20, 25, 30, 34, or 39)
+   - Connect OUT to GPIO 18 (Pin 12)
+   - Ensure PIR sensor is positioned to detect motion in desired area
+
+2. **Touchscreen Setup**:
+   - Connect touchscreen via HDMI and USB
+   - Ensure proper power supply for both Pi and display
 
 ### Automated Installation (Recommended)
 
@@ -112,7 +147,9 @@ The script will:
 - Set up a Python virtual environment
 - Configure autostart settings
 - Set up the display for optimal performance
+- Configure GPIO permissions for PIR sensor
 - Guide you through adding Google API credentials
+- Test PIR sensor functionality
 - Offer to reboot when complete
 
 ### Manual Installation
@@ -159,7 +196,24 @@ If you prefer to install manually, follow these steps:
 
 ### Deploying on Raspberry Pi
 
-1. **Enable auto-start on boot**:
+1. **Configure GPIO permissions**:
+   ```bash
+   # Add user to gpio group for PIR sensor access
+   sudo usermod -a -G gpio $USER
+   
+   # Set up GPIO permissions
+   sudo chmod 666 /dev/gpiomem
+   ```
+
+2. **Test PIR sensor**:
+   ```bash
+   # Test PIR sensor connectivity
+   cd family-calendar
+   source .venv/bin/activate
+   python -c "from src.pir_sensor.sensor import PIRSensor; sensor = PIRSensor(); print('GPIO available:', sensor.gpio_available)"
+   ```
+
+3. **Enable auto-start on boot**:
    ```bash
    mkdir -p ~/.config/autostart
    cat > ~/.config/autostart/calendar.desktop << EOF
@@ -223,13 +277,25 @@ If you prefer to install manually, follow these steps:
 
 The application behavior can be modified by editing various JavaScript and Python files:
 
+### PIR Sensor Settings
+The PIR sensor can be configured in `src/main.py`:
+```python
+# GPIO pin for PIR sensor (default: 18)
+pir_sensor = initialize_pir_sensor(pin=18, callback=on_motion_detected)
+
+# Debounce time to prevent false triggers (default: 2.0 seconds)
+# Adjust based on your PIR sensor sensitivity
+```
+
 ### Inactivity Settings
 In `src/static/js/app.js`, adjust these constants:
 ```javascript
 // Time in milliseconds before inactivity modes trigger
-const DAY_INACTIVITY_TIMEOUT = 300000;  // 5 minutes for daytime
-const NIGHT_INACTIVITY_TIMEOUT = 180000; // 3 minutes for nighttime
-const SLIDESHOW_START_DELAY = 5000;     // 5 seconds after entering inactivity
+const DAY_INACTIVITY_TIMEOUT = 3600000;  // 1 hour for daytime
+const NIGHT_INACTIVITY_TIMEOUT = 5000;   // 5 seconds for nighttime
+const SLIDESHOW_START_DELAY = 5000;      // 5 seconds after entering inactivity
+
+// PIR sensor will instantly wake display regardless of these timeouts
 ```
 
 ### Weather Location Settings
@@ -263,12 +329,19 @@ Add new photos to the `src/static/photos/` directory. The application will autom
    - Weather information always visible
 
 2. **Inactivity Behavior**:
-   - After a period of inactivity (default: 5 minutes during day, 3 minutes at night), screen dims
+   - After a period of inactivity (default: 1 hour during day, 5 seconds at night), screen dims
+   - PIR sensor instantly wakes display when motion is detected
    - When in long inactivity mode, slideshow activates
-   - Any touch, mouse movement, or keyboard press returns to calendar view
+   - Any touch, mouse movement, keyboard press, or motion detection returns to calendar view
    - Reduced brightness during nighttime hours for energy saving
 
-3. **Browser Access**:
+3. **PIR Sensor Operation**:
+   - Continuously monitors for motion via GPIO pin 18
+   - Automatic wake-up when people approach the display
+   - Debug panel available (click "Debug" in bottom-right corner) for testing
+   - Works in simulation mode for development without hardware
+
+4. **Browser Access**:
    - The application can also be accessed from any device on your network
    - Navigate to `http://[raspberry-pi-ip]:5000` in any web browser
 
@@ -284,11 +357,15 @@ src/
 ├── google_integration/ # Google API integration
 │   ├── api.py          # Calendar API handling
 │   └── tasks_api.py    # Tasks API for chores
+├── pir_sensor/         # PIR motion sensor integration
+│   ├── sensor.py       # GPIO sensor control and monitoring
+│   └── routes.py       # Flask routes for sensor API
 ├── slideshow/          # Slideshow functionality
 │   └── database.py     # Photo database management
 ├── static/             # Frontend assets
 │   ├── css/            # CSS stylesheets
 │   ├── js/             # JavaScript modules
+│   │   └── components/ # Modular JS components including PIR sensor
 │   └── photos/         # Photo storage
 ├── templates/          # HTML templates
 ├── weather_integration/# Weather functionality
