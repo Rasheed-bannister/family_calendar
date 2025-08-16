@@ -37,8 +37,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         loadingIndicator: LoadingIndicator.init(),
         modal: Modal.init(), // This initializes the event modal
         addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true, 
-        calendar: Calendar.init(),
-        dailyView: DailyView.init(),
+        calendar: await Calendar.init(),
+        dailyView: await DailyView.init(),
         weather: Weather.init(),
         slideshow: Slideshow.init(),
         chores: Chores.init()

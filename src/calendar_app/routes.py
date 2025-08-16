@@ -13,7 +13,7 @@ from . import (
 from src.google_integration import api as calendar_api
 
 # Shared resources
-from src.main import google_fetch_lock, background_tasks, last_known_chores
+from src.main import google_fetch_lock, background_tasks
 
 calendar_bp = Blueprint('calendar', __name__, url_prefix='/calendar')
 
@@ -108,11 +108,14 @@ def view(year=None, month=None):
         if not task_info or task_info['status'] not in ['running', 'complete']:
             start_background_task = True
         elif task_info['status'] == 'complete':
-            # Check if it's been more than 5 minutes since last update
+            # Check if it's been more than configured sync interval since last update
             import time
+            from src.config import get_config
+            config = get_config()
+            sync_interval_seconds = config.get('google.sync_interval_minutes', 5) * 60
             last_update_time = task_info.get('last_update_time', 0)
             current_time = time.time()
-            if current_time - last_update_time > 300:  # 5 minutes = 300 seconds
+            if current_time - last_update_time > sync_interval_seconds:
                 start_background_task = True
                 task_info['status'] = 'pending_refresh'  # Mark for refresh
 
@@ -238,9 +241,12 @@ def check_updates(year, month):
                     calendar_task_info['updated'] = False
                     
                 # Check if we need to trigger a refresh due to time elapsed
+                from src.config import get_config
+                config = get_config()
+                sync_interval_seconds = config.get('google.sync_interval_minutes', 5) * 60
                 last_update_time = calendar_task_info.get('last_update_time', 0)
                 current_time = time.time()
-                if current_time - last_update_time > 300:  # 5 minutes = 300 seconds
+                if current_time - last_update_time > sync_interval_seconds:
                     should_trigger_refresh = True
                     calendar_task_info['status'] = 'pending_refresh'
         else:

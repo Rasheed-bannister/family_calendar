@@ -1,5 +1,4 @@
-from flask import Blueprint, jsonify, request, render_template
-import threading
+from flask import Blueprint, jsonify, request
 
 from . import database as db
 from src.google_integration import tasks_api
@@ -112,7 +111,3 @@ def add_chore_route():
         # If new_chore_local was created but a subsequent step failed, it remains in the local DB with its initial ID.
         return jsonify({'error': 'Failed to add chore due to an internal server error.', 'details': str(e)}), 500
 
-@chores_bp.route('/')
-def display_chores():
-    chores_list = db.get_chores()
-    return render_template('some_template_using_chores.html', chores=chores_list)

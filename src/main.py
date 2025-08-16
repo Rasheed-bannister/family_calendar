@@ -12,7 +12,6 @@ from src.weather_integration.utils import get_weather_icon
 # Shared resources across components
 google_fetch_lock = threading.Lock()    # Global lock for Google API fetching
 background_tasks = {}                   # Dict to track background task status by month/year
-last_known_chores = []                  # Global variable to store the last known chores list
 
 
 def _make_chores_comparable(chores_list):
@@ -113,9 +112,6 @@ if __name__ == '__main__':
     setup_only = '--setup-only' in sys.argv
     
     # Initialize the global last_known_chores before creating the app
-    # Can't use global in the top level of a module
-    from src.google_integration.tasks_api import get_chores
-    last_known_chores = get_chores()
     
     app = create_app()
     

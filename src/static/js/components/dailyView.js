@@ -10,7 +10,7 @@ const DailyView = (function() {
     let initialDailyViewHTML; // Keep this to potentially reset later if needed
     let placeholderHTML = `<h2>Select a day</h2><p>Click on a day in the calendar to see its events.</p>`; // Define placeholder
     let updateTimer = null;
-    const UPDATE_INTERVAL = 300000; // 5 minutes in milliseconds
+    let UPDATE_INTERVAL = 300000; // Default: 5 minutes, will be loaded from config
     
     // Private methods
     function formatEventHTML(eventData) {
@@ -70,9 +70,28 @@ const DailyView = (function() {
         });
     }
 
+    // Load configuration from server
+    async function loadConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            // Update sync interval from config
+            const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;
+            UPDATE_INTERVAL = syncIntervalMinutes * 60 * 1000; // Convert to milliseconds
+            
+        } catch (error) {
+            console.error("Failed to load DailyView config:", error);
+            // Keep default values if config load fails
+        }
+    }
+
     // Public methods
     return {
-        init: function() {
+        init: async function() {
+            // Load configuration first
+            await loadConfig();
+            
             dailyViewContainer = document.querySelector('.daily-view-container');
             if (!dailyViewContainer) {
                 console.error("DailyView component: daily-view-container element not found!");

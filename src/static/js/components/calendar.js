@@ -24,9 +24,9 @@ const Calendar = (function() {
     
     // Google Calendar update checking
     let googleUpdateTimer = null;
-    const UPDATE_CHECK_INTERVAL = 300000; // Check every 5 minutes (300000ms)
+    let UPDATE_CHECK_INTERVAL = 300000; // Default: Check every 5 minutes, will be loaded from config
     const INITIAL_CHECK_INTERVAL = 1000; // Check every 1 second initially until task completes
-    const FORCE_REFRESH_INTERVAL = 600000; // Force refresh every 10 minutes (600000ms)
+    let FORCE_REFRESH_INTERVAL = 600000; // Default: Force refresh every 10 minutes, will be loaded from config
     let updateCheckEnabled = true; // Control flag
     let initialLoadComplete = false; // Flag to track whether we've completed initial load
     let inDebounce = false; // Debounce flag
@@ -366,9 +366,29 @@ const Calendar = (function() {
         });
     }
 
+    // Load configuration from server
+    async function loadConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            // Update sync intervals from config
+            const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;
+            UPDATE_CHECK_INTERVAL = syncIntervalMinutes * 60 * 1000; // Convert to milliseconds
+            FORCE_REFRESH_INTERVAL = UPDATE_CHECK_INTERVAL * 2; // Force refresh at 2x sync interval
+            
+        } catch (error) {
+            console.error("Failed to load calendar config:", error);
+            // Keep default values if config load fails
+        }
+    }
+
     // Public methods
     return {
-        init: function() {
+        init: async function() {
+            // Load configuration first
+            await loadConfig();
+            
             calendar = document.querySelector('.calendar');
             if (!calendar) {
                 console.error("Calendar component: Calendar element not found!");
