@@ -105,11 +105,12 @@ def get_weather_data():
     timezone = config.get('weather.timezone', 'America/New_York')
     cache_duration = config.get('weather.cache_duration', 300)
     offline_fallback = config.get('weather.offline_fallback', True)
+    max_retry_attempts = config.get('google.max_retry_attempts', 3)
     
     try:
         # Setup the Open-Meteo API client with cache and retry on error
         cache_session = requests_cache.CachedSession('.cache', expire_after=cache_duration)
-        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+        retry_session = retry(cache_session, retries=max_retry_attempts, backoff_factor=0.2)
         openmeteo = openmeteo_requests.Client(session=retry_session)
     
         # Make sure all required weather variables are listed here

@@ -50,9 +50,12 @@ class PIRSensor:
             callback: Function to call when motion is detected
             debounce_time: Minimum time between motion detections in seconds
         """
-        self.pin = pin
+        from src.config import get_config
+        config = get_config()
+        
+        self.pin = config.get('pir_sensor.gpio_pin', pin)
         self.callback = callback
-        self.debounce_time = debounce_time
+        self.debounce_time = config.get('pir_sensor.debounce_time', debounce_time)
         self.last_detection_time = 0
         self.is_monitoring = False
         self.monitor_thread = None

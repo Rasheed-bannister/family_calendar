@@ -34,14 +34,8 @@
     "max_retry_attempts": 3,
     "offline_mode_enabled": true
   },
-  "database": {
-    "connection_pool_size": 5,
-    "backup_enabled": true,
-    "backup_interval_hours": 24,
-    "backup_retention_days": 7
-  },
   "ui": {
-    "show_loading_indicators": true,
+    "show_loading_indicators": false,
     "show_pir_feedback": false,
     "enhanced_virtual_keyboard": true,
     "touch_optimized": true,
@@ -49,9 +43,7 @@
   },
   "paths": {
     "photos_dir": "src/static/photos",
-    "database_dir": null,
-    "credentials_dir": "src/google_integration",
-    "backup_dir": "backups"
+    "credentials_dir": "src/google_integration"
   },
   "logging": {
     "level": "ERROR",

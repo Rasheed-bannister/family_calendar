@@ -1,9 +1,9 @@
 {
-  "cached_at": "2025-08-16T11:10:03.261342",
+  "cached_at": "2025-08-16T12:07:39.923298",
   "data": {
     "current": {
-      "time": "2025-08-16T11:00:00",
-      "apparent_temperature": 99.61163330078125,
+      "time": "2025-08-16T12:00:00",
+      "apparent_temperature": 101.5029525756836,
       "is_day": 1.0,
       "weather_code": 0.0
     },
@@ -11,7 +11,7 @@
       {
         "date": "2025-08-16T04:00:00+00:00",
         "weather_code": 95.0,
-        "apparent_temperature_max": 103.89813995361328,
+        "apparent_temperature_max": 103.27015686035156,
         "apparent_temperature_min": 85.06495666503906,
         "sunrise": "2025-08-16T06:53:12",
         "sunset": "2025-08-16T19:57:34",
@@ -19,7 +19,7 @@
       },
       {
         "date": "2025-08-17T04:00:00+00:00",
-        "weather_code": 53.0,
+        "weather_code": 95.0,
         "apparent_temperature_max": 105.83525085449219,
         "apparent_temperature_min": 83.4864273071289,
         "sunrise": "2025-08-17T06:53:41",
@@ -33,7 +33,7 @@
         "apparent_temperature_min": 82.1841812133789,
         "sunrise": "2025-08-18T06:54:10",
         "sunset": "2025-08-18T19:55:43",
-        "precipitation_probability_max": 58.0
+        "precipitation_probability_max": 52.0
       },
       {
         "date": "2025-08-19T04:00:00+00:00",
@@ -42,7 +42,7 @@
         "apparent_temperature_min": 84.3935775756836,
         "sunrise": "2025-08-19T06:54:39",
         "sunset": "2025-08-19T19:54:46",
-        "precipitation_probability_max": 48.0
+        "precipitation_probability_max": 43.0
       },
       {
         "date": "2025-08-20T04:00:00+00:00",
@@ -51,7 +51,7 @@
         "apparent_temperature_min": 82.13976287841797,
         "sunrise": "2025-08-20T06:55:08",
         "sunset": "2025-08-20T19:53:47",
-        "precipitation_probability_max": 47.0
+        "precipitation_probability_max": 48.0
       },
       {
         "date": "2025-08-21T04:00:00+00:00",
@@ -69,7 +69,7 @@
         "apparent_temperature_min": 82.85005187988281,
         "sunrise": "2025-08-22T06:56:05",
         "sunset": "2025-08-22T19:51:49",
-        "precipitation_probability_max": 49.0
+        "precipitation_probability_max": 52.0
       }
     ]
   }

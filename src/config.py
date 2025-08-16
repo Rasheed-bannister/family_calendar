@@ -32,8 +32,7 @@ class Config:
         "pir_sensor": {
             "enabled": True,
             "gpio_pin": 18,
-            "debounce_time": 2.0,
-            "simulation_mode": False  # Auto-detected if GPIO not available
+            "debounce_time": 2.0
         },
         "inactivity": {
             "day_timeout_minutes": 60,
@@ -45,31 +44,22 @@ class Config:
             "slideshow_delay_seconds": 5
         },
         "google": {
-            "sync_interval_minutes": 30,
-            "max_retry_attempts": 3,
-            "offline_mode_enabled": True
-        },
-        "database": {
-            "connection_pool_size": 5,
-            "backup_enabled": True,
-            "backup_interval_hours": 24,
-            "backup_retention_days": 7
+            "sync_interval_minutes": 3,
+            "max_retry_attempts": 3
         },
         "ui": {
-            "show_loading_indicators": True,
-            "show_pir_feedback": True,
+            "show_loading_indicators": False,
+            "show_pir_feedback": False,
             "enhanced_virtual_keyboard": True,
             "touch_optimized": True,
             "animation_duration_ms": 300
         },
         "paths": {
             "photos_dir": "src/static/photos",
-            "database_dir": None,  # Auto-detected
-            "credentials_dir": "src/google_integration",
-            "backup_dir": "backups"
+            "credentials_dir": "src/google_integration"
         },
         "logging": {
-            "level": "INFO",
+            "level": "WARN",
             "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             "file": "calendar.log",
             "max_bytes": 10485760,  # 10MB

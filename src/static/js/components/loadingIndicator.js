@@ -8,11 +8,31 @@ const LoadingIndicator = (function() {
     let loadingSpinner = null;
     let loadingText = null;
     let activeOperations = new Set();
+    let config = {
+        show_loading_indicators: false
+    };
     
+    /**
+     * Load configuration from server
+     */
+    async function loadConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const fullConfig = await response.json();
+            config = {
+                show_loading_indicators: fullConfig.ui?.show_loading_indicators ?? false
+            };
+        } catch (error) {
+            console.error("Failed to load loading indicator config:", error);
+            // Keep default values if config load fails
+        }
+    }
+
     /**
      * Initialize the loading indicator component
      */
-    function init() {
+    async function init() {
+        await loadConfig();
         createLoadingElements();
         return true;
     }
@@ -61,6 +81,10 @@ const LoadingIndicator = (function() {
      * @param {boolean} blocking - Whether to show blocking overlay (default: false)
      */
     function show(operationId, message = 'Loading...', blocking = false) {
+        if (!config.show_loading_indicators) {
+            return; // Don't show loading indicators if disabled in config
+        }
+        
         activeOperations.add(operationId);
         
         if (blocking && loadingOverlay) {
