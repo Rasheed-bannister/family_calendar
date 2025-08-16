@@ -43,7 +43,7 @@ const DailyView = (function() {
             // We need to reconstruct the event data slightly differently here
             const clickedListItem = event.target.closest('li');
             if (clickedListItem) {
-                console.log("Clicked on daily view event:", clickedListItem.querySelector('strong').textContent);
+                // Clicked on daily view event
                 
                 // Let's try to find the original event data if possible
                 const title = clickedListItem.querySelector('strong').textContent;
@@ -57,7 +57,7 @@ const DailyView = (function() {
                     Modal.show(eventData);
                 } else {
                     // Fallback if original data can't be found
-                    console.warn("Could not find original data for daily view event. Showing basic info.");
+                    // Could not find original data for daily view event
                     const eventData = {
                         title: title,
                         // Extract other info from the LI if needed, though it's less structured
@@ -128,7 +128,7 @@ const DailyView = (function() {
                         };
                         eventsHTML += formatEventHTML(eventData);
                     } else {
-                        console.warn("Skipping event element due to missing data attributes:", eventEl);
+                        // Skipping event element due to missing data attributes
                     }
                 });
                 eventsHTML += '</ul>';
@@ -144,7 +144,7 @@ const DailyView = (function() {
             // This should be the server-rendered content (e.g., Today's Events).
             if (dailyViewContainer && initialDailyViewHTML) {
                 dailyViewContainer.innerHTML = initialDailyViewHTML;
-                console.log("DailyView reset to initial server-rendered content.");
+                // DailyView reset to initial server-rendered content
             }
         },
         
@@ -153,7 +153,7 @@ const DailyView = (function() {
                 clearInterval(updateTimer);
                 updateTimer = null;
             }
-            console.log("DailyView updates paused");
+            // DailyView updates paused
         },
         
         resume: function() {
@@ -171,7 +171,7 @@ const DailyView = (function() {
                 }
             }, UPDATE_INTERVAL);
             
-            console.log("DailyView updates resumed");
+            // DailyView updates resumed
         }
     };
 })();

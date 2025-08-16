@@ -13,7 +13,6 @@ import PIRSensor from './components/pirSensor.js';
 import LoadingIndicator from './components/loadingIndicator.js';
 
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log("Calendar application initializing...");
     
     // Detect if we're on a touch device and add appropriate class to body
     function detectTouchDevice() {
@@ -25,7 +24,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         if (isTouchDevice) {
             document.body.classList.add('touch-device');
-            console.log("Touch device detected, enabling touch-specific features");
         }
         
         return isTouchDevice;
@@ -49,7 +47,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initialize async components without blocking
     VirtualKeyboard.init().then(result => {
         componentsStatus.virtualKeyboard = result;
-        console.log("Virtual keyboard initialized:", result);
     }).catch(err => {
         console.error("Virtual keyboard initialization failed:", err);
         componentsStatus.virtualKeyboard = false;
@@ -59,7 +56,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         registerActivity(`pir-${activityType}`);
     }).then(result => {
         componentsStatus.pirSensor = result;
-        console.log("PIR sensor initialized:", result);
     }).catch(err => {
         console.error("PIR sensor initialization failed:", err);
         componentsStatus.pirSensor = false;
@@ -72,8 +68,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     if (failedComponents.length > 0) {
         console.error(`Failed to initialize components: ${failedComponents.join(', ')}`);
-    } else {
-        console.log("All components initialized successfully");
     }
     
     // Activity tracking variables
@@ -125,10 +119,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const now = Date.now();
         lastActivityTimestamp = now;
         
-        // Log activity in debug mode
-        if (DEBUG_MODE) {
-            console.log(`Activity detected: ${type} at ${new Date(now).toLocaleTimeString()}`);
-        }
+        // Activity detected
         
         // If we were in any inactivity mode, exit it now
         if (currentInactivityMode !== 'none') {
@@ -168,7 +159,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (currentInactivityMode === newMode) return; // Already in this mode
         
         const brightness = getCurrentBrightnessReduction();
-        console.log(`Entering ${isNight ? 'night' : 'day'} inactivity mode (brightness: ${brightness * 100}%)`);
         currentInactivityMode = newMode;
         
         // Add class to body for CSS styling
@@ -193,7 +183,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     function exitInactivityMode() {
         if (currentInactivityMode === 'none') return; // Not in any inactivity mode
         
-        console.log("Exiting inactivity mode");
+        // Exiting inactivity mode
         
         // Remove classes from body
         document.body.classList.remove('reduced-brightness-mode');
@@ -218,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     function enterLongInactivityMode() {
         if (longInactivityMode) return; // Already in this mode
         
-        console.log("Entering long inactivity mode (inactive for timeout period)");
+        // Entering long inactivity mode
         longInactivityMode = true;
         
         // Add class to body for CSS styling
@@ -243,7 +233,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     function exitLongInactivityMode() {
         if (!longInactivityMode) return; // Not in this mode
         
-        console.log("Exiting long inactivity mode");
+        // Exiting long inactivity mode
         longInactivityMode = false;
         
         // Remove class from body
@@ -445,13 +435,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }, 500); // Check every half second for more responsive changes
         
-        console.log(`Activity tracking started (day timeout: ${DAY_INACTIVITY_TIMEOUT/1000}s, night timeout: ${NIGHT_INACTIVITY_TIMEOUT/1000}s)`);
+        // Activity tracking started
     }
     
     // Initialize activity tracking
     setupActivityTracking();
     
-    console.log("Calendar application initialized");
+    // Calendar application initialized
 });
 
 // Chore polling mechanism
@@ -502,7 +492,7 @@ async function checkChoresUpdatesLoop() {
         } else if (data.chores_status === 'complete') {
             isCheckingChoreUpdates = false;
             if (data.chores_changed) {
-                console.log('Chores: Changes detected. Reloading page.');
+                // Chores changed, reloading page
                 window.location.reload();
             } else {
                 setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
@@ -523,7 +513,6 @@ async function checkChoresUpdatesLoop() {
 }
 
 function initChoresPolling() {
-    console.log('Chores: Initializing polling mechanism.');
     triggerChoresRefresh(); // Start the first refresh cycle
 }
 

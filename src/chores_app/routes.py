@@ -44,15 +44,19 @@ def refresh_chores():
             
         background_tasks[chores_task_id] = {'status': 'running', 'updated': False}
     
-    # Start the background task
-    from src.google_integration.routes import fetch_google_tasks_background
-    chores_thread = threading.Thread(
-        target=fetch_google_tasks_background
-    )
-    chores_thread.daemon = True
-    chores_thread.start()
-    
-    return jsonify({'message': 'Chores refresh started'}), 202
+    # Execute the sync directly instead of in a thread to avoid threading issues
+    try:
+        from src.google_integration.routes import fetch_google_tasks_background
+        fetch_google_tasks_background()  # Call directly without threading
+        return jsonify({'message': 'Chores refresh completed'}), 200
+    except Exception as e:
+        print(f"Error during chores refresh: {e}")
+        with google_fetch_lock:
+            if chores_task_id in background_tasks:
+                background_tasks[chores_task_id]['status'] = 'error'
+        return jsonify({'error': f'Chores refresh failed: {str(e)}'}), 500
+
+
 
 @chores_bp.route('/add', methods=['POST'])
 def add_chore_route():

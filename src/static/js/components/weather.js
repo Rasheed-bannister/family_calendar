@@ -34,7 +34,7 @@ const Weather = (function() {
         
         // Set interval to update time every 60 seconds
         timeUpdateTimer = setInterval(updateTimeDisplay, TIME_UPDATE_INTERVAL);
-        console.log(`Started time update timer (updating every ${TIME_UPDATE_INTERVAL/1000} seconds)`);
+        // Started time update timer
     }
 
     function applyWeatherGradient() {
@@ -60,7 +60,7 @@ const Weather = (function() {
     }
 
     function updateWeatherData() {
-        console.log("Checking for weather updates...");
+        // Checking for weather updates
         
         fetch('/api/weather-update')
             .then(response => {
@@ -74,7 +74,7 @@ const Weather = (function() {
                 const currentWeatherContainer = document.querySelector('.weather-container');
                 if (currentWeatherContainer) {
                     currentWeatherContainer.outerHTML = html;
-                    console.log("Weather data updated successfully");
+                    // Weather data updated successfully
                     
                     // Apply the weather gradient to the new container
                     applyWeatherGradient();
@@ -96,7 +96,7 @@ const Weather = (function() {
         
         // Set interval to check for weather updates
         weatherUpdateTimer = setInterval(updateWeatherData, WEATHER_UPDATE_INTERVAL);
-        console.log(`Started weather update timer (checking every ${WEATHER_UPDATE_INTERVAL/60000} minutes)`);
+        // Started weather update timer
     }
 
     function setupEventListeners() {
@@ -112,7 +112,7 @@ const Weather = (function() {
                     clearInterval(timeUpdateTimer);
                     timeUpdateTimer = null;
                 }
-                console.log("Page hidden, paused weather and time updates");
+                // Page hidden, paused weather and time updates
             } else {
                 // Page is visible again, resume weather updates and time updates
                 // Do an immediate check if it's been more than 5 minutes
@@ -122,7 +122,7 @@ const Weather = (function() {
                 }
                 startWeatherUpdateTimer();
                 startTimeUpdateTimer();
-                console.log("Page visible, resumed weather and time updates");
+                // Page visible, resumed weather and time updates
             }
         });
     }

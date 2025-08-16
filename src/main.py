@@ -44,9 +44,20 @@ def _make_chores_comparable(chores_list):
     return comparable_set
 
 
+def clear_stale_background_tasks():
+    """Clear any stale background tasks from previous runs."""
+    global background_tasks
+    with google_fetch_lock:
+        # Clear all background tasks on startup to prevent stuck states
+        background_tasks.clear()
+        print("Cleared stale background tasks")
+
 def create_app():
     """Application factory to create and configure the Flask app."""
     config = get_config()
+    
+    # Clear any stale background tasks from previous runs
+    clear_stale_background_tasks()
     
     app = Flask(__name__)
     app.config['SECRET_KEY'] = config.get('app.secret_key')

@@ -35,7 +35,7 @@ const Chores = (function() {
                 console.error(`Failed to update chore ${choreId} status to ${newStatus}:`, result.error);
                 return false;
             }
-            console.log(`Chore ${choreId} status updated to ${newStatus}`);
+            // Chore status updated
             return true;
         } catch (error) {
             console.error(`Error updating chore ${choreId} status to ${newStatus}:`, error);
@@ -100,7 +100,7 @@ const Chores = (function() {
                 if (!choreItem.classList.contains('swiping')) {
                     choreItem.classList.add('swiping');
                     activeSwipedChore = choreItem;
-                    console.log('Chore item swiped - showing delete button'); // Debugging
+                    // Chore item swiped - showing delete button
                 }
             } else {
                 if (choreItem.classList.contains('swiping')) {
@@ -388,7 +388,7 @@ const Chores = (function() {
             
             // If clicking on delete button
             if (event.target.closest('.chore-delete-button')) {
-                console.log('Delete button clicked'); // Debugging
+                // Delete button clicked
                 const choreItem = event.target.closest('.chore-item');
                 if (choreItem) {
                     hideChore(choreItem);
@@ -401,7 +401,7 @@ const Chores = (function() {
         document.addEventListener('click', handleDocumentClick);
         
         // Log that we've initialized
-        console.log('Chores component initialized with trash button functionality');
+        // Chores component initialized with trash button functionality
     }
 
     // Public methods
@@ -409,20 +409,20 @@ const Chores = (function() {
         init: function() {
             choresContainer = document.querySelector('.chores-list');
             if (!choresContainer) {
-                console.warn("Chores component: .chores-list element not found during init!");
+                // Chores component: .chores-list element not found during init
                 return false;
             }
             setupEventListeners();
-            console.log("Chores component initialized with touch and mouse gesture support");
+            // Chores component initialized with touch and mouse gesture support
             return true;
         },
         pause: function() {
             isPaused = true;
-            console.log("Chores component paused");
+            // Chores component paused
         },
         resume: function() {
             isPaused = false;
-            console.log("Chores component resumed");
+            // Chores component resumed
         }
     };
 })();

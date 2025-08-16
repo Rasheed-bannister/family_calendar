@@ -30,7 +30,7 @@
     "slideshow_delay_seconds": 5
   },
   "google": {
-    "sync_interval_minutes": 30,
+    "sync_interval_minutes": 1,
     "max_retry_attempts": 3,
     "offline_mode_enabled": true
   },
@@ -42,7 +42,7 @@
   },
   "ui": {
     "show_loading_indicators": true,
-    "show_pir_feedback": true,
+    "show_pir_feedback": false,
     "enhanced_virtual_keyboard": true,
     "touch_optimized": true,
     "animation_duration_ms": 300
@@ -54,7 +54,7 @@
     "backup_dir": "backups"
   },
   "logging": {
-    "level": "INFO",
+    "level": "ERROR",
     "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "file": "calendar.log",
     "max_bytes": 10485760,

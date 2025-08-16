@@ -46,6 +46,10 @@ This open source project provides families with an interactive digital calendar 
 - **Weather Forecast**: 
   - Multi-day weather forecast
   - Regular background updates
+- **Offline Support**:
+  - Intelligent caching with 24-hour retention
+  - Graceful degradation when internet is unavailable
+  - Automatic recovery when connection is restored
 
 ### Photo Slideshow Functionality
 - **Adaptive Inactivity Modes**:
@@ -63,14 +67,25 @@ This open source project provides families with an interactive digital calendar 
   - Python backend with Flask routing
   - Modular JavaScript frontend
 - **Responsive Design**: Adapts to different monitor sizes and is optimized for touchscreen use
-- **True Touchscreen Experience**: 
+- **Enhanced Touchscreen Experience**: 
   - Hidden mouse cursor for touch-only interaction
-  - Virtual keyboard support for text input
-  - Touch-optimized UI components
+  - Advanced virtual keyboard with haptic feedback and multiple layouts
+  - Touch-optimized UI components with visual feedback
+  - Long-press support for rapid text deletion
+- **Smart Loading & Feedback**:
+  - Visual loading indicators with toast notifications
+  - Offline mode with intelligent caching for weather data
+  - Real-time sync status indicators
+  - Motion detection visual feedback with ripple effects
 - **Hardware Integration**:
-  - PIR motion sensor support via GPIO
+  - PIR motion sensor support via GPIO with visual status indicators
   - Automatic fallback to simulation mode for development
   - Real-time sensor communication via Server-Sent Events
+- **Configuration Management**:
+  - Centralized configuration system with config.json
+  - Environment variable support for backwards compatibility
+  - Auto-generation of default configurations
+  - Production vs development mode handling
 - **Energy Efficiency**:
   - Power-saving modes during periods of inactivity
   - Motion-activated display wake-up
@@ -79,6 +94,7 @@ This open source project provides families with an interactive digital calendar 
 - **Background Processing**: 
   - Multi-threaded background tasks for syncing services
   - Thread-safe operations with proper locking mechanisms
+  - Graceful error handling and recovery
 
 ## Technical Architecture
 
@@ -100,8 +116,9 @@ The application is built using the following technologies:
   - `calendar_app`: Core calendar functionality and database
   - `google_integration`: Google Calendar and Tasks API integration
   - `slideshow`: Photo management and display
-  - `weather_integration`: Weather data fetching and formatting
+  - `weather_integration`: Weather data fetching with offline caching
   - `pir_sensor`: PIR motion sensor integration and GPIO control
+  - `config`: Centralized configuration management system
 
 ## Installation
 
@@ -275,73 +292,133 @@ If you prefer to install manually, follow these steps:
 
 ## Configuration
 
-The application behavior can be modified by editing various JavaScript and Python files:
+The application uses a comprehensive configuration system that supports both JSON files and environment variables.
 
-### PIR Sensor Settings
-The PIR sensor can be configured in `src/main.py`:
-```python
-# GPIO pin for PIR sensor (default: 18)
-pir_sensor = initialize_pir_sensor(pin=18, callback=on_motion_detected)
+### Configuration System
 
-# Debounce time to prevent false triggers (default: 2.0 seconds)
-# Adjust based on your PIR sensor sensitivity
+The application automatically creates a `config.json` file on first run with sensible defaults. You can customize the behavior by editing this file:
+
+```json
+{
+  "app": {
+    "debug": false,
+    "host": "0.0.0.0",
+    "port": 5000,
+    "environment": "production"
+  },
+  "weather": {
+    "latitude": 40.759010,
+    "longitude": -73.984474,
+    "timezone": "America/New_York",
+    "cache_duration": 600,
+    "offline_fallback": true
+  },
+  "pir_sensor": {
+    "enabled": true,
+    "gpio_pin": 18,
+    "debounce_time": 2.0,
+    "simulation_mode": false
+  },
+  "inactivity": {
+    "day_timeout_minutes": 60,
+    "night_timeout_seconds": 5,
+    "day_brightness_reduction": 0.6,
+    "night_brightness_reduction": 0.2,
+    "night_start_hour": 21,
+    "night_end_hour": 6
+  },
+  "ui": {
+    "show_loading_indicators": true,
+    "show_pir_feedback": true,
+    "enhanced_virtual_keyboard": true,
+    "touch_optimized": true,
+    "animation_duration_ms": 300
+  }
+}
 ```
 
-### Inactivity Settings
-In `src/static/js/app.js`, adjust these constants:
-```javascript
-// Time in milliseconds before inactivity modes trigger
-const DAY_INACTIVITY_TIMEOUT = 3600000;  // 1 hour for daytime
-const NIGHT_INACTIVITY_TIMEOUT = 5000;   // 5 seconds for nighttime
-const SLIDESHOW_START_DELAY = 5000;      // 5 seconds after entering inactivity
+### Environment Variable Override
 
-// PIR sensor will instantly wake display regardless of these timeouts
-```
-
-### Weather Location Settings
-The application uses environment variables to configure weather location settings:
+For backwards compatibility, environment variables will override config file settings:
 
 ```bash
-# Set your location coordinates (find them at https://www.latlong.net/)
+# Weather location settings
 export CALENDAR_WEATHER_LATITUDE="40.759010"  # Your latitude
 export CALENDAR_WEATHER_LONGITUDE="-73.984474"  # Your longitude
 export CALENDAR_TIMEZONE="America/New_York"  # Your timezone
+
+# Application settings
+export CALENDAR_DEBUG="false"  # Enable/disable debug mode
+export CALENDAR_PORT="5000"    # Application port
+export CALENDAR_ENV="production"  # Environment mode
 ```
 
-These can be configured in several ways:
+### Configuration Priority
 
-1. **Using the deployment script** - The automated installation script will prompt for these values
-2. **Manually setting environment variables** - Add them to your `.bashrc` or `/etc/profile.d/`
-3. **Using a .env file** - Create a `.env` file in the project root (not tracked by git)
-4. **Setting at runtime** - Export before starting the application
+The configuration system follows this priority order:
+1. Environment variables (highest priority)
+2. config.json file settings
+3. Built-in defaults (lowest priority)
 
-The automated deployment script will handle this configuration for you, storing the values in `/etc/profile.d/family-calendar-env.sh`.
+### Key Configuration Options
+
+- **PIR Sensor**: GPIO pin, sensitivity, and visual feedback settings
+- **Weather**: Location coordinates, caching, and offline behavior
+- **UI**: Touch optimizations, animations, and visual feedback
+- **Inactivity**: Different timeouts for day/night modes
+- **Logging**: Level, format, and file rotation settings
 
 ### Photo Management
 Add new photos to the `src/static/photos/` directory. The application will automatically index them on the next restart.
 
+## Recent Improvements (Latest Version)
+
+### Enhanced User Experience
+- **Advanced Virtual Keyboard**: Multi-layout support (letters, symbols), haptic feedback, long-press for rapid deletion
+- **Smart Loading Indicators**: Toast notifications, progress indicators, and real-time sync status
+- **PIR Visual Feedback**: Motion ripple effects, status indicators, and seamless activity detection
+- **Offline Mode**: Intelligent weather caching, graceful degradation, automatic recovery
+
+### Technical Improvements
+- **Configuration System**: JSON-based config with environment variable override support
+- **Better Error Handling**: Graceful recovery from network issues and API failures
+- **Production Readiness**: Debug mode control, path detection, and deployment optimizations
+- **Enhanced Components**: Improved touch responsiveness, animation system, and visual feedback
+
 ## Usage
 
 1. **Calendar View**:
-   - Monthly calendar displayed on the left
+   - Monthly calendar displayed on the left with loading indicators during sync
    - Daily schedule shown on the right
    - Tasks/chores displayed in a dedicated section
-   - Weather information always visible
+   - Weather information always visible with offline fallback
 
-2. **Inactivity Behavior**:
-   - After a period of inactivity (default: 1 hour during day, 5 seconds at night), screen dims
-   - PIR sensor instantly wakes display when motion is detected
+2. **Enhanced Touchscreen Interaction**:
+   - Advanced virtual keyboard with haptic feedback and multiple layouts
+   - Visual feedback for all touch interactions
+   - Long-press support for rapid text operations
+   - Motion detection with visual ripple effects
+
+3. **Inactivity Behavior**:
+   - After a period of inactivity (configurable: 1 hour during day, 5 seconds at night), screen dims
+   - PIR sensor instantly wakes display when motion is detected with visual feedback
    - When in long inactivity mode, slideshow activates
    - Any touch, mouse movement, keyboard press, or motion detection returns to calendar view
    - Reduced brightness during nighttime hours for energy saving
 
-3. **PIR Sensor Operation**:
+4. **PIR Sensor Operation**:
    - Continuously monitors for motion via GPIO pin 18
    - Automatic wake-up when people approach the display
-   - Debug panel available (click "Debug" in bottom-right corner) for testing
+   - Real-time status indicator showing sensor state
    - Works in simulation mode for development without hardware
 
-4. **Browser Access**:
+5. **Smart Features**:
+   - Offline weather caching with 24-hour retention
+   - Loading indicators for all sync operations
+   - Toast notifications for system events
+   - Automatic error recovery and retry logic
+
+6. **Browser Access**:
    - The application can also be accessed from any device on your network
    - Navigate to `http://[raspberry-pi-ip]:5000` in any web browser
 
@@ -364,12 +441,17 @@ src/
 │   └── database.py     # Photo database management
 ├── static/             # Frontend assets
 │   ├── css/            # CSS stylesheets
+│   │   └── components/ # Component-specific styles (loading, PIR feedback, etc.)
 │   ├── js/             # JavaScript modules
-│   │   └── components/ # Modular JS components including PIR sensor
+│   │   └── components/ # Modular JS components (enhanced virtual keyboard, loading indicators, etc.)
 │   └── photos/         # Photo storage
 ├── templates/          # HTML templates
-├── weather_integration/# Weather functionality
+├── weather_integration/# Weather functionality with offline caching
+├── config.py           # Centralized configuration management
 └── main.py             # Application entry point
+├── config.json         # Application configuration file
+├── CLAUDE.md           # Development documentation for Claude Code
+└── startup/            # Launch scripts with dynamic path detection
 ```
 
 ### Local Development

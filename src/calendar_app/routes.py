@@ -134,12 +134,15 @@ def view(year=None, month=None):
             start_chores_background_task = True
 
     if start_chores_background_task:
-        from src.google_integration.routes import fetch_google_tasks_background
-        chores_thread = threading.Thread(
-            target=fetch_google_tasks_background
-        )
-        chores_thread.daemon = True
-        chores_thread.start()
+        # Execute the sync directly instead of in a thread to avoid threading issues
+        try:
+            from src.google_integration.routes import fetch_google_tasks_background
+            fetch_google_tasks_background()  # Call directly without threading
+        except Exception as e:
+            print(f"Error during automatic chores refresh: {e}")
+            with google_fetch_lock:
+                if chores_task_id in background_tasks:
+                    background_tasks[chores_task_id]['status'] = 'error'
 
     # Use the new function to get all events that overlap with this month
     # This ensures we get multi-day events that span across month boundaries

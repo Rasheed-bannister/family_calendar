@@ -20,7 +20,7 @@ const Modal = (function() {
         eventModal.style.display = 'none';
         clearTimeout(modalCloseTimer); // Clear timer if closed manually
         modalCloseTimer = null;
-        console.log("Modal closed.");
+        // Modal closed
     }
 
     // Public methods
@@ -84,7 +84,7 @@ const Modal = (function() {
             // Start auto-close timer
             clearTimeout(modalCloseTimer); // Clear any existing timer
             modalCloseTimer = setTimeout(closeModal, MODAL_TIMEOUT);
-            console.log(`Modal opened. Auto-closing in ${MODAL_TIMEOUT / 1000}s.`);
+            // Modal opened with auto-close timer
         },
         
         close: closeModal,

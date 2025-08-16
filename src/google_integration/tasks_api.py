@@ -101,15 +101,12 @@ def fetch_tasks_from_list(service, task_list_id) -> list[dict]:
     if not task_list_id:
         return []
     try:
-        today = datetime.datetime.now().isoformat() + "Z"
-        tomorrow = (datetime.datetime.now() + datetime.timedelta(days=2)).isoformat() + "Z"
-        yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).isoformat() + "Z"
-
+        # Remove date filtering to get ALL tasks
         results = service.tasks().list(
             tasklist=task_list_id,
-            dueMax=tomorrow,
             showCompleted=True, # Include completed tasks in the API response
-            showHidden=True
+            showHidden=True,
+            maxResults=100  # Get more tasks
         ).execute()
         items = results.get('items', [])
         
@@ -121,7 +118,7 @@ def fetch_tasks_from_list(service, task_list_id) -> list[dict]:
                 'status': item.get('status'),
                 'due': item.get('due')
             }
-            for item in items if item.get('completed') is None or item.get('completed') <= tomorrow
+            for item in items
         ]
     except HttpError as error:
         print(f"An API error occurred fetching tasks: {error}")

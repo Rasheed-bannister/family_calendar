@@ -12,7 +12,7 @@ const Slideshow = (function() {
 
     // Private methods
     function fetchNextPhotoUrl() {
-        console.log("Fetching next background photo URL...");
+        // Fetching next background photo URL
         return fetch('/api/random-photo')
             .then(response => {
                 if (!response.ok) {
@@ -22,7 +22,7 @@ const Slideshow = (function() {
             })
             .then(data => {
                 if (data.url) {
-                    console.log("Next photo URL fetched:", data.url);
+                    // Next photo URL fetched
                     return data.url;
                 } else if (data.error) {
                     console.error("Error fetching photo URL:", data.error);
@@ -39,11 +39,11 @@ const Slideshow = (function() {
     function preloadAndSwitchBackground(url) {
         if (!url || isPreloading) return;
         
-        console.log("Preloading image:", url);
+        // Preloading image
         isPreloading = true;
         const img = new Image();
         img.onload = () => {
-            console.log("Image preloaded, setting as background:", url);
+            // Image preloaded, setting as background
             document.body.style.backgroundImage = `url(${url})`;
             currentPhotoUrl = url;
             isPreloading = false;
@@ -68,7 +68,7 @@ const Slideshow = (function() {
             preloadAndSwitchBackground(nextPhotoUrl);
         } else if (!isPreloading) {
             // If nextPhotoUrl isn't ready, try fetching one now and maybe use it next cycle
-            console.warn("Next photo URL not available for cycle, fetching again.");
+            // Next photo URL not available for cycle, fetching again
             fetchNextPhotoUrl().then(fetchedUrl => {
                 nextPhotoUrl = fetchedUrl;
                 // Optionally, try preloading immediately if needed, 
@@ -81,7 +81,7 @@ const Slideshow = (function() {
     // Public methods
     return {
         init: function() {
-            console.log("Initializing slideshow...");
+            // Initializing slideshow
             // Fetch the first two photo URLs
             fetchNextPhotoUrl().then(firstUrl => {
                 if (firstUrl) {
@@ -102,21 +102,21 @@ const Slideshow = (function() {
             }
             // Don't fetch immediately, rely on init and the cycle
             slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
-            console.log(`Started background slideshow interval (cycle every: ${SLIDESHOW_INTERVAL_MS / 1000}s)`);
+            // Started background slideshow interval
         },
 
         stop: function() {
             if (slideshowInterval) {
                 clearInterval(slideshowInterval);
                 slideshowInterval = null;
-                console.log("Slideshow interval stopped");
+                // Slideshow interval stopped
             }
             isPreloading = false; // Reset preloading state
         },
 
         // Optional: force change might need adjustment based on preloading state
         changePhoto: function() {
-             console.log("Manual photo change requested.");
+             // Manual photo change requested
              cyclePhoto(); // Trigger the cycle logic immediately
         }
     };

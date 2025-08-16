@@ -124,7 +124,7 @@ const PIRSensor = (function() {
                 };
             }
         } catch (error) {
-            console.warn('Could not load PIR configuration, using defaults:', error);
+            // Could not load PIR configuration, using defaults
             config = {
                 show_pir_feedback: true,
                 animation_duration: 300
@@ -144,7 +144,7 @@ const PIRSensor = (function() {
             if (data.status === 'initialized' && data.monitoring !== isMonitoring) {
                 isMonitoring = data.monitoring;
                 updateStatusIndicator();
-                console.log(`PIR sensor monitoring status changed: ${isMonitoring ? 'started' : 'stopped'}`);
+                // PIR sensor monitoring status changed
             }
             
             return data;
@@ -171,7 +171,7 @@ const PIRSensor = (function() {
             
             if (data.success) {
                 isMonitoring = true;
-                console.log('PIR sensor monitoring started successfully');
+                // PIR sensor monitoring started successfully
                 return true;
             } else {
                 console.error('Failed to start PIR monitoring:', data.message);
@@ -200,7 +200,7 @@ const PIRSensor = (function() {
             
             if (data.success) {
                 isMonitoring = false;
-                console.log('PIR sensor monitoring stopped successfully');
+                // PIR sensor monitoring stopped successfully
                 return true;
             } else {
                 console.error('Failed to stop PIR monitoring:', data.message);
@@ -219,7 +219,7 @@ const PIRSensor = (function() {
             const status = await checkPIRStatus();
             if (status && status.status === 'initialized' && !status.monitoring && isInitialized) {
                 // Try to restart monitoring if it stopped unexpectedly
-                console.log('PIR monitoring stopped unexpectedly, attempting to restart...');
+                // PIR monitoring stopped unexpectedly, attempting to restart
                 await startPIRMonitoring();
             }
         }, STATUS_CHECK_INTERVAL);
@@ -242,7 +242,7 @@ const PIRSensor = (function() {
                 const data = JSON.parse(event.data);
                 
                 if (data.type === 'motion_detected') {
-                    console.log('PIR motion detected via SSE');
+                    // PIR motion detected via SSE
                     
                     // Show visual feedback
                     showMotionFeedback();
@@ -270,14 +270,14 @@ const PIRSensor = (function() {
             }, 5000);
         };
         
-        console.log('PIR sensor event stream started');
+        // PIR sensor event stream started
     }
 
     function stopEventStream() {
         if (eventSource) {
             eventSource.close();
             eventSource = null;
-            console.log('PIR sensor event stream stopped');
+            // PIR sensor event stream stopped
         }
     }
 
@@ -285,7 +285,7 @@ const PIRSensor = (function() {
     const publicAPI = {
         init: async function(callback = null) {
             if (isInitialized) {
-                console.log('PIR sensor already initialized');
+                // PIR sensor already initialized
                 return true;
             }
 
@@ -300,12 +300,12 @@ const PIRSensor = (function() {
             // Check initial status
             const status = await checkPIRStatus();
             if (!status) {
-                console.warn('PIR sensor not available on backend');
+                // PIR sensor not available on backend
                 updateStatusIndicator(); // Show error state
                 return false;
             }
 
-            console.log('PIR sensor component initialized:', status);
+            // PIR sensor component initialized
             isInitialized = true;
             isMonitoring = status.monitoring;
             updateStatusIndicator();
@@ -314,7 +314,7 @@ const PIRSensor = (function() {
             if (!isMonitoring) {
                 const started = await startPIRMonitoring();
                 if (!started) {
-                    console.warn('Failed to start PIR monitoring during initialization');
+                    // Failed to start PIR monitoring during initialization
                 }
                 updateStatusIndicator();
             }
@@ -352,7 +352,7 @@ const PIRSensor = (function() {
 
         reportActivity: async function(activityType = 'motion') {
             if (!isInitialized) {
-                console.warn('PIR sensor not initialized, cannot report activity');
+                // PIR sensor not initialized, cannot report activity
                 return false;
             }
 
@@ -371,7 +371,7 @@ const PIRSensor = (function() {
                     activityCallback(activityType);
                 }
 
-                console.log(`PIR activity reported: ${activityType}`);
+                // PIR activity reported
                 return true;
             } catch (error) {
                 console.error('Error reporting PIR activity:', error);
@@ -388,7 +388,7 @@ const PIRSensor = (function() {
 
         triggerTestMotion: async function() {
             if (!isInitialized) {
-                console.warn('PIR sensor not initialized');
+                // PIR sensor not initialized
                 return false;
             }
 
@@ -401,7 +401,7 @@ const PIRSensor = (function() {
                 });
 
                 if (response.ok) {
-                    console.log('Test motion triggered successfully');
+                    // Test motion triggered successfully
                     return true;
                 } else {
                     console.error('Failed to trigger test motion');

@@ -55,7 +55,7 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
             processed_ids.add(event.id)
 
         except sqlite3.Error as e:
-            print(f"DEBUG: Database error processing event {event.id}: {e}")
+            print(f"Database error processing event {event.id}: {e}")
             continue # Continue with the next event
 
     return changes_made

@@ -7,7 +7,6 @@ const VirtualKeyboard = (function() {
     let keyboardContainer;
     let currentInput = null;
     let isOpen = false;
-    let keyPressTimeout = null;
     let longPressTimer = null;
     let config = null;
     let hapticFeedback = null;
@@ -52,7 +51,7 @@ const VirtualKeyboard = (function() {
                 };
             }
         } catch (error) {
-            console.warn('Could not load keyboard configuration, using defaults:', error);
+            // Could not load keyboard configuration, using defaults
             config = {
                 enhanced_virtual_keyboard: true,
                 animation_duration: 300,
@@ -208,7 +207,7 @@ const VirtualKeyboard = (function() {
                 handleKeyClick(e, key);
             }, { passive: false });
             
-            keyElement.addEventListener('touchcancel', (e) => {
+            keyElement.addEventListener('touchcancel', () => {
                 keyElement.classList.remove('pressed');
                 if (longPressTimer) {
                     clearTimeout(longPressTimer);
@@ -284,10 +283,7 @@ const VirtualKeyboard = (function() {
     
     // Handle key clicks
     function handleKeyClick(e, key) {
-        console.log('Virtual keyboard: key clicked', key);
-        
         if (!currentInput) {
-            console.warn('Virtual keyboard: no current input selected');
             return;
         }
         
@@ -446,17 +442,11 @@ const VirtualKeyboard = (function() {
     
     // Show the keyboard and link it to the input that has focus
     function showKeyboard(input) {
-        if (!keyboardContainer) {
-            console.warn('Virtual keyboard: keyboard container not found');
+        if (!keyboardContainer || !input) {
             return;
         }
         
-        if (!input) {
-            console.warn('Virtual keyboard: no input element provided');
-            return;
-        }
-        
-        console.log('Virtual keyboard: showing keyboard for input', input.id || input.tagName);
+        // Showing keyboard for input
         
         currentInput = input;
         keyboardContainer.style.display = 'block';
@@ -479,7 +469,7 @@ const VirtualKeyboard = (function() {
                 modal.classList.add('keyboard-active');
             }
             
-            console.log('Virtual keyboard: added keyboard classes to modal content');
+            // Added keyboard classes to modal content
         }
         
         // Try to trigger native keyboard on mobile devices
@@ -493,17 +483,14 @@ const VirtualKeyboard = (function() {
         }, 300);
         
         isOpen = true;
-        console.log('Virtual keyboard: successfully shown');
+        // Keyboard successfully shown
     }
     
     // Hide the keyboard
     function hideKeyboard() {
         if (!keyboardContainer || !isOpen) {
-            console.log('Virtual keyboard: hide called but keyboard not open or not found');
             return;
         }
-        
-        console.log('Virtual keyboard: hiding keyboard');
         
         keyboardContainer.classList.remove('keyboard-visible');
         
@@ -533,7 +520,7 @@ const VirtualKeyboard = (function() {
             keyboardContainer.style.display = 'none';
             currentInput = null;
             isOpen = false;
-            console.log('Virtual keyboard: successfully hidden');
+            // Keyboard successfully hidden
         }, 300);
     }
     
@@ -615,7 +602,7 @@ const VirtualKeyboard = (function() {
             
             createKeyboard();
             setupInputListeners();
-            console.log("Enhanced virtual keyboard component initialized");
+            // Enhanced virtual keyboard component initialized
             
             // Make the keyboard available globally
             window.VirtualKeyboard = publicAPI;

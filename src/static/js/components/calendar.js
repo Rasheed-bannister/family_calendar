@@ -49,13 +49,13 @@ const Calendar = (function() {
     }
 
     function resetToToday() {
-        console.log("Inactivity timeout reached. Reverting to today.");
+        // Inactivity timeout reached, reverting to today
         // No need to manually remove highlight here, the click handler will manage it.
         
         if (todayCell) {
             // Simulate a click on today's cell to reset state and view
             todayCell.click(); 
-            console.log("Triggered click on today's cell to reset.");
+            // Triggered click on today's cell to reset
         } else {
             // If today is not visible (different month), reset to placeholder
             // Also clear selection state if something else was selected
@@ -64,7 +64,7 @@ const Calendar = (function() {
                 selectedCell = null;
             }
             DailyView.resetToPlaceholder();
-            console.log("Reset view to placeholder as today is not visible.");
+            // Reset view to placeholder as today is not visible
         }
 
         clearTimeout(inactivityTimer);
@@ -92,7 +92,7 @@ const Calendar = (function() {
         
         // Only start the timer if we're not on the current month
         if (!isCurrentMonthDisplayed()) {
-            console.log(`Starting month inactivity timer (${MONTH_INACTIVITY_TIMEOUT / 1000}s)`);
+            // Starting month inactivity timer
             monthInactivityTimer = setTimeout(resetToCurrentMonth, MONTH_INACTIVITY_TIMEOUT);
         }
     }
@@ -110,7 +110,7 @@ const Calendar = (function() {
         const timeSinceLastForceRefresh = now - lastForceRefreshTime;
         
         if (timeSinceLastForceRefresh > FORCE_REFRESH_INTERVAL) {
-            console.log("Triggering force refresh of calendar data");
+            // Triggering force refresh of calendar data
             LoadingIndicator.show('google-refresh', 'Refreshing calendar data...', false);
             lastForceRefreshTime = now;
             
@@ -119,8 +119,8 @@ const Calendar = (function() {
                 method: 'GET'
             })
             .then(response => response.json())
-            .then(data => {
-                console.log("Manual refresh triggered:", data);
+            .then(() => {
+                // Manual refresh triggered
                 LoadingIndicator.hide('google-refresh');
                 LoadingIndicator.showToast('Calendar refreshed', 'success', 2000);
                 // Continue with normal update check after triggering refresh
@@ -142,7 +142,7 @@ const Calendar = (function() {
                 return response.json();
             })
             .then(data => {
-                console.log("Update check response:", data);
+                // Update check response received
                 
                 // Handle first load differently from regular checks
                 if (!initialLoadComplete) {
@@ -175,7 +175,7 @@ const Calendar = (function() {
                 } else {
                     // Handle regular update checks
                     if (data.refresh_triggered) {
-                        console.log("Background refresh was triggered, checking again soon...");
+                        // Background refresh was triggered, checking again soon
                         // Check again in 3 seconds to see if the refresh found new data
                         setTimeout(checkForGoogleUpdates, 3000);
                     } else if (data.updates_available && !inDebounce) {
@@ -200,7 +200,7 @@ const Calendar = (function() {
                     LoadingIndicator.hide('google-sync');
                     LoadingIndicator.showToast('Sync error - using cached data', 'error', 3000);
                     clearInterval(googleUpdateTimer);
-                    console.warn("Stopping rapid initial update checks due to error.");
+                    // Stopping rapid initial update checks due to error
                     initialLoadComplete = true; // Mark initial phase as done (even if failed)
                 }
             });
@@ -227,7 +227,7 @@ const Calendar = (function() {
         
         // Start with frequent checks until initial load completes
         googleUpdateTimer = setInterval(checkForGoogleUpdates, INITIAL_CHECK_INTERVAL);
-        console.log(`Started initial Google Calendar update checker (checking every ${INITIAL_CHECK_INTERVAL/1000}s)`);
+        // Started initial Google Calendar update checker
         
         // Set timeout to force refresh if initial load takes too long
         if (initialLoadTimeout) {
@@ -235,7 +235,7 @@ const Calendar = (function() {
         }
         
         initialLoadTimeout = setTimeout(() => {
-            console.log("Initial load timeout reached, forcing refresh");
+            // Initial load timeout reached, forcing refresh
             if (!initialLoadComplete) {
                 refreshPage();
             }
@@ -289,7 +289,7 @@ const Calendar = (function() {
             // Check if the click was on an event element
             const clickedEvent = event.target.closest('.event');
             if (clickedEvent) {
-                console.log("Clicked on calendar event:", clickedEvent.dataset.title);
+                // Clicked on calendar event
                 const eventData = { ...clickedEvent.dataset }; // Clone dataset
                 Modal.show(eventData);
                 return; // Stop further processing for this click
@@ -300,17 +300,17 @@ const Calendar = (function() {
 
             // Ensure we clicked a valid cell within the current month
             if (!clickedCell || !clickedCell.classList.contains('current-month')) {
-                console.log("Click ignored: Not a valid current-month day cell.");
+                // Click ignored: Not a valid current-month day cell
                 return; // Ignore clicks outside valid day cells or on other-month cells
             }
 
-            console.log("Clicked cell:", clickedCell.dataset.year, clickedCell.dataset.month, clickedCell.dataset.day);
+            // Clicked cell
             // No need to reset inactivity timer here, already done at the start
 
             // Remove selected class from the previous selection
             if (selectedCell && selectedCell !== clickedCell) {
                 removeHighlight(selectedCell); // Now only removes 'selected'
-                console.log("Removed selected highlight from previously selected:", selectedCell);
+                // Removed selected highlight from previously selected
             }
             
             // Highlight the new cell and update selection state
@@ -318,7 +318,7 @@ const Calendar = (function() {
             highlightToday(); // Re-apply today class just in case
             clickedCell.classList.add('selected');
             selectedCell = clickedCell;
-            console.log("Highlighted new cell:", selectedCell);
+            // Highlighted new cell
 
             // Render events for the clicked day
             DailyView.renderEvents(clickedCell);
@@ -354,14 +354,14 @@ const Calendar = (function() {
                     clearInterval(googleUpdateTimer);
                     googleUpdateTimer = null;
                 }
-                console.log("Page hidden, paused calendar update checks");
+                // Page hidden, paused calendar update checks
             } else {
                 // Page is visible again, resume update checks
                 updateCheckEnabled = true;
                 // Reset initial load status to check immediately
                 initialLoadComplete = false;
                 startGoogleUpdateTimer();
-                console.log("Page visible, resumed calendar update checks");
+                // Page visible, resumed calendar update checks
             }
         });
     }
@@ -403,12 +403,12 @@ const Calendar = (function() {
 
             // Simulate a click on today's cell if it exists on the current view
             if (todayCell) {
-                console.log("Triggering initial click on today's cell.");
+                // Triggering initial click on today's cell
                 todayCell.click(); // This will handle selection and rendering via the click listener
             } else {
                  // If today is not on this month view, clear the daily view initially.
                  DailyView.resetToPlaceholder(); 
-                 console.log("Today not visible, reset daily view to placeholder.");
+                 // Today not visible, reset daily view to placeholder
             }
             
             // Check if we're viewing a different month than the current one
@@ -417,7 +417,7 @@ const Calendar = (function() {
             // Always ensure we have events loaded when navigating to a different month
             const hasEvents = document.querySelectorAll('.calendar .event').length > 0;
             if (!isCurrentMonth && !hasEvents) {
-                console.log("Navigated to a new month with no events yet, ensuring data loads");
+                // Navigated to a new month with no events yet, ensuring data loads
                 initialLoadComplete = false; // Force initial load behavior
             }
             
