@@ -246,36 +246,8 @@ const Calendar = (function() {
     }
 
     function showUpdateNotification() {
-        // Create a notification element
-        const notification = document.createElement('div');
-        notification.classList.add('update-notification');
-        notification.textContent = 'Calendar events loading... Please wait.';
-        
-        Object.assign(notification.style, {
-            position: 'fixed',
-            top: '10px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-            zIndex: '1000',
-            transition: 'opacity 0.3s ease'
-        });
-        
-        document.body.appendChild(notification);
-        
-        // Remove after the page refreshes or 3 seconds (whichever comes first)
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            setTimeout(() => {
-                if (document.body.contains(notification)) {
-                    document.body.removeChild(notification);
-                }
-            }, 300);
-        }, 3000);
+        // Use the centralized LoadingIndicator component instead of custom notification
+        LoadingIndicator.showToast('Calendar events loading... Please wait.', 'info', 3000);
     }
 
     function setupEventListeners() {

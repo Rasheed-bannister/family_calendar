@@ -1,9 +1,9 @@
 {
-  "cached_at": "2025-08-16T12:07:39.923298",
+  "cached_at": "2025-08-16T12:19:27.936211",
   "data": {
     "current": {
-      "time": "2025-08-16T12:00:00",
-      "apparent_temperature": 101.5029525756836,
+      "time": "2025-08-16T12:15:00",
+      "apparent_temperature": 101.0140609741211,
       "is_day": 1.0,
       "weather_code": 0.0
     },

@@ -141,6 +141,10 @@ const LoadingIndicator = (function() {
      * @param {number} duration - Duration in milliseconds
      */
     function showToast(message, type = 'info', duration = 3000) {
+        if (!config.show_loading_indicators) {
+            return; // Don't show toasts if loading indicators are disabled
+        }
+        
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
@@ -185,6 +189,10 @@ const LoadingIndicator = (function() {
      * @param {string} message - Optional progress message
      */
     function updateProgress(operationId, progress, message = '') {
+        if (!config.show_loading_indicators) {
+            return; // Don't show progress indicators if loading indicators are disabled
+        }
+        
         if (!activeOperations.has(operationId)) {
             show(operationId, message, false);
         }

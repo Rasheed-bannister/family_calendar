@@ -261,11 +261,11 @@ const Modal = (function() {
                         location.reload(); // Refresh to see the new chore
                     } else {
                         const errorData = await response.json();
-                        alert(`Error adding chore: ${errorData.message || 'Unknown error'}`);
+                        LoadingIndicator.showToast(`Error adding chore: ${errorData.message || 'Unknown error'}`, 'error', 3000);
                     }
                 } catch (error) {
                     console.error('Error submitting chore:', error);
-                    alert('An error occurred while adding the chore.');
+                    LoadingIndicator.showToast('An error occurred while adding the chore.', 'error', 3000);
                 }
             });
             return true;
