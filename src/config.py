@@ -20,7 +20,8 @@ class Config:
             "port": 5000,
             "secret_key": None,  # Should be set in config file
             "use_reloader": False,
-            "environment": "production"  # production, development, testing
+            "environment": "production",  # production, development, testing
+            "family_name": "Family"  # Default family name
         },
         "weather": {
             "latitude": 40.759010,
@@ -86,12 +87,13 @@ class Config:
         
         for location in locations:
             if location.exists():
-                logging.info(f"Found config file at: {location}")
+                # Use print here since logging isn't configured yet
+                print(f"Found config file at: {location}")
                 return location
         
         # If no config file exists, create a default one
         default_location = Path.cwd() / "config.json"
-        logging.info(f"No config file found. Creating default at: {default_location}")
+        print(f"No config file found. Creating default at: {default_location}")
         self._create_default_config(default_location)
         return default_location
     
@@ -108,10 +110,10 @@ class Config:
             with open(path, 'w') as f:
                 json.dump(default_config, f, indent=2)
         except (IOError, ValueError) as e:
-            logging.error(f"Error creating default config file: {e}")
+            print(f"Error creating default config file: {e}")
             return
         
-        logging.info(f"Created default configuration file at: {path}")
+        print(f"Created default configuration file at: {path}")
     
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file with defaults as fallback."""
@@ -123,10 +125,10 @@ class Config:
                     file_config = json.load(f)
                     # Deep merge with defaults
                     config = self._deep_merge(config, file_config)
-                    logging.info(f"Loaded configuration from: {self.config_file}")
+                    print(f"Loaded configuration from: {self.config_file}")
             except (ValueError, IOError) as e:
-                logging.error(f"Error loading config file: {e}")
-                logging.warning("Using default configuration")
+                print(f"Error loading config file: {e}")
+                print("Using default configuration")
         
         # Override with environment variables if present (for backwards compatibility)
         self._apply_env_overrides(config)
@@ -158,9 +160,9 @@ class Config:
             if env_var in os.environ:
                 try:
                     config[section][key] = converter(os.environ[env_var])
-                    logging.info(f"Override from environment: {env_var}")
+                    print(f"Override from environment: {env_var}")
                 except (ValueError, KeyError) as e:
-                    logging.error(f"Error applying environment override {env_var}: {e}")
+                    print(f"Error applying environment override {env_var}: {e}")
     
     def _validate_config(self):
         """Validate configuration values."""
@@ -170,7 +172,7 @@ class Config:
         if not self.config['app'].get('secret_key'):
             import secrets
             self.config['app']['secret_key'] = secrets.token_hex(32)
-            logging.warning("No secret key configured. Generated a random one.")
+            print("No secret key configured. Generated a random one.")
         
         # Validate numeric ranges
         if not 0 <= self.config['weather']['latitude'] <= 90:
@@ -192,10 +194,10 @@ class Config:
         
         if errors:
             for error in errors:
-                logging.error(f"Configuration error: {error}")
+                print(f"Configuration error: {error}")
             raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
         
-        logging.info("Configuration validation successful")
+        print("Configuration validation successful")
     
     def _setup_logging(self):
         """Configure logging based on settings."""
@@ -205,26 +207,47 @@ class Config:
         log_file = Path(log_config['file'])
         log_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Configure logging
-        logging.basicConfig(
-            level=getattr(logging, log_config['level']),
-            format=log_config['format'],
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler()
-            ]
-        )
+        # Clear any existing handlers and reconfigure completely
+        root_logger = logging.getLogger()
+        
+        # Remove all existing handlers
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        # Set the logging level
+        root_logger.setLevel(getattr(logging, log_config['level']))
+        
+        # Create formatter
+        formatter = logging.Formatter(log_config['format'])
+        
+        # Add file handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # Add console handler  
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
         
         # Add rotating file handler if specified
         if log_config.get('max_bytes'):
             from logging.handlers import RotatingFileHandler
-            handler = RotatingFileHandler(
+            rotating_handler = RotatingFileHandler(
                 log_file,
                 maxBytes=log_config['max_bytes'],
                 backupCount=log_config.get('backup_count', 5)
             )
-            handler.setFormatter(logging.Formatter(log_config['format']))
-            logging.getLogger().addHandler(handler)
+            rotating_handler.setFormatter(formatter)
+            root_logger.addHandler(rotating_handler)
+        
+        # Configure Flask/werkzeug loggers to respect the same level
+        werkzeug_logger = logging.getLogger('werkzeug')
+        werkzeug_logger.setLevel(getattr(logging, log_config['level']))
+        
+        # Configure other common third-party loggers
+        urllib3_logger = logging.getLogger('urllib3')
+        urllib3_logger.setLevel(getattr(logging, log_config['level']))
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value using dot notation."""

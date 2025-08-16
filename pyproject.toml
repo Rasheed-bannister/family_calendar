@@ -16,6 +16,7 @@ dependencies = [
     "requests-cache>=1.2.1",
     "retry-requests>=2.0.0",
     "RPi.GPIO>=0.7.1; sys_platform == 'linux'",
+    "psutil>=5.9.0",
 ]
 
 [dependency-groups]

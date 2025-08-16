@@ -97,6 +97,7 @@ install_system_dependencies() {
     xinput-calibrator \
     chromium-browser \
     python3-rpi.gpio \
+    openssl \
     || error "Failed to install required packages"
     
   status "System dependencies installed successfully"
@@ -181,52 +182,87 @@ configure_google_api() {
   fi
 }
 
-# Configure weather settings
-configure_weather_settings() {
-  section "Configuring Weather Settings"
+# Configure application settings
+configure_application_settings() {
+  section "Configuring Application Settings"
   
-  echo "Please provide your location information for weather forecasting."
-  echo "This will be stored in environment variables for the application."
+  echo "Please provide your family information and location for the calendar."
+  echo "This will be stored in the application configuration file."
   echo "You can find your coordinates using https://www.latlong.net/"
   echo
   
+  FAMILY_NAME=$(ask_with_default "Enter your family name (e.g., Smith Family)" "Family")
   LATITUDE=$(ask_with_default "Enter your latitude" "$DEFAULT_LATITUDE")
   LONGITUDE=$(ask_with_default "Enter your longitude" "$DEFAULT_LONGITUDE")
-  TIMEZONE=$(ask_with_default "Enter your timezone" "$DEFAULT_TIMEZONE")
-  
-  status "Setting up environment variables..."
-  
-  local env_file="/etc/profile.d/family-calendar-env.sh"
-  cat > "$env_file" << EOF
-#!/bin/bash
-# Environment variables for Family Calendar & Photo Slideshow
-export CALENDAR_WEATHER_LATITUDE="$LATITUDE"
-export CALENDAR_WEATHER_LONGITUDE="$LONGITUDE"
-export CALENDAR_TIMEZONE="$TIMEZONE"
-EOF
+  TIMEZONE=$(ask_with_default "Enter your timezone (e.g., America/New_York)" "$DEFAULT_TIMEZONE")
 
-  chmod +x "$env_file"
+  status "Creating application configuration file..."
   
-  # Also add to the current user's .bashrc for immediate use
+  # Create config.json with proper settings for production deployment
+  cat > "$APP_DIR/config.json" << EOF
+{
+  "app": {
+    "debug": false,
+    "host": "0.0.0.0",
+    "port": 5000,
+    "secret_key": "$(openssl rand -hex 32)",
+    "use_reloader": false,
+    "environment": "production",
+    "family_name": "$FAMILY_NAME"
+  },
+  "weather": {
+    "latitude": $LATITUDE,
+    "longitude": $LONGITUDE,
+    "timezone": "$TIMEZONE",
+    "cache_duration": 600,
+    "offline_fallback": true
+  },
+  "pir_sensor": {
+    "enabled": true,
+    "gpio_pin": 18,
+    "debounce_time": 2.0,
+    "simulation_mode": false
+  },
+  "inactivity": {
+    "day_timeout_minutes": 60,
+    "night_timeout_seconds": 5,
+    "day_brightness_reduction": 0.6,
+    "night_brightness_reduction": 0.2,
+    "night_start_hour": 21,
+    "night_end_hour": 6,
+    "slideshow_delay_seconds": 5
+  },
+  "google": {
+    "sync_interval_minutes": 3,
+    "max_retry_attempts": 3,
+    "offline_mode_enabled": true
+  },
+  "ui": {
+    "show_loading_indicators": false,
+    "show_pir_feedback": false,
+    "enhanced_virtual_keyboard": true,
+    "touch_optimized": true,
+    "animation_duration_ms": 300
+  },
+  "paths": {
+    "photos_dir": "src/static/photos",
+    "credentials_dir": "src/google_integration"
+  },
+  "logging": {
+    "level": "WARN",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "calendar.log",
+    "max_bytes": 10485760,
+    "backup_count": 5
+  }
+}
+EOF
+  
+  # Ensure proper ownership of config file
   local username=$(logname)
-  local user_home=$(eval echo ~$username)
+  chown $username:$username "$APP_DIR/config.json"
   
-  if ! grep -q "CALENDAR_WEATHER_LATITUDE" "$user_home/.bashrc"; then
-    cat >> "$user_home/.bashrc" << EOF
-
-# Family Calendar & Photo Slideshow environment variables
-export CALENDAR_WEATHER_LATITUDE="$LATITUDE"
-export CALENDAR_WEATHER_LONGITUDE="$LONGITUDE"
-export CALENDAR_TIMEZONE="$TIMEZONE"
-EOF
-  fi
-  
-  # Export variables for immediate use in this session
-  export CALENDAR_WEATHER_LATITUDE="$LATITUDE"
-  export CALENDAR_WEATHER_LONGITUDE="$LONGITUDE"
-  export CALENDAR_TIMEZONE="$TIMEZONE"
-  
-  status "Weather settings configured successfully"
+  status "Application configuration created successfully"
 }
 
 # Create autostart entry
@@ -245,15 +281,33 @@ setup_autostart() {
   # Create launch-calendar.sh
   cat > "$APP_DIR/startup/launch-calendar.sh" << EOF
 #!/bin/bash
-# Load environment variables if they exist
-if [ -f /etc/profile.d/family-calendar-env.sh ]; then
-  source /etc/profile.d/family-calendar-env.sh
-fi
-
 # Start the Flask server in the background
 cd $APP_DIR
+
+# Ensure we have a virtual environment
+if [ ! -f .venv/bin/activate ]; then
+  echo "Error: Virtual environment not found"
+  exit 1
+fi
+
 source .venv/bin/activate
+
+# Wait for any system startup processes to complete
+sleep 3
+
+# Check if config file exists
+if [ ! -f config.json ]; then
+  echo "Error: Configuration file config.json not found"
+  exit 1
+fi
+
+# Start the application with proper module import
+echo "Starting Family Calendar application..."
 python -m src.main &
+
+# Save the PID for potential later use
+echo \$! > /tmp/calendar-server.pid
+echo "Calendar server started with PID: \$(cat /tmp/calendar-server.pid)"
 EOF
   
   # Create launch-browser.sh
@@ -333,15 +387,78 @@ run_initial_setup() {
   
   status "Initializing application databases..."
   cd "$APP_DIR"
-  # The databases are initialized automatically when main.py runs
-  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -m src.main --setup-only" 
+  # Test that configuration loads properly and databases are initialized
+  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -c 'from src.config import get_config; config = get_config(); print(\"Configuration loaded successfully\")'" 
   
   status "Testing PIR sensor connectivity..."
-  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -c 'from src.pir_sensor.sensor import PIRSensor; sensor = PIRSensor(); print(\"PIR sensor GPIO available:\", sensor.gpio_available)'" || status "PIR sensor test failed, check hardware connection"
+  su $username -c "cd $APP_DIR && source .venv/bin/activate && python -c 'from src.pir_sensor.sensor import initialize_pir_sensor; result = initialize_pir_sensor(); print(\"PIR sensor initialization:\", \"Success\" if result else \"Failed (check hardware connection)\")'"
   
   status "Initial setup completed"
   echo -e "${YELLOW}NOTE:${NC} When the application starts for the first time, you will need to authorize it with your Google account."
+  echo -e "${YELLOW}CONFIG:${NC} Application settings can be modified in $APP_DIR/config.json"
+  echo -e "${YELLOW}FAMILY NAME:${NC} The family name '$FAMILY_NAME' will be displayed in the calendar header"
   echo -e "${YELLOW}PIR SENSOR:${NC} Connect PIR sensor OUT pin to GPIO 18 (Pin 12) for motion detection."
+}
+
+# Setup health monitoring and systemd service
+setup_health_monitoring() {
+  section "Setting Up Health Monitoring"
+  
+  local username=$(logname)
+  
+  status "Installing systemd service..."
+  
+  # Update service file paths
+  sed -i "s|/home/pi/family_calendar|$APP_DIR|g" "$APP_DIR/startup/family-calendar.service"
+  sed -i "s|User=pi|User=$username|g" "$APP_DIR/startup/family-calendar.service"
+  sed -i "s|Group=pi|Group=$username|g" "$APP_DIR/startup/family-calendar.service"
+  
+  # Install systemd service
+  cp "$APP_DIR/startup/family-calendar.service" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable family-calendar.service
+  
+  status "Setting up health monitor script..."
+  
+  # Update health monitor script paths
+  sed -i "s|/home/pi/family_calendar|$APP_DIR|g" "$APP_DIR/startup/health-monitor.sh"
+  
+  # Make health monitor script executable
+  chmod +x "$APP_DIR/startup/health-monitor.sh"
+  
+  # Create log directory
+  mkdir -p /var/log
+  touch /var/log/family-calendar-monitor.log
+  chown $username:$username /var/log/family-calendar-monitor.log
+  
+  # Create systemd service for health monitor
+  cat > /etc/systemd/system/family-calendar-monitor.service << EOF
+[Unit]
+Description=Family Calendar Health Monitor
+After=family-calendar.service
+Requires=family-calendar.service
+
+[Service]
+Type=simple
+User=$username
+Group=$username
+WorkingDirectory=$APP_DIR
+ExecStart=$APP_DIR/startup/health-monitor.sh
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable family-calendar-monitor.service
+  
+  status "Health monitoring setup completed"
+  echo -e "${YELLOW}HEALTH:${NC} Health endpoint available at http://localhost:5000/health/"
+  echo -e "${YELLOW}MONITORING:${NC} Automatic restart enabled with health monitoring"
 }
 
 # Main deployment process
@@ -355,9 +472,10 @@ main() {
   setup_gpio_permissions
   setup_application
   configure_google_api
-  configure_weather_settings
+  configure_application_settings
   setup_autostart
   configure_screen
+  setup_health_monitoring
   run_initial_setup
   
   section "Deployment Completed Successfully"
@@ -376,7 +494,20 @@ main() {
   echo -e "• Motion-activated display wake-up"
   echo -e "• Google Calendar and Tasks integration"
   echo -e "• Weather display and photo slideshow"
-  echo -e "• Debug panel for PIR sensor testing"
+  echo -e "• Configurable logging and debug settings"
+  echo ""
+  echo -e "${BLUE}Configuration:${NC}"
+  echo -e "• Application settings: $APP_DIR/config.json"
+  echo -e "• Application logs: $APP_DIR/calendar.log"
+  echo -e "• Health monitor logs: /var/log/family-calendar-monitor.log"
+  echo -e "• Logging level set to WARN for production use"
+  echo ""
+  echo -e "${BLUE}Health Monitoring:${NC}"
+  echo -e "• Health endpoint: http://localhost:5000/health/"
+  echo -e "• Detailed health: http://localhost:5000/health/detailed"
+  echo -e "• System resources: http://localhost:5000/health/system"
+  echo -e "• Automatic restart on critical errors enabled"
+  echo -e "• Service management: systemctl status family-calendar"
   
   read -p "Would you like to reboot now to apply all changes? (y/n) " -n 1 -r
   echo

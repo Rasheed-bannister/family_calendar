@@ -62,6 +62,30 @@ def create_app():
     app.config['SECRET_KEY'] = config.get('app.secret_key')
     app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
     
+    # Initialize health monitoring
+    from src.health_monitor import health_monitor
+    
+    # Set up global error handler for critical errors
+    @app.errorhandler(500)
+    def handle_500_error(error):
+        health_monitor.record_error("Internal Server Error", str(error), is_critical=True)
+        return "Internal Server Error", 500
+    
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        # Don't handle HTTP exceptions (like 404, 403) as critical
+        if hasattr(error, 'code'):
+            return error
+        
+        # Log unhandled exceptions as critical errors
+        should_restart = health_monitor.record_error("Unhandled Exception", str(error), is_critical=True)
+        
+        if should_restart:
+            logging.critical("Application restart threshold reached due to critical errors")
+            # In a production environment, this could trigger a restart mechanism
+            
+        return "Internal Server Error", 500
+    
     # Initialize database for calendar
     from src.calendar_app.utils import initialize_db as initialize_calendar_db
     initialize_calendar_db()
@@ -82,12 +106,14 @@ def create_app():
     from src.chores_app.routes import chores_bp
     from src.google_integration import google_bp
     from src.pir_sensor.routes import pir_bp
+    from src.health_routes import health_bp
     app.register_blueprint(calendar_bp)
     app.register_blueprint(slideshow_bp)
     app.register_blueprint(weather_bp)
     app.register_blueprint(chores_bp)
     app.register_blueprint(google_bp)
     app.register_blueprint(pir_bp)
+    app.register_blueprint(health_bp)
     
     @app.route('/')
     def index_redirect():

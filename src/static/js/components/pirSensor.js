@@ -24,6 +24,11 @@ const PIRSensor = (function() {
 
     // Private methods
     function createVisualIndicators() {
+        // Only create indicators if PIR feedback is enabled
+        if (!config || !config.show_pir_feedback) {
+            return;
+        }
+        
         // Create motion detection indicator
         visualIndicator = document.createElement('div');
         visualIndicator.className = 'pir-motion-indicator';

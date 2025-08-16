@@ -5,7 +5,8 @@
     "port": 5000,
     "secret_key": "your-secret-key-here-change-this-in-production",
     "use_reloader": false,
-    "environment": "production"
+    "environment": "production",
+    "family_name": "Bannister Family"
   },
   "weather": {
     "latitude": 40.759010,
@@ -46,7 +47,7 @@
     "credentials_dir": "src/google_integration"
   },
   "logging": {
-    "level": "ERROR",
+    "level": "WARN",
     "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "file": "calendar.log",
     "max_bytes": 10485760,

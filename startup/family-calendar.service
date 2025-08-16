@@ -1,0 +1,35 @@
+[Unit]
+Description=Family Calendar Application
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/family_calendar
+ExecStart=/home/pi/family_calendar/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment="PYTHONPATH=/home/pi/family_calendar"
+
+# Resource limits
+LimitNOFILE=1024
+MemoryLimit=512M
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/family_calendar
+
+# Health monitoring
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

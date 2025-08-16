@@ -14,6 +14,55 @@ import LoadingIndicator from './components/loadingIndicator.js';
 
 document.addEventListener('DOMContentLoaded', async function() {
     
+    // Activity tracking variables
+    let lastActivityTimestamp = Date.now();
+    
+    // Inactivity settings (loaded from config)
+    let DAY_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // Default: 1 hour during daytime
+    let NIGHT_INACTIVITY_TIMEOUT = 5 * 1000;     // Default: 5 seconds at night
+    let DAY_BRIGHTNESS_REDUCTION = 0.6;          // Default: 40% reduction (multiply by 0.6)
+    let NIGHT_BRIGHTNESS_REDUCTION = 0.2;        // Default: 80% reduction (multiply by 0.2)
+    let NIGHT_START_HOUR = 21;                   // Default: 9:00 PM
+    let NIGHT_END_HOUR = 6;                      // Default: 6:00 AM
+    let SLIDESHOW_START_DELAY = 5000;            // Default: 5 seconds after entering inactivity
+    let currentInactivityMode = 'none';            // 'none', 'day-inactive', 'night-inactive'
+    let longInactivityMode = false;                // Track if we're in long inactivity mode
+    let inactivityCheckInterval = null;
+    let lastMovementTime = 0;
+    const MOVEMENT_THROTTLE = 1000;                // Only register movement once per second
+    const DEBUG_MODE = false;                      // Set to false in production
+    
+    // Load configuration from server
+    async function loadInactivityConfig() {
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            
+            // Update inactivity settings from config
+            DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;
+            NIGHT_INACTIVITY_TIMEOUT = (config.inactivity?.night_timeout_seconds || 5) * 1000;
+            DAY_BRIGHTNESS_REDUCTION = config.inactivity?.day_brightness_reduction || 0.6;
+            NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
+            NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
+            NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
+            SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
+            
+            if (DEBUG_MODE) {
+                console.log('Loaded inactivity config:', {
+                    DAY_INACTIVITY_TIMEOUT,
+                    NIGHT_INACTIVITY_TIMEOUT,
+                    DAY_BRIGHTNESS_REDUCTION,
+                    NIGHT_BRIGHTNESS_REDUCTION,
+                    NIGHT_START_HOUR,
+                    NIGHT_END_HOUR,
+                    SLIDESHOW_START_DELAY
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load inactivity config:', error);
+        }
+    }
+    
     // Load configuration first
     await loadInactivityConfig();
     
@@ -71,45 +120,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     if (failedComponents.length > 0) {
         console.error(`Failed to initialize components: ${failedComponents.join(', ')}`);
-    }
-    
-    // Activity tracking variables
-    let lastActivityTimestamp = Date.now();
-    
-    // Inactivity settings (loaded from config)
-    let DAY_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // Default: 1 hour during daytime
-    let NIGHT_INACTIVITY_TIMEOUT = 5 * 1000;     // Default: 5 seconds at night
-    let DAY_BRIGHTNESS_REDUCTION = 0.6;          // Default: 40% reduction (multiply by 0.6)
-    let NIGHT_BRIGHTNESS_REDUCTION = 0.2;        // Default: 80% reduction (multiply by 0.2)
-    let NIGHT_START_HOUR = 21;                   // Default: 9:00 PM
-    let NIGHT_END_HOUR = 6;                      // Default: 6:00 AM
-    let SLIDESHOW_START_DELAY = 5000;            // Default: 5 seconds after entering inactivity
-    let currentInactivityMode = 'none';            // 'none', 'day-inactive', 'night-inactive'
-    let longInactivityMode = false;                // Track if we're in long inactivity mode
-    let inactivityCheckInterval = null;
-    let lastMovementTime = 0;
-    const MOVEMENT_THROTTLE = 1000;                // Only register movement once per second
-    const DEBUG_MODE = false;                      // Set to false in production
-    
-    // Load configuration from server
-    async function loadInactivityConfig() {
-        try {
-            const response = await fetch('/api/config');
-            const config = await response.json();
-            
-            // Update inactivity settings from config
-            DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;
-            NIGHT_INACTIVITY_TIMEOUT = (config.inactivity?.night_timeout_seconds || 5) * 1000;
-            DAY_BRIGHTNESS_REDUCTION = config.inactivity?.day_brightness_reduction || 0.6;
-            NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
-            NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
-            NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
-            SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_delay_seconds || 5) * 1000;
-            
-        } catch (error) {
-            console.error("Failed to load inactivity config:", error);
-            // Keep default values if config load fails
-        }
     }
     
     // Create stylesheet for brightness control
@@ -472,8 +482,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 });
 
 // Chore polling mechanism
-const CHORE_POLLING_INTERVAL = 30000; // 30 seconds: How often to trigger a full refresh cycle
-const CHORE_CHECK_UPDATE_INTERVAL = 5000; // 5 seconds: How often to check status after triggering
+const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full refresh cycle  
+const CHORE_CHECK_UPDATE_INTERVAL = 10000; // 10 seconds: How often to check status after triggering
 let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
 
 async function triggerChoresRefresh() {

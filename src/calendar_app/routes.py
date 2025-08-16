@@ -111,8 +111,7 @@ def view(year=None, month=None):
             # Check if it's been more than configured sync interval since last update
             import time
             from src.config import get_config
-            config = get_config()
-            sync_interval_seconds = config.get('google.sync_interval_minutes', 5) * 60
+            sync_interval_seconds = get_config().get('google.sync_interval_minutes', 5) * 60
             last_update_time = task_info.get('last_update_time', 0)
             current_time = time.time()
             if current_time - last_update_time > sync_interval_seconds:
@@ -190,6 +189,10 @@ def view(year=None, month=None):
     chores_to_display = chores_db.get_chores()
 
     month_name = calendar.month_name[current_month]
+    
+    # Get config for template
+    from src.config import get_config
+    config = get_config()
 
     return render_template(
         'index.html',
@@ -207,6 +210,9 @@ def view(year=None, month=None):
         today_actual_day=today_date.day,
         today_actual_month=today_date.month,
         today_actual_year=today_date.year,
+        debug_enabled=config.get('app.debug', False),
+        show_pir_feedback=config.get('ui.show_pir_feedback', False),
+        family_name=config.get('app.family_name', 'Family'),
     )
 
 
@@ -219,7 +225,15 @@ def check_updates(year, month):
     
     calendar_task_id = f"calendar.{month}.{year}"
     chores_task_id = "tasks"
-    slideshow_db.sync_photos(current_app.static_folder)
+    
+    # Only sync photos occasionally (every 10 minutes) to avoid excessive file system operations
+    import time
+    last_photo_sync_key = "_last_photo_sync"
+    current_time = time.time()
+    if (last_photo_sync_key not in background_tasks or 
+        current_time - background_tasks[last_photo_sync_key].get('last_sync', 0) > 600):  # 10 minutes
+        slideshow_db.sync_photos(current_app.static_folder)
+        background_tasks[last_photo_sync_key] = {'last_sync': current_time}
 
     updates_available = False
     calendar_task_status = "not_tracked"
@@ -242,8 +256,7 @@ def check_updates(year, month):
                     
                 # Check if we need to trigger a refresh due to time elapsed
                 from src.config import get_config
-                config = get_config()
-                sync_interval_seconds = config.get('google.sync_interval_minutes', 5) * 60
+                sync_interval_seconds = get_config().get('google.sync_interval_minutes', 5) * 60
                 last_update_time = calendar_task_info.get('last_update_time', 0)
                 current_time = time.time()
                 if current_time - last_update_time > sync_interval_seconds:

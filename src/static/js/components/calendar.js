@@ -25,7 +25,7 @@ const Calendar = (function() {
     // Google Calendar update checking
     let googleUpdateTimer = null;
     let UPDATE_CHECK_INTERVAL = 300000; // Default: Check every 5 minutes, will be loaded from config
-    const INITIAL_CHECK_INTERVAL = 1000; // Check every 1 second initially until task completes
+    const INITIAL_CHECK_INTERVAL = 5000; // Check every 5 seconds initially until task completes
     let FORCE_REFRESH_INTERVAL = 600000; // Default: Force refresh every 10 minutes, will be loaded from config
     let updateCheckEnabled = true; // Control flag
     let initialLoadComplete = false; // Flag to track whether we've completed initial load
@@ -250,8 +250,56 @@ const Calendar = (function() {
         LoadingIndicator.showToast('Calendar events loading... Please wait.', 'info', 3000);
     }
 
+    // Swipe gesture variables
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    const MIN_SWIPE_DISTANCE = 50;
+    const MAX_VERTICAL_DRIFT = 100;
+
     function setupEventListeners() {
         if (!calendar) return;
+        
+        // Add swipe gesture support
+        const calendarContainer = document.querySelector('.calendar-container');
+        if (calendarContainer) {
+            // Touch events for swipe gestures
+            calendarContainer.addEventListener('touchstart', function(event) {
+                touchStartX = event.changedTouches[0].screenX;
+                touchStartY = event.changedTouches[0].screenY;
+            }, { passive: true });
+
+            calendarContainer.addEventListener('touchend', function(event) {
+                touchEndX = event.changedTouches[0].screenX;
+                touchEndY = event.changedTouches[0].screenY;
+                handleSwipeGesture();
+            }, { passive: true });
+
+            // Mouse events for desktop swipe simulation
+            let mouseDown = false;
+            calendarContainer.addEventListener('mousedown', function(event) {
+                mouseDown = true;
+                touchStartX = event.screenX;
+                touchStartY = event.screenY;
+            });
+
+            calendarContainer.addEventListener('mouseup', function(event) {
+                if (mouseDown) {
+                    touchEndX = event.screenX;
+                    touchEndY = event.screenY;
+                    handleSwipeGesture();
+                    mouseDown = false;
+                }
+            });
+
+            calendarContainer.addEventListener('mouseleave', function() {
+                mouseDown = false;
+            });
+        }
+
+        // Setup date picker and today button
+        setupNavigationControls();
         
         calendar.addEventListener('click', function(event) {
             // Reset both inactivity timers on any calendar interaction
@@ -352,6 +400,121 @@ const Calendar = (function() {
         } catch (error) {
             console.error("Failed to load calendar config:", error);
             // Keep default values if config load fails
+        }
+    }
+
+    // Handle swipe gestures
+    function handleSwipeGesture() {
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        const absDeltaX = Math.abs(deltaX);
+        const absDeltaY = Math.abs(deltaY);
+
+        // Check if this is a horizontal swipe (more horizontal than vertical movement)
+        if (absDeltaX > MIN_SWIPE_DISTANCE && absDeltaX > absDeltaY && absDeltaY < MAX_VERTICAL_DRIFT) {
+            if (deltaX > 0) {
+                // Swipe right - go to previous month
+                navigateToPreviousMonth();
+            } else {
+                // Swipe left - go to next month
+                navigateToNextMonth();
+            }
+        }
+    }
+
+    // Navigation functions
+    function navigateToPreviousMonth() {
+        let prevMonth = currentDisplayedMonth - 1;
+        let prevYear = currentDisplayedYear;
+        
+        if (prevMonth < 1) {
+            prevMonth = 12;
+            prevYear--;
+        }
+        
+        navigateToMonth(prevYear, prevMonth);
+    }
+
+    function navigateToNextMonth() {
+        let nextMonth = currentDisplayedMonth + 1;
+        let nextYear = currentDisplayedYear;
+        
+        if (nextMonth > 12) {
+            nextMonth = 1;
+            nextYear++;
+        }
+        
+        navigateToMonth(nextYear, nextMonth);
+    }
+
+    function navigateToMonth(year, month) {
+        // Add loading indicator
+        LoadingIndicator.show('Loading calendar...');
+        
+        // Navigate to the new month
+        window.location.href = `/calendar/${year}/${month}`;
+    }
+
+    function navigateToToday() {
+        const today = new Date();
+        const todayYear = today.getFullYear();
+        const todayMonth = today.getMonth() + 1;
+        
+        navigateToMonth(todayYear, todayMonth);
+    }
+
+    // Setup navigation controls (date picker and today button)
+    function setupNavigationControls() {
+        const datePickerBtn = document.getElementById('date-picker-btn');
+        const todayBtn = document.getElementById('today-btn');
+        const datePickerModal = document.getElementById('date-picker-modal');
+        const monthSelect = document.getElementById('month-select');
+        const yearSelect = document.getElementById('year-select');
+        const datePickerGo = document.getElementById('date-picker-go');
+        const datePickerCancel = document.getElementById('date-picker-cancel');
+
+        if (datePickerBtn) {
+            datePickerBtn.addEventListener('click', function() {
+                if (datePickerModal) {
+                    datePickerModal.style.display = 'block';
+                }
+            });
+        }
+
+        if (todayBtn) {
+            todayBtn.addEventListener('click', function() {
+                navigateToToday();
+            });
+        }
+
+        if (datePickerCancel) {
+            datePickerCancel.addEventListener('click', function() {
+                if (datePickerModal) {
+                    datePickerModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (datePickerGo && monthSelect && yearSelect) {
+            datePickerGo.addEventListener('click', function() {
+                const selectedMonth = parseInt(monthSelect.value);
+                const selectedYear = parseInt(yearSelect.value);
+                
+                if (datePickerModal) {
+                    datePickerModal.style.display = 'none';
+                }
+                
+                navigateToMonth(selectedYear, selectedMonth);
+            });
+        }
+
+        // Close modal when clicking outside
+        if (datePickerModal) {
+            datePickerModal.addEventListener('click', function(event) {
+                if (event.target === datePickerModal) {
+                    datePickerModal.style.display = 'none';
+                }
+            });
         }
     }
 

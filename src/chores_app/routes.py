@@ -57,6 +57,7 @@ def refresh_chores():
 
 
 
+
 @chores_bp.route('/add', methods=['POST'])
 def add_chore_route():
     data = request.get_json()

@@ -1,9 +1,40 @@
 {% block calendar_content %}
 <div id="main-calendar-area">
     <div class="calendar-header-nav">
-        <a href="{{ url_for('calendar.view', year=prev_year, month=prev_month) }}" class="nav-arrow prev-month">&lt;</a>
-        <h1>Bannister Family - {{ month_name }} {{ year }}</h1>
-        <a href="{{ url_for('calendar.view', year=next_year, month=next_month) }}" class="nav-arrow next-month">&gt;</a>
+        <h1 class="family-title">{{ family_name }}</h1>
+        <h2 class="month-title">{{ month_name }} {{ year }}</h2>
+        <div class="calendar-navigation">
+            <button id="date-picker-btn" class="nav-btn date-picker-btn" title="Jump to date">
+                📅 Change Date
+            </button>
+            <button id="today-btn" class="nav-btn today-btn" title="Go to today">Today</button>
+        </div>
+    </div>
+    
+    <!-- Date Picker Modal -->
+    <div id="date-picker-modal" class="date-picker-modal" style="display: none;">
+        <div class="date-picker-content">
+            <h3>Jump to Date</h3>
+            <div class="date-picker-controls">
+                <select id="month-select">
+                    {% for i in range(1, 13) %}
+                    <option value="{{ i }}" {% if i == month_number %}selected{% endif %}>
+                        {{ [None, 'January', 'February', 'March', 'April', 'May', 'June', 
+                             'July', 'August', 'September', 'October', 'November', 'December'][i] }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <select id="year-select">
+                    {% for year_option in range(year - 5, year + 6) %}
+                    <option value="{{ year_option }}" {% if year_option == year %}selected{% endif %}>{{ year_option }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="date-picker-buttons">
+                <button id="date-picker-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="date-picker-go" class="btn btn-primary">Go</button>
+            </div>
+        </div>
     </div>
     <div class="calendar-container">
         <table class="calendar" data-month="{{ month_number }}" data-year="{{ year }}">

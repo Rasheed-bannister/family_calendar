@@ -77,11 +77,6 @@ def fetch_google_tasks_background():
     """
     task_id = "tasks"
     
-    with google_fetch_lock:
-        if task_id in background_tasks and background_tasks[task_id]['status'] == 'running':
-            return
-        background_tasks[task_id] = {'status': 'running', 'updated': False}
-    
     try:
         # --- Chore Processing ---
         current_chores_data = tasks_api.get_chores()  # Raw data from Google API
@@ -114,14 +109,17 @@ def fetch_google_tasks_background():
             background_tasks[task_id]['chores_changed'] = chores_changed
 
     except Exception as e:
-        print(f"Error in tasks fetch background task {task_id}: {e}")
+        print(f"ERROR in tasks fetch background task {task_id}: {e}")
+        import traceback
+        traceback.print_exc()
         with google_fetch_lock:
             background_tasks[task_id]['status'] = 'error'
             background_tasks[task_id]['updated'] = False
             background_tasks[task_id]['chores_changed'] = False
     finally:
         with google_fetch_lock:
-            if background_tasks[task_id]['status'] != 'error':
+            current_status = background_tasks[task_id]['status']
+            if current_status != 'error':
                 background_tasks[task_id]['status'] = 'complete'
 
 
