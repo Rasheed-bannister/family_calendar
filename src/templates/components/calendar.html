@@ -4,10 +4,29 @@
         <h1 class="family-title">{{ family_name }}</h1>
         <h2 class="month-title">{{ month_name }} {{ year }}</h2>
         <div class="calendar-navigation">
+            <button id="qr-btn" class="nav-btn qr-btn" title="Get QR code for photo upload">
+                📱 Photos
+            </button>
             <button id="date-picker-btn" class="nav-btn date-picker-btn" title="Jump to date">
                 📅 Change Date
             </button>
             <button id="today-btn" class="nav-btn today-btn" title="Go to today">Today</button>
+        </div>
+    </div>
+    
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="qr-modal" style="display: none;">
+        <div class="qr-modal-content">
+            <button class="qr-close-btn">&times;</button>
+            <h3>📱 Upload Photos from Your Phone</h3>
+            <p>Scan this QR code with your phone's camera to upload photos</p>
+            <div id="qr-code-container">
+                <div class="qr-loading">Generating QR code...</div>
+            </div>
+            <div id="qr-url" class="qr-url"></div>
+            <p class="qr-instructions">
+                <small>Make sure your phone is connected to the same Wi-Fi network</small>
+            </p>
         </div>
     </div>
     

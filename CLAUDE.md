@@ -67,6 +67,7 @@ The application is a Flask-based family calendar system with touchscreen support
 - `slideshow/`: Photo slideshow management with database tracking
 - `pir_sensor/`: GPIO-based PIR motion sensor for automatic display wake
 - `chores_app/`: Task/chore management synced with Google Tasks
+- `photo_upload/`: Secure mobile photo upload system with token authentication
 
 **Frontend Architecture**
 - Component-based JavaScript modules (ES6) in `static/js/components/`
@@ -115,3 +116,20 @@ The application is a Flask-based family calendar system with touchscreen support
 - Three modes: active, inactive (dimmed), slideshow
 - PIR motion instantly disrupts inactivity timers
 - Touch/mouse/keyboard events also reset timers
+
+### Photo Upload System
+- **Security**: Token-based authentication with HMAC signatures and 60-minute expiration
+- **Mobile Access**: QR code generation for secure mobile photo uploads
+- **File Processing**: Automatic HEIC to JPEG conversion for iPhone compatibility
+- **Rate Limiting**: 10 uploads per minute, 100 per hour per device/token
+- **Image Optimization**: Automatic resizing and thumbnail generation
+- **Cross-Origin**: CORS headers for mobile browser compatibility
+- **File Validation**: Size limits (16MB), format validation, and secure filename handling
+
+### Photo Upload Security Features
+- **Token Generation**: Cryptographically secure tokens with HMAC-SHA256 signatures
+- **IP Binding**: Tokens optionally bound to client IP addresses (with NAT tolerance)
+- **Usage Limits**: Maximum 100 uses per token with automatic cleanup
+- **Rate Limiting**: Per-device request throttling to prevent abuse
+- **Input Validation**: File type, size, and content validation before processing
+- **Secure Storage**: Photos stored with unique identifiers to prevent conflicts

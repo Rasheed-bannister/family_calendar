@@ -83,6 +83,10 @@
     -webkit-backdrop-filter: blur(6px);
     border: 1px solid rgba(255, 255, 255, 0.2);
     min-height: 44px; /* Touch-friendly size */
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .nav-btn:hover {
@@ -159,12 +163,117 @@
 }
 
 .today-btn {
-    background-color: rgba(34, 139, 34, 0.3);
-    border-color: rgba(34, 139, 34, 0.5);
+    /* background-color: rgba(34, 139, 34, 0.3);
+    border-color: rgba(34, 139, 34, 0.5); */
 }
 
 .today-btn:hover {
     background-color: rgba(34, 139, 34, 0.5);
+}
+
+.qr-btn {
+    /* background-color: rgba(111, 66, 193, 0.3);
+    border-color: rgba(111, 66, 193, 0.5); */
+}
+
+.qr-btn:hover {
+    /* background-color: rgba(111, 66, 193, 0.5); */
+}
+
+/* QR Code Modal */
+.qr-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qr-modal-content {
+    background-color: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    position: relative;
+}
+
+.qr-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.7);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qr-close-btn:hover {
+    color: rgba(255, 255, 255, 1);
+}
+
+.qr-modal h3 {
+    color: #ffffff;
+    margin: 0 0 10px 0;
+    font-size: 1.4em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.qr-modal p {
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0 0 20px 0;
+}
+
+#qr-code-container {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#qr-code-container img {
+    max-width: 100%;
+    height: auto;
+}
+
+.qr-loading {
+    color: #666;
+    font-size: 1em;
+}
+
+.qr-url {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.6);
+    word-break: break-all;
+    margin: 10px 0;
+}
+
+.qr-instructions {
+    margin-top: 20px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.6);
 }
 
 /* Date Picker Modal */

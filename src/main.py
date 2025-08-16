@@ -107,6 +107,9 @@ def create_app():
     from src.google_integration import google_bp
     from src.pir_sensor.routes import pir_bp
     from src.health_routes import health_bp
+    from src.photo_upload.routes import upload_bp
+    from src.photo_upload.auth import init_token_manager
+    
     app.register_blueprint(calendar_bp)
     app.register_blueprint(slideshow_bp)
     app.register_blueprint(weather_bp)
@@ -114,6 +117,10 @@ def create_app():
     app.register_blueprint(google_bp)
     app.register_blueprint(pir_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(upload_bp)
+    
+    # Initialize upload token manager
+    init_token_manager(app)
     
     @app.route('/')
     def index_redirect():

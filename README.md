@@ -60,6 +60,14 @@ This open source project provides families with an interactive digital calendar 
   - Automatic detection and indexing of photos in the photos directory
   - Random photo selection for slideshow variety
   - SQLite database tracking for efficient photo management
+- **Mobile Photo Upload System**:
+  - **Secure QR Code Access**: Generate time-limited QR codes for mobile photo uploads
+  - **Token-Based Security**: HMAC-SHA256 signed tokens with 60-minute expiration
+  - **iPhone Compatibility**: Automatic HEIC to JPEG conversion for iPhone photos
+  - **Rate Limiting**: 10 uploads per minute, 100 per hour per device/token
+  - **Multi-format Support**: JPG, PNG, HEIC, WebP, GIF formats up to 16MB each
+  - **Automatic Processing**: Image optimization, resizing, and thumbnail generation
+  - **Mobile-Optimized Interface**: Touch-friendly upload interface with progress tracking
 - **Smooth Transitions**: Fade transitions between calendar view and photos
 
 ### System Features
@@ -118,6 +126,7 @@ The application is built using the following technologies:
   - `slideshow`: Photo management and display
   - `weather_integration`: Weather data fetching with offline caching
   - `pir_sensor`: PIR motion sensor integration and GPIO control
+  - `photo_upload`: Secure mobile photo upload system with token authentication
   - `config`: Centralized configuration management system
 
 ## Installation
@@ -369,21 +378,52 @@ The configuration system follows this priority order:
 - **Logging**: Level, format, and file rotation settings
 
 ### Photo Management
+
+#### Traditional Method
 Add new photos to the `src/static/photos/` directory. The application will automatically index them on the next restart.
 
+#### Mobile Upload (Recommended)
+1. **Access Upload Interface**: 
+   - From the main calendar view, click the QR code button
+   - Scan the generated QR code with your mobile device
+2. **Upload Photos**:
+   - Click "Upload Photos" from the photo management page
+   - Select photos from your mobile device gallery or take new photos
+   - Supported formats: JPG, PNG, HEIC, WebP, GIF (up to 16MB each)
+3. **Automatic Processing**:
+   - HEIC photos from iPhones are automatically converted to JPEG
+   - Images are optimized and thumbnails are generated
+   - Photos appear in the slideshow immediately after upload
+
+#### Security Features
+- **Time-Limited Access**: QR codes expire after 60 minutes
+- **Rate Limiting**: Maximum 10 uploads per minute, 100 per hour
+- **Secure Tokens**: HMAC-SHA256 signed tokens prevent unauthorized access
+- **Input Validation**: File types, sizes, and content are validated before processing
+
 ## Recent Improvements (Latest Version)
+
+### New Mobile Photo Upload System
+- **Secure QR Code Access**: Generate time-limited QR codes for safe mobile access
+- **Token-Based Authentication**: HMAC-SHA256 signed tokens with automatic expiration
+- **iPhone Compatibility**: Automatic HEIC to JPEG conversion for seamless iPhone photo uploads
+- **Mobile-Optimized Interface**: Touch-friendly upload interface with drag-and-drop support
+- **Real-Time Processing**: Instant image optimization and thumbnail generation
+- **Rate Limiting & Security**: Built-in protection against abuse with comprehensive input validation
 
 ### Enhanced User Experience
 - **Advanced Virtual Keyboard**: Multi-layout support (letters, symbols), haptic feedback, long-press for rapid deletion
 - **Smart Loading Indicators**: Toast notifications, progress indicators, and real-time sync status
 - **PIR Visual Feedback**: Motion ripple effects, status indicators, and seamless activity detection
 - **Offline Mode**: Intelligent weather caching, graceful degradation, automatic recovery
+- **Mobile Photo Management**: Browse, manage, and delete uploaded photos from mobile devices
 
 ### Technical Improvements
 - **Configuration System**: JSON-based config with environment variable override support
 - **Better Error Handling**: Graceful recovery from network issues and API failures
 - **Production Readiness**: Debug mode control, path detection, and deployment optimizations
 - **Enhanced Components**: Improved touch responsiveness, animation system, and visual feedback
+- **Security Framework**: Comprehensive token management, rate limiting, and input validation system
 
 ## Usage
 
@@ -445,6 +485,9 @@ src/
 │   ├── js/             # JavaScript modules
 │   │   └── components/ # Modular JS components (enhanced virtual keyboard, loading indicators, etc.)
 │   └── photos/         # Photo storage
+├── photo_upload/       # Mobile photo upload system
+│   ├── auth.py         # Token-based authentication and security
+│   └── routes.py       # Upload endpoints and QR code generation
 ├── templates/          # HTML templates
 ├── weather_integration/# Weather functionality with offline caching
 ├── config.py           # Centralized configuration management

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Photos - {{ family_name or 'Family' }} Calendar</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/base.css') }}">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .manage-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            min-height: auto;
+            height: auto;
+        }
+        
+        .manage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        
+        .manage-header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 44px;
+        }
+        
+        .btn-primary {
+            background: rgba(0, 123, 255, 0.8);
+            color: white;
+            border: 1px solid rgba(0, 123, 255, 1);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn-danger {
+            background: rgba(220, 53, 69, 0.8);
+            color: white;
+            border: 1px solid rgba(220, 53, 69, 1);
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .back-link {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .back-link:hover {
+            color: white;
+        }
+        
+        .photos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+        
+        .photo-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s ease;
+        }
+        
+        .photo-card:hover {
+            transform: scale(1.02);
+        }
+        
+        .photo-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .photo-info {
+            padding: 12px;
+        }
+        
+        .photo-name {
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        
+        .photo-details {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-bottom: 12px;
+        }
+        
+        .photo-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            min-height: 32px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 1.1rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-state h3 {
+            margin: 0 0 16px 0;
+            font-size: 1.3rem;
+        }
+        
+        .empty-state p {
+            margin: 0 0 24px 0;
+            opacity: 0.8;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-top: 32px;
+        }
+        
+        .pagination-info {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .delete-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .delete-modal-content {
+            background: rgba(20, 20, 30, 0.95);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .delete-modal h3 {
+            margin: 0 0 16px 0;
+            color: #f44336;
+        }
+        
+        .delete-modal p {
+            margin: 0 0 24px 0;
+            opacity: 0.9;
+        }
+        
+        .delete-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch;
+                position: relative;
+            }
+            
+            .manage-container {
+                padding: 20px;
+                height: auto;
+                min-height: auto;
+            }
+            
+            .manage-header {
+                flex-direction: column;
+                align-items: stretch;
+                text-align: center;
+            }
+            
+            .header-actions {
+                justify-content: center;
+            }
+            
+            .photos-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 16px;
+            }
+            
+            .photo-image {
+                height: 150px;
+            }
+            
+            .photo-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="manage-container">
+        <a href="{{ url_for('calendar.view', year=current_year, month=current_month) }}" class="back-link">
+            ← Back to Calendar
+        </a>
+        
+        <div class="manage-header">
+            <h1>📸 Manage Photos</h1>
+            <div class="header-actions">
+                <a href="#" id="uploadPhotosBtn" class="btn btn-primary">
+                    ➕ Upload Photos
+                </a>
+                <button id="refreshBtn" class="btn btn-secondary">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading">
+            Loading photos...
+        </div>
+        
+        <div id="photosContainer" style="display: none;">
+            <div id="photosGrid" class="photos-grid"></div>
+            <div id="pagination" class="pagination"></div>
+        </div>
+        
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <h3>📷 No Photos Yet</h3>
+            <p>Upload some photos to get started with your family slideshow!</p>
+            <a href="{{ url_for('upload.upload_page') }}" class="btn btn-primary">
+                Upload Your First Photos
+            </a>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="delete-modal">
+        <div class="delete-modal-content">
+            <h3>⚠️ Delete Photo</h3>
+            <p>Are you sure you want to delete this photo? This action cannot be undone.</p>
+            <div class="delete-modal-actions">
+                <button id="cancelDeleteBtn" class="btn btn-secondary">Cancel</button>
+                <button id="confirmDeleteBtn" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentPhotoToDelete = null;
+        
+        // Extract token from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const uploadToken = urlParams.get('token');
+        
+        const loading = document.getElementById('loading');
+        const photosContainer = document.getElementById('photosContainer');
+        const photosGrid = document.getElementById('photosGrid');
+        const pagination = document.getElementById('pagination');
+        const emptyState = document.getElementById('emptyState');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const deleteModal = document.getElementById('deleteModal');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+        function showLoading() {
+            loading.style.display = 'block';
+            photosContainer.style.display = 'none';
+            emptyState.style.display = 'none';
+        }
+
+        function hideLoading() {
+            loading.style.display = 'none';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function formatDate(timestamp) {
+            return new Date(timestamp * 1000).toLocaleDateString();
+        }
+
+        function createPhotoCard(photo) {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            
+            const photoUrl = `/static/photos/${photo.filename}`;
+            
+            card.innerHTML = `
+                <img src="${photoUrl}" alt="${photo.filename}" class="photo-image" loading="lazy">
+                <div class="photo-info">
+                    <div class="photo-name">${photo.filename}</div>
+                    <div class="photo-details">
+                        ${formatFileSize(photo.size)} • ${formatDate(photo.modified)}
+                    </div>
+                    <div class="photo-actions">
+                        <button class="btn btn-small btn-secondary view-btn" data-url="${photoUrl}">
+                            👁️ View
+                        </button>
+                        <button class="btn btn-small btn-danger delete-btn" data-filename="${photo.filename}">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        function createPagination(page, pages, total) {
+            if (pages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let paginationHTML = '';
+            
+            // Previous button
+            if (page > 1) {
+                paginationHTML += `<button class="btn btn-secondary btn-small" onclick="loadPhotos(${page - 1})">← Previous</button>`;
+            }
+            
+            // Page info
+            paginationHTML += `<span class="pagination-info">Page ${page} of ${pages} (${total} photos)</span>`;
+            
+            // Next button
+            if (page < pages) {
+                paginationHTML += `<button class="btn btn-secondary btn-small" onclick="loadPhotos(${page + 1})">Next →</button>`;
+            }
+            
+            pagination.innerHTML = paginationHTML;
+        }
+
+        function loadPhotos(page = 1) {
+            showLoading();
+            currentPage = page;
+            
+            const params = new URLSearchParams({
+                page: page,
+                per_page: 20
+            });
+            if (uploadToken) {
+                params.append('token', uploadToken);
+            }
+            
+            fetch(`/upload/api/photos?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.photos && data.photos.length > 0) {
+                        photosGrid.innerHTML = '';
+                        data.photos.forEach(photo => {
+                            const card = createPhotoCard(photo);
+                            photosGrid.appendChild(card);
+                        });
+                        
+                        createPagination(data.page, data.pages, data.total);
+                        photosContainer.style.display = 'block';
+                        emptyState.style.display = 'none';
+                        
+                        // Add event listeners to buttons
+                        document.querySelectorAll('.view-btn').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                const url = e.target.dataset.url;
+                                window.open(url, '_blank');
+                            });
+                        });
+                        
+                        document.querySelectorAll('.delete-btn').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                currentPhotoToDelete = e.target.dataset.filename;
+                                deleteModal.style.display = 'flex';
+                            });
+                        });
+                        
+                    } else {
+                        photosContainer.style.display = 'none';
+                        emptyState.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    console.error('Error loading photos:', error);
+                    alert('Failed to load photos. Please try again.');
+                });
+        }
+
+        function deletePhoto(filename) {
+            const headers = {};
+            if (uploadToken) {
+                headers['X-Upload-Token'] = uploadToken;
+            }
+            
+            fetch(`/upload/api/photos/${encodeURIComponent(filename)}`, {
+                method: 'DELETE',
+                headers: headers
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload current page
+                    loadPhotos(currentPage);
+                } else {
+                    alert(data.error || 'Failed to delete photo');
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting photo:', error);
+                alert('Failed to delete photo. Please try again.');
+            });
+        }
+
+        // Event listeners
+        refreshBtn.addEventListener('click', () => {
+            loadPhotos(currentPage);
+        });
+
+        // Handle upload photos button
+        const uploadPhotosBtn = document.getElementById('uploadPhotosBtn');
+        uploadPhotosBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const uploadUrl = '/upload/' + (uploadToken ? `?token=${uploadToken}` : '');
+            window.location.href = uploadUrl;
+        });
+
+        cancelDeleteBtn.addEventListener('click', () => {
+            deleteModal.style.display = 'none';
+            currentPhotoToDelete = null;
+        });
+
+        confirmDeleteBtn.addEventListener('click', () => {
+            if (currentPhotoToDelete) {
+                deletePhoto(currentPhotoToDelete);
+                deleteModal.style.display = 'none';
+                currentPhotoToDelete = null;
+            }
+        });
+
+        // Close modal when clicking outside
+        deleteModal.addEventListener('click', (e) => {
+            if (e.target === deleteModal) {
+                deleteModal.style.display = 'none';
+                currentPhotoToDelete = null;
+            }
+        });
+
+        // Load photos on page load
+        loadPhotos(1);
+    </script>
+</body>
+</html>

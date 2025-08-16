@@ -467,11 +467,18 @@ const Calendar = (function() {
     function setupNavigationControls() {
         const datePickerBtn = document.getElementById('date-picker-btn');
         const todayBtn = document.getElementById('today-btn');
+        const qrBtn = document.getElementById('qr-btn');
         const datePickerModal = document.getElementById('date-picker-modal');
         const monthSelect = document.getElementById('month-select');
         const yearSelect = document.getElementById('year-select');
         const datePickerGo = document.getElementById('date-picker-go');
         const datePickerCancel = document.getElementById('date-picker-cancel');
+        
+        // QR Code Modal elements
+        const qrModal = document.getElementById('qr-modal');
+        const qrCloseBtn = document.querySelector('.qr-close-btn');
+        const qrCodeContainer = document.getElementById('qr-code-container');
+        const qrUrlDiv = document.getElementById('qr-url');
 
         if (datePickerBtn) {
             datePickerBtn.addEventListener('click', function() {
@@ -484,6 +491,53 @@ const Calendar = (function() {
         if (todayBtn) {
             todayBtn.addEventListener('click', function() {
                 navigateToToday();
+            });
+        }
+        
+        // QR Code button handler
+        if (qrBtn && qrModal) {
+            qrBtn.addEventListener('click', function() {
+                // Show the modal
+                qrModal.style.display = 'flex';
+                
+                // Fetch and display the QR code
+                fetch('/upload/qrcode')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            qrCodeContainer.innerHTML = `<img src="${data.qrcode}" alt="QR Code">`;
+                            // Show truncated URL (without token for display)
+                            const displayUrl = data.url.split('?')[0] + '...';
+                            qrUrlDiv.innerHTML = `
+                                <div style="font-size: 0.85em; color: rgba(255,255,255,0.6);">
+                                    ${displayUrl}
+                                </div>
+                                <div style="margin-top: 10px; color: rgba(255,193,7,0.9); font-weight: 600;">
+                                    ⏱️ ${data.message || 'Valid for 60 minutes'}
+                                </div>
+                            `;
+                        } else {
+                            qrCodeContainer.innerHTML = '<div class="qr-error">Failed to generate QR code</div>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error generating QR code:', error);
+                        qrCodeContainer.innerHTML = '<div class="qr-error">Error generating QR code</div>';
+                    });
+            });
+            
+            // Close button handler
+            if (qrCloseBtn) {
+                qrCloseBtn.addEventListener('click', function() {
+                    qrModal.style.display = 'none';
+                });
+            }
+            
+            // Click outside to close
+            qrModal.addEventListener('click', function(e) {
+                if (e.target === qrModal) {
+                    qrModal.style.display = 'none';
+                }
             });
         }
 

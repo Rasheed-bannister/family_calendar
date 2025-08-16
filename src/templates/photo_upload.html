@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Photos - {{ family_name or 'Family' }} Calendar</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/photo-upload.css') }}">
+    <style>
+        /* Inline critical styles for better mobile performance */
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .upload-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+        
+        .upload-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        .upload-header h1 {
+            margin: 0 0 8px 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        
+        .upload-header p {
+            margin: 0;
+            opacity: 0.8;
+            font-size: 1rem;
+        }
+        
+        .upload-zone {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 24px;
+        }
+        
+        .upload-zone.dragover {
+            border-color: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .upload-zone:hover {
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            display: block;
+        }
+        
+        .upload-text {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+        
+        .upload-subtext {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-bottom: 20px;
+        }
+        
+        .camera-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 48px; /* Touch-friendly */
+        }
+        
+        .btn-primary {
+            background: rgba(0, 123, 255, 0.8);
+            color: white;
+            border: 1px solid rgba(0, 123, 255, 1);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn:hover, .btn:active {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 24px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .results {
+            margin-top: 24px;
+            display: none;
+        }
+        
+        .success-list, .error-list {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .success-list {
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .error-list {
+            border-left: 4px solid #f44336;
+        }
+        
+        .results h3 {
+            margin: 0 0 12px 0;
+            font-size: 1.1rem;
+        }
+        
+        .results ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        
+        .results li {
+            padding: 4px 0;
+            font-size: 0.9rem;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            transition: color 0.2s ease;
+        }
+        
+        .back-link:hover {
+            color: white;
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+            
+            .upload-container {
+                padding: 20px;
+            }
+            
+            .upload-zone {
+                padding: 32px 16px;
+            }
+            
+            .upload-header h1 {
+                font-size: 1.5rem;
+            }
+            
+            .camera-buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <a href="{{ url_for('calendar.view', year=current_year, month=current_month) }}" class="back-link">
+            ← Back to Calendar
+        </a>
+        
+        <div class="upload-header">
+            <h1>📸 Upload Photos</h1>
+            <p>Add photos to your family slideshow</p>
+        </div>
+        
+        <div id="uploadZone" class="upload-zone">
+            <span class="upload-icon">📷</span>
+            <div class="upload-text">Tap to select photos or drag and drop</div>
+            <div class="upload-subtext">Supports: JPG, PNG, HEIC, WebP (max 16MB each)</div>
+            
+            <div class="camera-buttons">
+                <button id="cameraBtn" class="btn btn-primary">
+                    📷 Take Photo
+                </button>
+                <button id="galleryBtn" class="btn btn-secondary">
+                    🖼️ Choose from Gallery
+                </button>
+            </div>
+            
+            <input type="file" id="fileInput" multiple accept="image/*" capture="environment">
+            <input type="file" id="galleryInput" multiple accept="image/*">
+        </div>
+        
+        <div id="progressContainer" class="progress-container">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="progressText" class="progress-text">Uploading photos...</div>
+        </div>
+        
+        <div id="results" class="results">
+            <div id="successList" class="success-list" style="display: none;">
+                <h3>✅ Successfully uploaded:</h3>
+                <ul id="successItems"></ul>
+            </div>
+            
+            <div id="errorList" class="error-list" style="display: none;">
+                <h3>❌ Errors:</h3>
+                <ul id="errorItems"></ul>
+            </div>
+            
+            <button id="uploadMoreBtn" class="btn btn-primary" style="width: 100%; margin-top: 16px; display: none;">
+                Upload More Photos
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Extract token from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const uploadToken = urlParams.get('token');
+        
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const galleryInput = document.getElementById('galleryInput');
+        const cameraBtn = document.getElementById('cameraBtn');
+        const galleryBtn = document.getElementById('galleryBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const results = document.getElementById('results');
+        const successList = document.getElementById('successList');
+        const errorList = document.getElementById('errorList');
+        const successItems = document.getElementById('successItems');
+        const errorItems = document.getElementById('errorItems');
+        const uploadMoreBtn = document.getElementById('uploadMoreBtn');
+
+        // Check if device supports camera
+        function supportsCamera() {
+            return 'mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices;
+        }
+
+        // Update camera button based on device capabilities
+        if (!supportsCamera()) {
+            cameraBtn.style.display = 'none';
+        }
+
+        // Upload zone click handler
+        uploadZone.addEventListener('click', (e) => {
+            if (e.target !== cameraBtn && e.target !== galleryBtn) {
+                galleryInput.click();
+            }
+        });
+
+        // Camera button - use camera capture
+        cameraBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+
+        // Gallery button - browse files
+        galleryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            galleryInput.click();
+        });
+
+        // Drag and drop handlers
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
+        });
+
+        // File input handlers
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(Array.from(e.target.files));
+            }
+        });
+
+        galleryInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(Array.from(e.target.files));
+            }
+        });
+
+        // Upload more button
+        uploadMoreBtn.addEventListener('click', () => {
+            resetForm();
+        });
+
+        function resetForm() {
+            fileInput.value = '';
+            galleryInput.value = '';
+            progressContainer.style.display = 'none';
+            results.style.display = 'none';
+            uploadZone.style.display = 'block';
+            progressFill.style.width = '0%';
+            successItems.innerHTML = '';
+            errorItems.innerHTML = '';
+        }
+
+        function uploadFiles(files) {
+            if (files.length === 0) return;
+
+            console.log('Starting upload with', files.length, 'files');
+            console.log('Upload token:', uploadToken ? 'Present' : 'Missing');
+
+            // Hide upload zone and show progress
+            uploadZone.style.display = 'none';
+            progressContainer.style.display = 'block';
+            results.style.display = 'none';
+
+            const formData = new FormData();
+            files.forEach((file, index) => {
+                console.log(`File ${index}:`, file.name, file.size, file.type);
+                formData.append('photos', file);
+            });
+            
+            // Add token to form data if available
+            if (uploadToken) {
+                formData.append('token', uploadToken);
+                console.log('Token added to form data');
+            } else {
+                console.warn('No upload token available');
+            }
+
+            const xhr = new XMLHttpRequest();
+
+            // Progress handler
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progressFill.style.width = percentComplete + '%';
+                    progressText.textContent = `Uploading ${files.length} photo${files.length > 1 ? 's' : ''}... ${Math.round(percentComplete)}%`;
+                }
+            });
+
+            // Complete handler
+            xhr.addEventListener('load', () => {
+                progressContainer.style.display = 'none';
+                
+                console.log('Upload response status:', xhr.status);
+                console.log('Upload response text:', xhr.responseText);
+                
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showResults(response);
+                    } catch (e) {
+                        console.error('JSON parse error:', e);
+                        showError('Failed to process server response: ' + e.message);
+                    }
+                } else {
+                    showError(`Upload failed with status ${xhr.status}: ${xhr.responseText}`);
+                }
+            });
+
+            // Error handler
+            xhr.addEventListener('error', () => {
+                console.error('Upload XHR error');
+                progressContainer.style.display = 'none';
+                showError('Upload failed. Please check your connection and try again.');
+            });
+
+            // Send request
+            xhr.open('POST', '/upload/api/photos');
+            xhr.send(formData);
+        }
+
+        function showResults(response) {
+            results.style.display = 'block';
+            uploadMoreBtn.style.display = 'block';
+
+            // Show successful uploads
+            if (response.uploaded && response.uploaded.length > 0) {
+                successList.style.display = 'block';
+                response.uploaded.forEach(file => {
+                    const li = document.createElement('li');
+                    li.textContent = file.original_name || file.filename;
+                    successItems.appendChild(li);
+                });
+            }
+
+            // Show errors
+            if (response.errors && response.errors.length > 0) {
+                errorList.style.display = 'block';
+                response.errors.forEach(error => {
+                    const li = document.createElement('li');
+                    li.textContent = error;
+                    errorItems.appendChild(li);
+                });
+            }
+
+            // Update button text
+            const successCount = response.uploaded ? response.uploaded.length : 0;
+            if (successCount > 0) {
+                uploadMoreBtn.textContent = `✅ Uploaded ${successCount} photo${successCount > 1 ? 's' : ''}! Upload More`;
+            }
+        }
+
+        function showError(message) {
+            results.style.display = 'block';
+            errorList.style.display = 'block';
+            uploadMoreBtn.style.display = 'block';
+            
+            const li = document.createElement('li');
+            li.textContent = message;
+            errorItems.appendChild(li);
+        }
+
+        // Prevent default drag behaviors on document
+        document.addEventListener('dragover', (e) => e.preventDefault());
+        document.addEventListener('drop', (e) => e.preventDefault());
+    </script>
+</body>
+</html>
