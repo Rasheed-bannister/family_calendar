@@ -1,0 +1,183 @@
+/**
+ * Loading Indicator Styles
+ */
+
+/* Blocking overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none; /* Initially hidden */
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    backdrop-filter: blur(2px);
+    pointer-events: none; /* Don't block clicks when hidden */
+}
+
+.loading-overlay[style*="display: flex"] {
+    pointer-events: auto; /* Only block clicks when visible */
+}
+
+.loading-spinner-container {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    min-width: 150px;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+    color: #333;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* Inline loading indicator */
+.inline-loading-indicator {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+}
+
+.sync-icon {
+    display: inline-block;
+    animation: rotate 2s linear infinite;
+    font-size: 16px;
+}
+
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.sync-text {
+    color: #666;
+}
+
+.inline-loading-indicator.pulse {
+    animation: pulse-bg 2s ease-in-out infinite;
+}
+
+@keyframes pulse-bg {
+    0%, 100% { background: rgba(255, 255, 255, 0.95); }
+    50% { background: rgba(240, 248, 255, 0.95); }
+}
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    z-index: 10000;
+    transition: bottom 0.3s ease;
+}
+
+.toast-show {
+    bottom: 30px;
+}
+
+.toast-hide {
+    bottom: -100px;
+}
+
+.toast-icon {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.toast-success {
+    background: #4CAF50;
+}
+
+.toast-error {
+    background: #f44336;
+}
+
+.toast-info {
+    background: #2196F3;
+}
+
+/* Fade animations */
+.fade-in {
+    animation: fadeIn 0.3s ease;
+}
+
+.fade-out {
+    animation: fadeOut 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+/* Touch device optimizations */
+.touch-device .loading-spinner-container {
+    padding: 32px;
+    min-width: 200px;
+}
+
+.touch-device .loading-spinner {
+    width: 50px;
+    height: 50px;
+    border-width: 5px;
+}
+
+.touch-device .loading-text {
+    font-size: 16px;
+}
+
+.touch-device .inline-loading-indicator {
+    padding: 12px 20px;
+    font-size: 14px;
+}
+
+.touch-device .toast {
+    padding: 16px 28px;
+    font-size: 16px;
+}

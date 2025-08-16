@@ -4,6 +4,7 @@
  */
 import Modal from './modal.js';
 import DailyView from './dailyView.js';
+import LoadingIndicator from './loadingIndicator.js';
 
 const Calendar = (function() {
     // Private variables
@@ -98,6 +99,11 @@ const Calendar = (function() {
 
     function checkForGoogleUpdates() {
         if (!updateCheckEnabled) return;
+        
+        // Show loading indicator for initial sync operations
+        if (!initialLoadComplete) {
+            LoadingIndicator.show('google-sync', 'Syncing calendar events...', false);
+        }
 
         // Check if it's time for a force refresh
         const now = Date.now();
@@ -105,6 +111,7 @@ const Calendar = (function() {
         
         if (timeSinceLastForceRefresh > FORCE_REFRESH_INTERVAL) {
             console.log("Triggering force refresh of calendar data");
+            LoadingIndicator.show('google-refresh', 'Refreshing calendar data...', false);
             lastForceRefreshTime = now;
             
             // Trigger manual refresh
@@ -114,11 +121,15 @@ const Calendar = (function() {
             .then(response => response.json())
             .then(data => {
                 console.log("Manual refresh triggered:", data);
+                LoadingIndicator.hide('google-refresh');
+                LoadingIndicator.showToast('Calendar refreshed', 'success', 2000);
                 // Continue with normal update check after triggering refresh
                 setTimeout(checkForGoogleUpdates, 2000); // Check again in 2 seconds
             })
             .catch(err => {
                 console.error("Error triggering manual refresh:", err);
+                LoadingIndicator.hide('google-refresh');
+                LoadingIndicator.showToast('Refresh failed - using cached data', 'error', 3000);
             });
             return;
         }
@@ -145,6 +156,10 @@ const Calendar = (function() {
                             initialLoadTimeout = null;
                         }
                         
+                        // Hide loading indicator and show success
+                        LoadingIndicator.hide('google-sync');
+                        LoadingIndicator.showToast('Calendar sync complete', 'success', 2000);
+                        
                         // Switch to regular interval - we're done with initial loading
                         clearInterval(googleUpdateTimer);
                         googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
@@ -153,6 +168,7 @@ const Calendar = (function() {
                         // If updates were found or the page has no events yet but the fetch is complete,
                         // refresh the page to show the newly loaded events
                         if (data.events_changed || (!hasCalendarEvents && data.calendar_status === 'complete')) {
+                            LoadingIndicator.showToast('Updates found! Refreshing...', 'info', 2000);
                             refreshPage();
                         }
                     }
@@ -181,6 +197,8 @@ const Calendar = (function() {
                 
                 // Stop the rapid initial checks if an error occurs
                 if (!initialLoadComplete) {
+                    LoadingIndicator.hide('google-sync');
+                    LoadingIndicator.showToast('Sync error - using cached data', 'error', 3000);
                     clearInterval(googleUpdateTimer);
                     console.warn("Stopping rapid initial update checks due to error.");
                     initialLoadComplete = true; // Mark initial phase as done (even if failed)

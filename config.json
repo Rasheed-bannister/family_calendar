@@ -1,0 +1,63 @@
+{
+  "app": {
+    "debug": false,
+    "host": "0.0.0.0",
+    "port": 5000,
+    "secret_key": "your-secret-key-here-change-this-in-production",
+    "use_reloader": false,
+    "environment": "production"
+  },
+  "weather": {
+    "latitude": 40.759010,
+    "longitude": -73.984474,
+    "timezone": "America/New_York",
+    "cache_duration": 600,
+    "offline_fallback": true
+  },
+  "pir_sensor": {
+    "enabled": true,
+    "gpio_pin": 18,
+    "debounce_time": 2.0,
+    "simulation_mode": false
+  },
+  "inactivity": {
+    "day_timeout_minutes": 60,
+    "night_timeout_seconds": 5,
+    "day_brightness_reduction": 0.6,
+    "night_brightness_reduction": 0.2,
+    "night_start_hour": 21,
+    "night_end_hour": 6,
+    "slideshow_delay_seconds": 5
+  },
+  "google": {
+    "sync_interval_minutes": 30,
+    "max_retry_attempts": 3,
+    "offline_mode_enabled": true
+  },
+  "database": {
+    "connection_pool_size": 5,
+    "backup_enabled": true,
+    "backup_interval_hours": 24,
+    "backup_retention_days": 7
+  },
+  "ui": {
+    "show_loading_indicators": true,
+    "show_pir_feedback": true,
+    "enhanced_virtual_keyboard": true,
+    "touch_optimized": true,
+    "animation_duration_ms": 300
+  },
+  "paths": {
+    "photos_dir": "src/static/photos",
+    "database_dir": null,
+    "credentials_dir": "src/google_integration",
+    "backup_dir": "backups"
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "calendar.log",
+    "max_bytes": 10485760,
+    "backup_count": 5
+  }
+}

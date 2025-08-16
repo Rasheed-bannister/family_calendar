@@ -3,6 +3,9 @@ import threading
 import logging
 from flask import Flask, redirect, url_for
 
+# Import configuration
+from src.config import get_config
+
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 
@@ -43,7 +46,10 @@ def _make_chores_comparable(chores_list):
 
 def create_app():
     """Application factory to create and configure the Flask app."""
+    config = get_config()
+    
     app = Flask(__name__)
+    app.config['SECRET_KEY'] = config.get('app.secret_key')
     app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
     
     # Initialize database for calendar
@@ -78,6 +84,13 @@ def create_app():
         """Redirects the base URL to the current month's calendar view."""
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         return redirect(url_for('calendar.view', year=now.year, month=now.month))
+    
+    @app.route('/api/config')
+    def get_config_api():
+        """API endpoint to get configuration data."""
+        from flask import jsonify
+        config = get_config()
+        return jsonify(config.config)
         
     return app
 
@@ -104,17 +117,37 @@ if __name__ == '__main__':
         # The frontend will handle the actual activity registration
         # This is just for backend logging
     
-    pir_sensor = initialize_pir_sensor(pin=18, callback=on_motion_detected)
+    config = get_config()
+    pir_pin = config.get('pir_sensor.gpio_pin', 18)
+    pir_sensor = initialize_pir_sensor(pin=pir_pin, callback=on_motion_detected)
     
     if not setup_only:
-        # Start PIR monitoring
-        from src.pir_sensor.sensor import start_pir_monitoring
-        if start_pir_monitoring():
-            logging.info("PIR sensor monitoring started")
-        else:
-            logging.warning("Failed to start PIR sensor monitoring")
+        # Start PIR monitoring if enabled
+        if config.get('pir_sensor.enabled', True):
+            from src.pir_sensor.sensor import start_pir_monitoring
+            if start_pir_monitoring():
+                logging.info("PIR sensor monitoring started")
+            else:
+                logging.warning("Failed to start PIR sensor monitoring")
+        
+        # Get app configuration
+        debug_mode = config.get('app.debug', False)
+        host = config.get('app.host', '0.0.0.0')
+        port = config.get('app.port', 5000)
+        use_reloader = config.get('app.use_reloader', False)
+        
+        # Only use debug mode in development
+        if config.is_production() and debug_mode:
+            logging.warning("Debug mode is enabled in production! Consider disabling it.")
+            debug_mode = False  # Force disable in production
         
         # Ignore .db files to prevent reload loop caused by background updates
-        app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True, exclude_patterns=["**/*.db"])
+        app.run(
+            host=host, 
+            port=port, 
+            debug=debug_mode, 
+            use_reloader=use_reloader, 
+            exclude_patterns=["**/*.db"]
+        )
     else:
         print("Setup completed. Exiting without starting server.")

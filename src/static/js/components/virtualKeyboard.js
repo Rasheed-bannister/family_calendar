@@ -1,12 +1,16 @@
 /**
  * Virtual Keyboard Component
- * Provides an on-screen keyboard for touchscreen devices
+ * Provides an enhanced on-screen keyboard for touchscreen devices
  */
 const VirtualKeyboard = (function() {
     // Private variables
     let keyboardContainer;
     let currentInput = null;
     let isOpen = false;
+    let keyPressTimeout = null;
+    let longPressTimer = null;
+    let config = null;
+    let hapticFeedback = null;
     
     // Keyboard layouts
     const layouts = {
@@ -16,10 +20,62 @@ const VirtualKeyboard = (function() {
             ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
             ['Shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '?'],
             ['Space', 'Enter']
+        ],
+        symbols: [
+            ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', 'Backspace'],
+            ['-', '_', '=', '+', '[', ']', '{', '}', '\\', '|'],
+            [';', ':', "'", '"', '<', '>', '/', '?'],
+            ['123', '~', '`', ',', '.', '!', '?', 'Enter'],
+            ['Space', 'ABC']
         ]
     };
 
     let shiftActive = false;
+    let currentLayout = 'standard';
+    
+    // Configuration loading
+    async function loadConfiguration() {
+        try {
+            const response = await fetch('/api/config');
+            if (response.ok) {
+                const fullConfig = await response.json();
+                config = {
+                    enhanced_virtual_keyboard: fullConfig.ui?.enhanced_virtual_keyboard ?? true,
+                    animation_duration: fullConfig.ui?.animation_duration_ms ?? 300,
+                    touch_optimized: fullConfig.ui?.touch_optimized ?? true
+                };
+            } else {
+                config = {
+                    enhanced_virtual_keyboard: true,
+                    animation_duration: 300,
+                    touch_optimized: true
+                };
+            }
+        } catch (error) {
+            console.warn('Could not load keyboard configuration, using defaults:', error);
+            config = {
+                enhanced_virtual_keyboard: true,
+                animation_duration: 300,
+                touch_optimized: true
+            };
+        }
+        
+        // Initialize haptic feedback if available
+        if ('vibrate' in navigator && config.touch_optimized) {
+            hapticFeedback = {
+                light: () => navigator.vibrate(10),
+                medium: () => navigator.vibrate(20),
+                heavy: () => navigator.vibrate(50)
+            };
+        }
+    }
+    
+    // Enhanced key press handling with haptic feedback
+    function triggerHapticFeedback(type = 'light') {
+        if (hapticFeedback && config.touch_optimized) {
+            hapticFeedback[type]();
+        }
+    }
     
     // Create keyboard HTML structure
     function createKeyboard() {
@@ -27,49 +83,13 @@ const VirtualKeyboard = (function() {
         keyboardContainer.classList.add('virtual-keyboard');
         keyboardContainer.setAttribute('id', 'virtual-keyboard');
         
-        // Build keyboard rows and keys
-        layouts.standard.forEach(row => {
-            const rowElement = document.createElement('div');
-            rowElement.classList.add('keyboard-row');
-            
-            row.forEach(key => {
-                const keyElement = document.createElement('button');
-                keyElement.classList.add('keyboard-key');
-                
-                // Special keys get special classes
-                if (key === 'Backspace' || key === 'Enter' || key === 'Space' || key === 'Shift') {
-                    keyElement.classList.add('keyboard-key-wide');
-                    
-                    switch(key) {
-                        case 'Backspace':
-                            keyElement.innerHTML = '&larr;';
-                            keyElement.dataset.key = key;
-                            break;
-                        case 'Enter':
-                            keyElement.innerHTML = 'Enter';
-                            keyElement.dataset.key = key;
-                            break;
-                        case 'Space':
-                            keyElement.innerHTML = '&nbsp;';
-                            keyElement.dataset.key = key;
-                            break;
-                        case 'Shift':
-                            keyElement.innerHTML = '&uarr;';
-                            keyElement.dataset.key = key;
-                            break;
-                    }
-                } else {
-                    keyElement.textContent = key;
-                    keyElement.dataset.key = key;
-                }
-                
-                // Add click handler to each key
-                keyElement.addEventListener('click', (e) => handleKeyClick(e, keyElement.dataset.key));
-                rowElement.appendChild(keyElement);
-            });
-            
-            keyboardContainer.appendChild(rowElement);
-        });
+        // Build keyboard
+        buildKeyboardLayout();
+        
+        // Add layout switcher if enhanced mode is enabled
+        if (config?.enhanced_virtual_keyboard) {
+            addLayoutSwitcher();
+        }
         
         // Initially hide keyboard
         keyboardContainer.style.display = 'none';
@@ -81,6 +101,185 @@ const VirtualKeyboard = (function() {
         
         // Add keyboard to DOM
         document.body.appendChild(keyboardContainer);
+    }
+    
+    function buildKeyboardLayout() {
+        // Clear existing keys
+        keyboardContainer.innerHTML = '';
+        
+        // Build keyboard rows and keys
+        layouts[currentLayout].forEach(row => {
+            const rowElement = document.createElement('div');
+            rowElement.classList.add('keyboard-row');
+            
+            row.forEach(key => {
+                const keyElement = createKeyElement(key);
+                rowElement.appendChild(keyElement);
+            });
+            
+            keyboardContainer.appendChild(rowElement);
+        });
+    }
+    
+    function createKeyElement(key) {
+        const keyElement = document.createElement('button');
+        keyElement.classList.add('keyboard-key');
+        keyElement.setAttribute('type', 'button');
+        
+        // Special keys get special classes and content
+        if (['Backspace', 'Enter', 'Space', 'Shift', 'ABC', '123'].includes(key)) {
+            keyElement.classList.add('keyboard-key-wide');
+            
+            switch(key) {
+                case 'Backspace':
+                    keyElement.innerHTML = '⌫';
+                    keyElement.classList.add('keyboard-key-backspace');
+                    break;
+                case 'Enter':
+                    keyElement.innerHTML = 'Enter';
+                    keyElement.classList.add('keyboard-key-enter');
+                    break;
+                case 'Space':
+                    keyElement.innerHTML = '';
+                    keyElement.classList.add('keyboard-key-space');
+                    break;
+                case 'Shift':
+                    keyElement.innerHTML = '⇧';
+                    keyElement.classList.add('keyboard-key-shift');
+                    if (shiftActive) {
+                        keyElement.classList.add('active');
+                    }
+                    break;
+                case 'ABC':
+                    keyElement.innerHTML = 'ABC';
+                    keyElement.classList.add('keyboard-key-layout');
+                    break;
+                case '123':
+                    keyElement.innerHTML = '123';
+                    keyElement.classList.add('keyboard-key-layout');
+                    break;
+            }
+        } else {
+            let displayKey = key;
+            if (shiftActive && key.match(/[a-z]/)) {
+                displayKey = key.toUpperCase();
+            }
+            keyElement.textContent = displayKey;
+            keyElement.classList.add('keyboard-key-char');
+        }
+        
+        keyElement.dataset.key = key;
+        
+        // Enhanced touch event handling
+        addTouchEventHandlers(keyElement, key);
+        
+        return keyElement;
+    }
+    
+    function addTouchEventHandlers(keyElement, key) {
+        // Standard click handler
+        keyElement.addEventListener('click', (e) => handleKeyClick(e, key));
+        
+        // Enhanced touch handlers for better responsiveness
+        if (config?.touch_optimized) {
+            keyElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                keyElement.classList.add('pressed');
+                triggerHapticFeedback('light');
+                
+                // Long press for backspace
+                if (key === 'Backspace') {
+                    longPressTimer = setTimeout(() => {
+                        startBackspaceRepeat();
+                    }, 500);
+                }
+            }, { passive: false });
+            
+            keyElement.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                keyElement.classList.remove('pressed');
+                
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                
+                stopBackspaceRepeat();
+                handleKeyClick(e, key);
+            }, { passive: false });
+            
+            keyElement.addEventListener('touchcancel', (e) => {
+                keyElement.classList.remove('pressed');
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                stopBackspaceRepeat();
+            });
+        }
+        
+        // Prevent context menu on long press
+        keyElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    }
+    
+    function addLayoutSwitcher() {
+        // This function can be called after buildKeyboardLayout
+        // The layout switcher keys are already handled in the keyboard layout
+    }
+    
+    let backspaceInterval = null;
+    
+    function startBackspaceRepeat() {
+        if (backspaceInterval) return;
+        
+        triggerHapticFeedback('medium');
+        backspaceInterval = setInterval(() => {
+            performBackspace();
+            triggerHapticFeedback('light');
+        }, 100);
+    }
+    
+    function stopBackspaceRepeat() {
+        if (backspaceInterval) {
+            clearInterval(backspaceInterval);
+            backspaceInterval = null;
+        }
+    }
+    
+    function performBackspace() {
+        if (!currentInput) return;
+        
+        const start = currentInput.selectionStart;
+        const end = currentInput.selectionEnd;
+        const value = currentInput.value;
+        
+        let newCursorPos = start;
+        
+        if (start !== end) {
+            // Delete selection
+            currentInput.value = value.slice(0, start) + value.slice(end);
+            newCursorPos = start;
+        } else if (start > 0) {
+            // Delete one character before cursor
+            currentInput.value = value.slice(0, start - 1) + value.slice(start);
+            newCursorPos = start - 1;
+        }
+        
+        // Set cursor position after a brief delay
+        requestAnimationFrame(() => {
+            try {
+                if (currentInput && currentInput.setSelectionRange) {
+                    currentInput.setSelectionRange(newCursorPos, newCursorPos);
+                }
+            } catch (e) {
+                // Silently handle cursor positioning errors
+            }
+        });
+        
+        // Trigger input event
+        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     // Handle key clicks
@@ -97,24 +296,8 @@ const VirtualKeyboard = (function() {
         
         switch(key) {
             case 'Backspace':
-                // Remove last character
-                if (currentInput.tagName.toLowerCase() === 'textarea') {
-                    const start = currentInput.selectionStart;
-                    const end = currentInput.selectionEnd;
-                    
-                    if (start === end && start > 0) {
-                        currentInput.value = currentInput.value.slice(0, start - 1) + currentInput.value.slice(end);
-                        currentInput.selectionStart = start - 1;
-                        currentInput.selectionEnd = start - 1;
-                    } else if (start !== end) {
-                        // Delete selected text
-                        currentInput.value = currentInput.value.slice(0, start) + currentInput.value.slice(end);
-                        currentInput.selectionStart = start;
-                        currentInput.selectionEnd = start;
-                    }
-                } else {
-                    currentInput.value = currentInput.value.slice(0, -1);
-                }
+                performBackspace();
+                triggerHapticFeedback('medium');
                 break;
                 
             case 'Enter':
@@ -157,7 +340,22 @@ const VirtualKeyboard = (function() {
             case 'Shift':
                 // Toggle shift state
                 shiftActive = !shiftActive;
-                toggleShift();
+                updateShiftDisplay();
+                triggerHapticFeedback('medium');
+                break;
+                
+            case 'ABC':
+                // Switch to standard layout
+                currentLayout = 'standard';
+                buildKeyboardLayout();
+                triggerHapticFeedback('medium');
+                break;
+                
+            case '123':
+                // Switch to symbols layout
+                currentLayout = 'symbols';
+                buildKeyboardLayout();
+                triggerHapticFeedback('medium');
                 break;
                 
             default:
@@ -169,64 +367,81 @@ const VirtualKeyboard = (function() {
                     character = character.toUpperCase();
                     // Toggle shift off after one character
                     shiftActive = false;
-                    toggleShift();
+                    updateShiftDisplay();
                 }
                 
                 if (currentInput) {
-                    // Focus the input to ensure proper state
-                    currentInput.focus();
-                    
-                    // Get current cursor position, defaulting to end of text if not available
-                    let start = currentInput.selectionStart;
-                    let end = currentInput.selectionEnd;
-                    
-                    // If cursor position is not available, place at end
-                    if (start === null || start === undefined) {
-                        start = currentInput.value.length;
-                    }
-                    if (end === null || end === undefined) {
-                        end = currentInput.value.length;
-                    }
-                    
-                    // Build new value by inserting character at cursor position
-                    const beforeText = currentInput.value.substring(0, start);
-                    const afterText = currentInput.value.substring(end);
-                    const newValue = beforeText + character + afterText;
-                    
-                    // Set the new value
-                    currentInput.value = newValue;
-                    
-                    // Calculate new cursor position (after the inserted character)
-                    const newCursorPos = start + character.length;
-                    
-                    // Set cursor position after a brief delay to ensure value is set
-                    requestAnimationFrame(() => {
-                        try {
-                            currentInput.selectionStart = newCursorPos;
-                            currentInput.selectionEnd = newCursorPos;
-                        } catch (e) {
-                            // Silently handle cursor positioning errors on some input types
-                        }
-                    });
+                    insertCharacter(character);
                 }
+                triggerHapticFeedback('light');
+                break;
         }
-        
-        // Trigger input event for validation and reactivity
-        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
-    // Toggle shift state
-    function toggleShift() {
-        const keys = document.querySelectorAll('.keyboard-key:not(.keyboard-key-wide)');
-        keys.forEach(key => {
+    // Update shift display without rebuilding entire keyboard
+    function updateShiftDisplay() {
+        if (!keyboardContainer) return;
+        
+        // Update shift key appearance
+        const shiftKey = keyboardContainer.querySelector('[data-key="Shift"]');
+        if (shiftKey) {
             if (shiftActive) {
-                key.textContent = key.textContent.toUpperCase();
-                document.querySelector('[data-key="Shift"]').classList.add('active');
+                shiftKey.classList.add('active');
             } else {
-                key.textContent = key.textContent.toLowerCase();
-                document.querySelector('[data-key="Shift"]').classList.remove('active');
+                shiftKey.classList.remove('active');
+            }
+        }
+        
+        // Update character keys to show uppercase/lowercase
+        const charKeys = keyboardContainer.querySelectorAll('.keyboard-key-char');
+        charKeys.forEach(key => {
+            const keyData = key.dataset.key;
+            if (keyData && keyData.match(/[a-z]/)) {
+                key.textContent = shiftActive ? keyData.toUpperCase() : keyData;
             }
         });
+    }
+
+    // Insert character at cursor position
+    function insertCharacter(character) {
+        if (!currentInput) return;
+        
+        // Get current cursor position, defaulting to end of text if not available
+        let start = currentInput.selectionStart;
+        let end = currentInput.selectionEnd;
+        
+        // If cursor position is not available, place at end
+        if (start === null || start === undefined) {
+            start = currentInput.value.length;
+        }
+        if (end === null || end === undefined) {
+            end = currentInput.value.length;
+        }
+        
+        // Build new value by inserting character at cursor position
+        const beforeText = currentInput.value.substring(0, start);
+        const afterText = currentInput.value.substring(end);
+        const newValue = beforeText + character + afterText;
+        
+        // Set the new value
+        currentInput.value = newValue;
+        
+        // Calculate new cursor position (after the inserted character)
+        const newCursorPos = start + character.length;
+        
+        // Set cursor position after a brief delay to ensure value is set
+        requestAnimationFrame(() => {
+            try {
+                if (currentInput && currentInput.setSelectionRange) {
+                    currentInput.setSelectionRange(newCursorPos, newCursorPos);
+                }
+            } catch (e) {
+                // Silently handle cursor positioning errors on some input types
+            }
+        });
+        
+        // Trigger input event
+        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     // Show the keyboard and link it to the input that has focus
@@ -344,19 +559,32 @@ const VirtualKeyboard = (function() {
             if (isOpen && (input.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') || 
                 input.getAttribute('data-needs-keyboard') === 'true')) {
                 
-                // Wait a bit to see if focus moves to another input in the same modal
+                // Wait longer to see if focus moves to another input in the same modal
+                // This gives time for keyboard rebuilds and other operations
                 setTimeout(() => {
+                    // Don't hide if keyboard is in use (recent interaction)
+                    if (!isOpen) return;
+                    
                     const activeElement = document.activeElement;
                     const modalContent = input.closest('.modal-content');
                     
-                    // Only hide keyboard if focus moved outside the modal or to a non-input element
+                    // Don't hide if the active element is still an input or part of the keyboard
+                    const isStillInput = activeElement && (
+                        activeElement.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') ||
+                        activeElement.getAttribute('data-needs-keyboard') === 'true'
+                    );
+                    
+                    const isKeyboardElement = keyboardContainer && keyboardContainer.contains(activeElement);
+                    
+                    // Don't hide if focus is on body (which happens during keyboard interactions)
+                    const isFocusOnBody = activeElement === document.body;
+                    
+                    // Only hide keyboard if focus truly moved outside the modal AND it's not a keyboard interaction
                     if (!modalContent || 
-                        !modalContent.contains(activeElement) || 
-                        (!activeElement.matches('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], textarea') &&
-                         activeElement.getAttribute('data-needs-keyboard') !== 'true')) {
+                        (!modalContent.contains(activeElement) && !isKeyboardElement && !isStillInput && !isFocusOnBody)) {
                         hideKeyboard();
                     }
-                }, 100);
+                }, 300); // Further increased timeout
             }
         });
         
@@ -381,10 +609,13 @@ const VirtualKeyboard = (function() {
     
     // Public methods
     const publicAPI = {
-        init: function() {
+        init: async function() {
+            // Load configuration first
+            await loadConfiguration();
+            
             createKeyboard();
             setupInputListeners();
-            console.log("Virtual keyboard component initialized");
+            console.log("Enhanced virtual keyboard component initialized");
             
             // Make the keyboard available globally
             window.VirtualKeyboard = publicAPI;

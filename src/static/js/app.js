@@ -10,8 +10,9 @@ import Chores from './components/chores.js';
 import Modal from './components/modal.js';
 import VirtualKeyboard from './components/virtualKeyboard.js';
 import PIRSensor from './components/pirSensor.js';
+import LoadingIndicator from './components/loadingIndicator.js';
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log("Calendar application initializing...");
     
     // Detect if we're on a touch device and add appropriate class to body
@@ -33,20 +34,36 @@ document.addEventListener('DOMContentLoaded', function() {
     // Run the detection immediately
     const isTouchDevice = detectTouchDevice();
     
-    // Initialize all components
+    // Initialize core components first
     const componentsStatus = {
+        loadingIndicator: LoadingIndicator.init(),
         modal: Modal.init(), // This initializes the event modal
         addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true, 
         calendar: Calendar.init(),
         dailyView: DailyView.init(),
         weather: Weather.init(),
         slideshow: Slideshow.init(),
-        chores: Chores.init(),
-        virtualKeyboard: VirtualKeyboard.init(),
-        pirSensor: PIRSensor.init((activityType) => {
-            registerActivity(`pir-${activityType}`);
-        })
+        chores: Chores.init()
     };
+    
+    // Initialize async components without blocking
+    VirtualKeyboard.init().then(result => {
+        componentsStatus.virtualKeyboard = result;
+        console.log("Virtual keyboard initialized:", result);
+    }).catch(err => {
+        console.error("Virtual keyboard initialization failed:", err);
+        componentsStatus.virtualKeyboard = false;
+    });
+    
+    PIRSensor.init((activityType) => {
+        registerActivity(`pir-${activityType}`);
+    }).then(result => {
+        componentsStatus.pirSensor = result;
+        console.log("PIR sensor initialized:", result);
+    }).catch(err => {
+        console.error("PIR sensor initialization failed:", err);
+        componentsStatus.pirSensor = false;
+    });
     
     // Check if all components initialized successfully
     const failedComponents = Object.entries(componentsStatus)

@@ -5,7 +5,10 @@
 
 echo "Starting Family Calendar & Photo Slideshow..."
 
-cd ~/Desktop/calendar/startup
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+cd "$SCRIPT_DIR" || { echo "Failed to navigate to startup directory"; exit 1; }
 
 # Start the calendar application
 ./launch-calendar.sh
