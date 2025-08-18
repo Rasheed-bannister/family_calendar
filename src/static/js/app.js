@@ -257,12 +257,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         DailyView.pause();
         Chores.pause();
         
-        // Keep slideshow running
-        Slideshow.start();
+        // Start slideshow with a small delay to ensure smooth transition
+        setTimeout(() => {
+            if (longInactivityMode) { // Check if we're still in long inactivity mode
+                Slideshow.start();
+            }
+        }, SLIDESHOW_START_DELAY);
         
         // Display notification if in debug mode
         if (DEBUG_MODE) {
-            showDebugNotification("Entered inactivity mode");
+            showDebugNotification("Entered long inactivity mode - slideshow will start");
         }
     }
     
@@ -276,6 +280,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Remove class from body
         document.body.classList.remove('long-inactivity-mode');
         
+        // Stop slideshow
+        Slideshow.stop();
+        
         // Resume components
         Calendar.resume();
         Weather.resume();
@@ -284,7 +291,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Display notification if in debug mode
         if (DEBUG_MODE) {
-            showDebugNotification("Exited inactivity mode");
+            showDebugNotification("Exited long inactivity mode");
         }
     }
     
@@ -479,6 +486,50 @@ document.addEventListener('DOMContentLoaded', async function() {
     setupActivityTracking();
     
     // Calendar application initialized
+
+// Add cleanup on page unload to prevent memory leaks
+window.addEventListener('beforeunload', function() {
+    // Clean up slideshow
+    if (Slideshow && typeof Slideshow.cleanup === 'function') {
+        Slideshow.cleanup();
+    }
+    
+    // Clean up PIR sensor
+    if (PIRSensor && typeof PIRSensor.cleanup === 'function') {
+        PIRSensor.cleanup();
+    }
+    
+    // Clear inactivity check interval
+    if (inactivityCheckInterval) {
+        clearInterval(inactivityCheckInterval);
+        inactivityCheckInterval = null;
+    }
+    
+    // Clear any remaining timeouts
+    if (motionFeedbackTimeout) {
+        clearTimeout(motionFeedbackTimeout);
+    }
+});
+
+// Also add periodic memory cleanup every 30 minutes
+setInterval(() => {
+    // Force garbage collection hint (doesn't guarantee it will run)
+    if (window.gc && typeof window.gc === 'function') {
+        try {
+            window.gc();
+        } catch (e) {
+            // Ignore errors
+        }
+    }
+    
+    // Remove debug notifications if they accumulate
+    const notifications = document.querySelectorAll('.debug-notification');
+    notifications.forEach(notification => {
+        if (document.body.contains(notification)) {
+            document.body.removeChild(notification);
+        }
+    });
+}, 30 * 60 * 1000); // 30 minutes
 });
 
 // Chore polling mechanism
