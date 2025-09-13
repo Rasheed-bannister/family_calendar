@@ -18,4 +18,10 @@ src/static/photos/*
 
 .DS_Store
 
+# Code quality reports
+complexity.json
+maintainability.json
+dead-code.txt
+reports/
+
 .github/

@@ -101,8 +101,10 @@ class PIRSensor:
         """Set the callback function for motion detection"""
         self.callback = callback
 
-    def _motion_detected(self, channel=None):
+    def _motion_detected(self, channel=None):  # noqa: ARG002
         """Internal method called when motion is detected"""
+        # channel parameter required by GPIO callback interface but unused
+        _ = channel  # Suppress vulture warning
         current_time = time.time()
 
         # Debounce detection

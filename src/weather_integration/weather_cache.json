@@ -1,18 +1,18 @@
 {
-  "cached_at": "2025-09-13T09:23:50.949683",
+  "cached_at": "2025-09-13T09:42:28.573976",
   "data": {
     "current": {
-      "time": "2025-09-13T09:15:00",
-      "apparent_temperature": 81.35932922363281,
+      "time": "2025-09-13T09:30:00",
+      "apparent_temperature": 88.3641357421875,
       "is_day": 1.0,
       "weather_code": 3.0
     },
     "daily": [
       {
         "date": "2025-09-13T04:00:00+00:00",
-        "weather_code": 80.0,
-        "apparent_temperature_max": 93.57061004638672,
-        "apparent_temperature_min": 80.39431762695312,
+        "weather_code": 3.0,
+        "apparent_temperature_max": 92.56013488769531,
+        "apparent_temperature_min": 80.86241149902344,
         "sunrise": "2025-09-13T07:05:59",
         "sunset": "2025-09-13T19:27:52",
         "precipitation_probability_max": 30.0
