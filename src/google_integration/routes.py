@@ -2,7 +2,14 @@ import threading
 
 from flask import jsonify
 
+from src.calendar_app import database as calendar_db
+from src.calendar_app import utils as calendar_utils
 from src.calendar_app.models import CalendarMonth
+from src.chores_app import database as chores_db
+from src.chores_app import utils as chores_utils
+
+# Shared resources
+from src.main import _make_chores_comparable, background_tasks, google_fetch_lock
 
 from . import api as calendar_api
 from . import tasks_api
@@ -13,15 +20,6 @@ def get_google_bp():
     from . import google_bp
 
     return google_bp
-
-
-from src.calendar_app import database as calendar_db
-from src.calendar_app import utils as calendar_utils
-from src.chores_app import database as chores_db
-from src.chores_app import utils as chores_utils
-
-# Shared resources
-from src.main import _make_chores_comparable, background_tasks, google_fetch_lock
 
 
 def fetch_google_events_background(month, year):
@@ -74,9 +72,9 @@ def fetch_google_events_background(month, year):
 
             background_tasks[task_id]["updated"] = events_changed
             background_tasks[task_id]["events_changed"] = events_changed
-            background_tasks[task_id]["last_update_time"] = (
-                time.time()
-            )  # Record when this sync completed
+            background_tasks[task_id][
+                "last_update_time"
+            ] = time.time()  # Record when this sync completed
 
     except Exception as e:
         print(f"Error in calendar fetch background task {task_id}: {e}")
@@ -86,9 +84,9 @@ def fetch_google_events_background(month, year):
             background_tasks[task_id]["events_changed"] = False
             import time
 
-            background_tasks[task_id]["last_update_time"] = (
-                time.time()
-            )  # Record error time too
+            background_tasks[task_id][
+                "last_update_time"
+            ] = time.time()  # Record error time too
     finally:
         with google_fetch_lock:
             if background_tasks[task_id]["status"] != "error":
