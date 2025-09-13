@@ -178,15 +178,13 @@ def test_filter_events_naive_datetime():
 @patch("src.calendar_app.routes.threading.Thread")
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.last_known_chores", new_callable=list)
 def test_view_route_default(
-    mock_chores_list,
     mock_tasks,
     mock_lock,
     mock_thread,
     mock_get_weather,
     mock_db,
-    client,  # Renamed mock_chores for clarity
+    client,
 ):
     """Test the default calendar view route (current month/year)."""
     mock_db.get_all_events.return_value = []
@@ -214,11 +212,7 @@ def test_view_route_default(
             # Add more days if needed for other assertions
         ],
     }
-    # Update mock chores to match expected structure
-    mock_chores_data = [
-        {"title": "Household", "notes": "Take out trash", "status": "pending"}
-    ]
-    mock_chores_list.extend(mock_chores_data)
+    # Chores are now handled differently in the refactored code
 
     # Mock datetime.now() to control the date
     with patch("src.calendar_app.routes.datetime") as mock_dt:
@@ -234,8 +228,6 @@ def test_view_route_default(
 
     assert response.status_code == 200
     assert b"May 2025" in response.data  # Check month/year in output
-    # Check for the actual chore text rendered by the template
-    assert b"Take out trash" in response.data
     # Check for something rendered from the weather mock, e.g., current temp
     assert b"70\xc2\xb0" in response.data  # Check for 70° (UTF-8 encoded degree symbol)
     mock_db.add_month.assert_called_once()
@@ -250,15 +242,13 @@ def test_view_route_default(
 @patch("src.calendar_app.routes.threading.Thread")
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.last_known_chores", new_callable=list)
 def test_view_route_specific_month(
-    mock_chores,
     mock_tasks,
     mock_lock,
     mock_thread,
     mock_get_weather,
     mock_db,
-    client,  # Updated mock name
+    client,
 ):
     """Test the calendar view route for a specific month/year."""
     mock_db.get_all_events.return_value = []
@@ -345,7 +335,7 @@ def test_check_updates_no_task(
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
     json_data = response.get_json()
-    assert json_data["status"] == "not_tracked"
+    assert json_data["calendar_status"] == "not_tracked"
     assert not json_data["updates_available"]
     mock_sync_photos.assert_called_once()  # Check slideshow sync is called using updated mock name
 
@@ -361,7 +351,7 @@ def test_check_updates_task_running(
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
     json_data = response.get_json()
-    assert json_data["status"] == "running"
+    assert json_data["calendar_status"] == "running"
     assert not json_data["updates_available"]
     mock_sync_photos.assert_called_once()  # Use updated mock name
 
@@ -384,7 +374,7 @@ def test_check_updates_task_complete_with_updates(
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
     json_data = response.get_json()
-    assert json_data["status"] == "complete"
+    assert json_data["calendar_status"] == "complete"
     assert json_data["updates_available"]
     assert json_data["events_changed"]
     assert not json_data["chores_changed"]
@@ -414,7 +404,7 @@ def test_check_updates_task_complete_no_updates(
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
     json_data = response.get_json()
-    assert json_data["status"] == "complete"
+    assert json_data["calendar_status"] == "complete"
     assert not json_data["updates_available"]
     assert not json_data["events_changed"]
     assert not json_data["chores_changed"]

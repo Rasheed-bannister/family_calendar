@@ -167,9 +167,10 @@ const PIRSensor = (function () {
     }
   }
 
-  async function startPIRMonitoring() {
+  // Helper function to make PIR control API calls
+  async function pirControlRequest(endpoint, action, successState) {
     try {
-      const response = await fetch(START_ENDPOINT, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -183,46 +184,24 @@ const PIRSensor = (function () {
       const data = await response.json();
 
       if (data.success) {
-        isMonitoring = true;
-        // PIR sensor monitoring started successfully
+        isMonitoring = successState;
         return true;
       } else {
-        console.error("Failed to start PIR monitoring:", data.message);
+        console.error(`Failed to ${action} PIR monitoring:`, data.message);
         return false;
       }
     } catch (error) {
-      console.error("Error starting PIR monitoring:", error);
+      console.error(`Error ${action} PIR monitoring:`, error);
       return false;
     }
   }
 
+  async function startPIRMonitoring() {
+    return await pirControlRequest(START_ENDPOINT, "start", true);
+  }
+
   async function stopPIRMonitoring() {
-    try {
-      const response = await fetch(STOP_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        isMonitoring = false;
-        // PIR sensor monitoring stopped successfully
-        return true;
-      } else {
-        console.error("Failed to stop PIR monitoring:", data.message);
-        return false;
-      }
-    } catch (error) {
-      console.error("Error stopping PIR monitoring:", error);
-      return false;
-    }
+    return await pirControlRequest(STOP_ENDPOINT, "stop", false);
   }
 
   function startStatusChecking() {

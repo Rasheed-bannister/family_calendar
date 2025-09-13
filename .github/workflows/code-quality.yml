@@ -123,13 +123,14 @@ jobs:
     - name: Dead code detection in JavaScript
       run: |
         echo "=== Checking for unused JS code ==="
-        npx eslint src/static/js/ --no-eslintrc --rule 'no-unused-vars: error' --rule 'no-unreachable: error' --rule 'no-dead-code: error' || true
+        npx eslint src/static/js/ --config '{"rules":{"no-unused-vars":"error","no-unreachable":"error"}}' --no-ignore || true
       continue-on-error: true
 
     - name: JavaScript complexity analysis
       run: |
         echo "=== JavaScript Complexity Analysis ==="
-        npx cr --format plain --output reports/js-complexity.txt src/static/js/ || true
+        mkdir -p reports
+        echo "Skipping complexity analysis - ES6 modules not supported by complexity-report" > reports/js-complexity.txt || true
       continue-on-error: true
 
     - name: JavaScript duplication detection

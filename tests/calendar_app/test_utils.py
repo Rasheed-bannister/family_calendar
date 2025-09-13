@@ -367,22 +367,30 @@ def test_create_calendar_events_existing_calendar_no_change(
     mock_db_module.add_calendar.assert_not_called()  # add_calendar should not be called
 
 
+@patch("src.calendar_app.database.run_migrations")
 @patch("src.calendar_app.database.DATABASE_FILE")
 @patch("src.calendar_app.database.create_all")
-def test_initialize_db_creates_if_not_exists(mock_create_all, mock_db_file):
+def test_initialize_db_creates_if_not_exists(
+    mock_create_all, mock_db_file, mock_migrations
+):
     """Test initialize_db calls create_all when the DB file doesn't exist."""
     mock_db_file.exists.return_value = False
     utils.initialize_db()
     mock_create_all.assert_called_once()
+    mock_migrations.assert_called_once()
 
 
+@patch("src.calendar_app.database.run_migrations")
 @patch("src.calendar_app.database.DATABASE_FILE")
 @patch("src.calendar_app.database.create_all")
-def test_initialize_db_does_nothing_if_exists(mock_create_all, mock_db_file):
+def test_initialize_db_does_nothing_if_exists(
+    mock_create_all, mock_db_file, mock_migrations
+):
     """Test initialize_db does nothing when the DB file already exists."""
     mock_db_file.exists.return_value = True
     utils.initialize_db()
     mock_create_all.assert_not_called()
+    mock_migrations.assert_called_once()  # Migrations always run
 
 
 # Test updates using INSERT OR REPLACE
