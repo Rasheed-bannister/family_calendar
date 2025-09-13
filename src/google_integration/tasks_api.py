@@ -1,20 +1,22 @@
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import datetime
 import os
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 TARGET_TASK_LIST_NAME = "Chores"
 
 # Define separate scopes for tasks - includes write permission
 TASKS_SCOPES = ["https://www.googleapis.com/auth/tasks"]
 
+
 def authenticate_tasks():
     """
     Handles authentication with Google Tasks API using OAuth 2.0.
-    
+
     Returns:
         google.oauth2.credentials.Credentials: The authenticated credentials object,
                                               or None if authentication fails.
@@ -27,7 +29,7 @@ def authenticate_tasks():
     # The file tasks_token.json stores the user's access and refresh tokens
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, TASKS_SCOPES)
-    
+
     # If there are no (valid) credentials available, let the user log in
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -36,12 +38,14 @@ def authenticate_tasks():
             except Exception as e:
                 print(f"Error refreshing tasks token: {e}")
                 creds = None  # Reset creds to trigger the flow below
-        
+
         # Only run the flow if creds are still None
         if not creds:
             if not os.path.exists(creds_path):
                 print(f"Error: Credentials file not found at {creds_path}")
-                print("Please download your credentials file from Google Cloud Console and place it there.")
+                print(
+                    "Please download your credentials file from Google Cloud Console and place it there."
+                )
                 return None
             try:
                 flow = InstalledAppFlow.from_client_secrets_file(
@@ -59,8 +63,9 @@ def authenticate_tasks():
                     token.write(creds.to_json())
             except IOError as e:
                 print(f"Error saving tasks token file: {e}")
-    
+
     return creds
+
 
 def get_tasks_service():
     """Authenticates and builds the Google Tasks API service."""
@@ -78,14 +83,15 @@ def get_tasks_service():
         print(f"An unexpected error occurred building Tasks service: {e}")
         return None
 
+
 def find_task_list_id(service, list_name):
     """Finds the ID of a task list by its name."""
     try:
         results = service.tasklists().list().execute()
-        items = results.get('items', [])
+        items = results.get("items", [])
         for item in items:
-            if item['title'] == list_name:
-                return item['id']
+            if item["title"] == list_name:
+                return item["id"]
         print(f"Task list '{list_name}' not found.")
         return None
     except HttpError as error:
@@ -102,21 +108,25 @@ def fetch_tasks_from_list(service, task_list_id) -> list[dict]:
         return []
     try:
         # Remove date filtering to get ALL tasks
-        results = service.tasks().list(
-            tasklist=task_list_id,
-            showCompleted=True, # Include completed tasks in the API response
-            showHidden=True,
-            maxResults=100  # Get more tasks
-        ).execute()
-        items = results.get('items', [])
-        
+        results = (
+            service.tasks()
+            .list(
+                tasklist=task_list_id,
+                showCompleted=True,  # Include completed tasks in the API response
+                showHidden=True,
+                maxResults=100,  # Get more tasks
+            )
+            .execute()
+        )
+        items = results.get("items", [])
+
         return [
             {
-                'id': item.get('id'),
-                'title': item.get('title'),
-                'notes': item.get('notes'),
-                'status': item.get('status'),
-                'due': item.get('due')
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "notes": item.get("notes"),
+                "status": item.get("status"),
+                "due": item.get("due"),
             }
             for item in items
         ]
@@ -126,6 +136,7 @@ def fetch_tasks_from_list(service, task_list_id) -> list[dict]:
     except Exception as e:
         print(f"An unexpected error occurred fetching tasks: {e}")
         return []
+
 
 def get_chores():
     """Fetches tasks from the target chore list."""
@@ -139,6 +150,7 @@ def get_chores():
     chores = fetch_tasks_from_list(service, task_list_id)
     return chores
 
+
 def update_chore(chore_id, task_list_id=None, updates=None):
     """Updates a specific task with the provided updates."""
     if not task_list_id:
@@ -148,29 +160,28 @@ def update_chore(chore_id, task_list_id=None, updates=None):
         task_list_id = find_task_list_id(service, TARGET_TASK_LIST_NAME)
         if not task_list_id:
             return False
-    
+
     if not updates:
         return False
-    
+
     try:
         # First get the current task to preserve any fields not in updates
         service = get_tasks_service()
-        current_task = service.tasks().get(
-            tasklist=task_list_id,
-            task=chore_id
-        ).execute()
-        
+        current_task = (
+            service.tasks().get(tasklist=task_list_id, task=chore_id).execute()
+        )
+
         # Apply updates
         for key, value in updates.items():
             current_task[key] = value
-        
+
         # Update the task
-        result = service.tasks().update(
-            tasklist=task_list_id,
-            task=chore_id,
-            body=current_task
-        ).execute()
-        
+        result = (
+            service.tasks()
+            .update(tasklist=task_list_id, task=chore_id, body=current_task)
+            .execute()
+        )
+
         return True
     except HttpError as error:
         print(f"An API error occurred updating task: {error}")
@@ -179,12 +190,17 @@ def update_chore(chore_id, task_list_id=None, updates=None):
         print(f"An unexpected error occurred updating task: {e}")
         return False
 
+
 def mark_chore_completed(chore_id):
     """Marks a chore as completed."""
-    return update_chore(chore_id, updates={
-        'status': 'completed',
-        'completed': datetime.datetime.utcnow().isoformat() + "Z"
-    })
+    return update_chore(
+        chore_id,
+        updates={
+            "status": "completed",
+            "completed": datetime.datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
 
 def create_chore(title, task_list_id=None, details=None):
     """Creates a new chore (task) in the specified task list."""
@@ -200,18 +216,19 @@ def create_chore(title, task_list_id=None, details=None):
             return None
 
     task_body = {
-        'title': title,  # This will be the person assigned to do the chore
-        'status': 'needsAction'  # Default status for new tasks
+        "title": title,  # This will be the person assigned to do the chore
+        "status": "needsAction",  # Default status for new tasks
     }
     if details:
-        task_body['notes'] = details # This is the chore description
+        task_body["notes"] = details  # This is the chore description
 
     try:
-        created_task = service.tasks().insert(
-            tasklist=task_list_id,
-            body=task_body
-        ).execute()
-        print(f"Task created in Google: '{created_task.get('title')}', ID: {created_task.get('id')}")
+        created_task = (
+            service.tasks().insert(tasklist=task_list_id, body=task_body).execute()
+        )
+        print(
+            f"Task created in Google: '{created_task.get('title')}', ID: {created_task.get('id')}"
+        )
         return created_task
     except HttpError as error:
         print(f"An API error occurred creating Google task: {error}")
@@ -219,5 +236,3 @@ def create_chore(title, task_list_id=None, details=None):
     except Exception as e:
         print(f"An unexpected error occurred creating Google task: {e}")
         return None
-
-

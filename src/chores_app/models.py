@@ -5,5 +5,5 @@ class Chore:
         self.assigned_to = title
         self.notes = notes  # Make notes available as both notes and description
         self.description = notes
-        self.status = status # from google: 'needsAction' or 'completed'. from a user: 'invisible'
+        self.status = status  # from google: 'needsAction' or 'completed'. from a user: 'invisible'
         self.due = due

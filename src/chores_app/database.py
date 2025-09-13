@@ -1,10 +1,11 @@
 import sqlite3
 import uuid  # Add this import for generating UUIDs
-from .models import Chore
 from pathlib import Path
-import datetime
+
+from .models import Chore
 
 DATABASE_FILE = Path(__file__).parent / "chores.db"
+
 
 def create_all():
     """
@@ -12,14 +13,15 @@ def create_all():
     This function is called only when it's confirmed that there is no database file.
     """
     # Create the database file in the file system
-    with open(DATABASE_FILE, 'w'):
+    with open(DATABASE_FILE, "w"):
         pass
 
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
 
     # Create Chores table
-    cursor.execute('''
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS Chores (
             id TEXT PRIMARY KEY,
             assigned_to TEXT NOT NULL,
@@ -27,22 +29,28 @@ def create_all():
             status TEXT,
             due TEXT
         )
-    ''')
+    """
+    )
 
     conn.commit()
     conn.close()
+
 
 def update_chore_status(chore_id: str, new_status: str):
     """Updates the status of a specific chore in the database."""
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
-    cursor.execute('''
+    cursor.execute(
+        """
         UPDATE Chores
         SET status = ?
         WHERE id = ?
-    ''', (new_status, chore_id))
+    """,
+        (new_status, chore_id),
+    )
     conn.commit()
     conn.close()
+
 
 def add_chores(chores: list[Chore]):
     """
@@ -54,21 +62,37 @@ def add_chores(chores: list[Chore]):
 
     for chore in chores:
         # Check current status before potentially overwriting
-        cursor.execute('SELECT status FROM Chores WHERE id = ?', (chore.id,))
+        cursor.execute("SELECT status FROM Chores WHERE id = ?", (chore.id,))
         result = cursor.fetchone()
         current_status = result[0] if result else None
 
         # Only insert/replace if the current status is not 'invisible'
-        if current_status != 'invisible':
-            cursor.execute('''
+        if current_status != "invisible":
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO Chores (id, assigned_to, description, status, due)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (chore.id, chore.assigned_to, chore.description, chore.status, chore.due))
+            """,
+                (
+                    chore.id,
+                    chore.assigned_to,
+                    chore.description,
+                    chore.status,
+                    chore.due,
+                ),
+            )
 
     conn.commit()
     conn.close()
 
-def add_chore(assigned_to: str, description: str, status: str = 'needsAction', due: str = None, google_id: str = None) -> Chore:
+
+def add_chore(
+    assigned_to: str,
+    description: str,
+    status: str = "needsAction",
+    due: str = None,
+    google_id: str = None,
+) -> Chore:
     """
     Adds a single chore to the database.
     Generates a new UUID for the local ID if one isn't provided (e.g., from Google Tasks).
@@ -89,29 +113,43 @@ def add_chore(assigned_to: str, description: str, status: str = 'needsAction', d
             due = None
 
     new_chore = Chore(
-        id=chore_id, 
+        id=chore_id,
         title=assigned_to,  # title parameter maps to assigned_to attribute
         notes=description,  # notes parameter maps to description attribute
         status=status,
-        due=due
+        due=due,
     )
 
     try:
-        cursor.execute('''
+        cursor.execute(
+            """
             INSERT INTO Chores (id, assigned_to, description, status, due)
             VALUES (?, ?, ?, ?, ?)
-        ''', (new_chore.id, new_chore.assigned_to, new_chore.description, new_chore.status, new_chore.due))
+        """,
+            (
+                new_chore.id,
+                new_chore.assigned_to,
+                new_chore.description,
+                new_chore.status,
+                new_chore.due,
+            ),
+        )
         conn.commit()
-        print(f"Chore '{new_chore.description}' for '{new_chore.assigned_to}' added to local DB with ID: {new_chore.id}")
+        print(
+            f"Chore '{new_chore.description}' for '{new_chore.assigned_to}' added to local DB with ID: {new_chore.id}"
+        )
         return new_chore
     except sqlite3.IntegrityError as e:
-        print(f"Error adding chore to DB (ID: {new_chore.id}): {e}. Chore might already exist.")
+        print(
+            f"Error adding chore to DB (ID: {new_chore.id}): {e}. Chore might already exist."
+        )
         conn.rollback()
         # Depending on desired behavior, could try to fetch existing chore or raise error
         # For now, returning None to indicate failure to add as new
-        return None # Or raise e to indicate a more critical failure
+        return None  # Or raise e to indicate a more critical failure
     finally:
         conn.close()
+
 
 def update_chore_google_id(local_chore_id: str, google_task_id: str):
     """Updates a locally created chore with its corresponding Google Task ID."""
@@ -122,25 +160,45 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
         existing_with_google_id = cursor.fetchone()
 
         if existing_with_google_id and existing_with_google_id[0] != local_chore_id:
-            print(f"Error: Google Task ID {google_task_id} is already associated with a different local chore ({existing_with_google_id[0]}). Cannot update chore {local_chore_id}.")
+            print(
+                f"Error: Google Task ID {google_task_id} is already associated with a different local chore ({existing_with_google_id[0]}). Cannot update chore {local_chore_id}."
+            )
             return
 
-        cursor.execute("SELECT assigned_to, description, status, due FROM Chores WHERE id = ?", (local_chore_id,))
+        cursor.execute(
+            "SELECT assigned_to, description, status, due FROM Chores WHERE id = ?",
+            (local_chore_id,),
+        )
         chore_data = cursor.fetchone()
 
         if not chore_data:
-            print(f"Error: Local chore with ID {local_chore_id} not found. Cannot update with Google ID.")
+            print(
+                f"Error: Local chore with ID {local_chore_id} not found. Cannot update with Google ID."
+            )
             return
 
         if local_chore_id != google_task_id:
-            cursor.execute('''
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO Chores (id, assigned_to, description, status, due)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (google_task_id, chore_data[0], chore_data[1], chore_data[2], chore_data[3]))
+            """,
+                (
+                    google_task_id,
+                    chore_data[0],
+                    chore_data[1],
+                    chore_data[2],
+                    chore_data[3],
+                ),
+            )
             cursor.execute("DELETE FROM Chores WHERE id = ?", (local_chore_id,))
-            print(f"Chore ID updated from local {local_chore_id} to Google ID {google_task_id}")
+            print(
+                f"Chore ID updated from local {local_chore_id} to Google ID {google_task_id}"
+            )
         else:
-            print(f"Chore {local_chore_id} already uses Google ID {google_task_id} or is being re-confirmed.")
+            print(
+                f"Chore {local_chore_id} already uses Google ID {google_task_id} or is being re-confirmed."
+            )
 
         conn.commit()
     except sqlite3.Error as e:
@@ -148,6 +206,7 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
         conn.rollback()
     finally:
         conn.close()
+
 
 def get_chores(include_invisible=False) -> list[dict]:
     """
@@ -158,23 +217,25 @@ def get_chores(include_invisible=False) -> list[dict]:
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
 
-    query = 'SELECT * FROM Chores'
+    query = "SELECT * FROM Chores"
     if not include_invisible:
-        query += ' WHERE status != ?'
-        cursor.execute(query, ('invisible',))
+        query += " WHERE status != ?"
+        cursor.execute(query, ("invisible",))
     else:
         cursor.execute(query)
-        
+
     rows = cursor.fetchall()
 
     chores = []
     for row in rows:
         chore = {
-            'id': row[0],
-            'title': row[1],         # the intent here is that the 'title' field of the task is the person assigned to do the chore
-            'notes': row[2],         # the description of the chore
-            'status': row[3],
-            'due': row[4]
+            "id": row[0],
+            "title": row[
+                1
+            ],  # the intent here is that the 'title' field of the task is the person assigned to do the chore
+            "notes": row[2],  # the description of the chore
+            "status": row[3],
+            "due": row[4],
         }
         chores.append(chore)
 

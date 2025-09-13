@@ -1,28 +1,26 @@
-import datetime
 import calendar
+import datetime
 import threading
-from flask import Blueprint, render_template, jsonify, current_app
 
-from .models import CalendarMonth
-from . import (
-    database as db,
-    utils as calendar_utils
-)
+from flask import Blueprint, current_app, jsonify, render_template
 
 # Now only importing the calendar API
-from src.google_integration import api as calendar_api
 
 # Shared resources
-from src.main import google_fetch_lock, background_tasks
+from src.main import background_tasks, google_fetch_lock
 
-calendar_bp = Blueprint('calendar', __name__, url_prefix='/calendar')
+from . import database as db
+from .models import CalendarMonth
+
+calendar_bp = Blueprint("calendar", __name__, url_prefix="/calendar")
+
 
 def _filter_events_for_day(events, target_date):
     """Filters and sorts a list of events for a specific target date."""
     day_events = []
     for event in events:
-        start_dt = event['start_datetime']
-        end_dt = event['end_datetime']
+        start_dt = event["start_datetime"]
+        end_dt = event["end_datetime"]
 
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
@@ -34,25 +32,29 @@ def _filter_events_for_day(events, target_date):
 
         # Handle events ending exactly at midnight (00:00) of the end day
         is_midnight_end = end_dt.hour == 0 and end_dt.minute == 0 and end_dt.second == 0
-        
+
         # If event ends exactly at midnight, include it on the previous day
         adjusted_end_date = end_date
         if is_midnight_end:
             adjusted_end_date = end_date
 
         is_relevant = False
-        
+
         # Case 1: For single-day events (start and end on same day)
         if start_date == end_date:
-            is_relevant = (target_date == start_date)
-            
+            is_relevant = target_date == start_date
+
         # Case 2: For multi-day events
         else:
             # Check if the target date falls within the event's range
             # The end date is inclusive now
             if start_date <= target_date <= end_date:
                 # Special case for midnight endings
-                if target_date == end_date and is_midnight_end and start_date != end_date:
+                if (
+                    target_date == end_date
+                    and is_midnight_end
+                    and start_date != end_date
+                ):
                     # Don't show events that end at 00:00 on their end date
                     # (unless it's a same-day event)
                     is_relevant = False
@@ -62,16 +64,16 @@ def _filter_events_for_day(events, target_date):
         if is_relevant:
             day_events.append(event)
 
-    day_events.sort(key=lambda x: (not x['all_day'], x['start_datetime']))
+    day_events.sort(key=lambda x: (not x["all_day"], x["start_datetime"]))
     return day_events
 
 
-@calendar_bp.route('/')
-@calendar_bp.route('/<int:year>/<int:month>')
+@calendar_bp.route("/")
+@calendar_bp.route("/<int:year>/<int:month>")
 def view(year=None, month=None):
     """Renders the calendar view for a specific month and year."""
     from src.weather_integration.api import get_weather_data
-    
+
     now = datetime.datetime.now(tz=datetime.timezone.utc)
 
     if year is None:
@@ -105,24 +107,28 @@ def view(year=None, month=None):
     start_background_task = False
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
-        if not task_info or task_info['status'] not in ['running', 'complete']:
+        if not task_info or task_info["status"] not in ["running", "complete"]:
             start_background_task = True
-        elif task_info['status'] == 'complete':
+        elif task_info["status"] == "complete":
             # Check if it's been more than configured sync interval since last update
             import time
+
             from src.config import get_config
-            sync_interval_seconds = get_config().get('google.sync_interval_minutes', 5) * 60
-            last_update_time = task_info.get('last_update_time', 0)
+
+            sync_interval_seconds = (
+                get_config().get("google.sync_interval_minutes", 5) * 60
+            )
+            last_update_time = task_info.get("last_update_time", 0)
             current_time = time.time()
             if current_time - last_update_time > sync_interval_seconds:
                 start_background_task = True
-                task_info['status'] = 'pending_refresh'  # Mark for refresh
+                task_info["status"] = "pending_refresh"  # Mark for refresh
 
     if start_background_task:
         from src.google_integration.routes import fetch_google_events_background
+
         google_thread = threading.Thread(
-            target=fetch_google_events_background,
-            args=(current_month, current_year)
+            target=fetch_google_events_background, args=(current_month, current_year)
         )
         google_thread.daemon = True
         google_thread.start()
@@ -132,19 +138,23 @@ def view(year=None, month=None):
     start_chores_background_task = False
     with google_fetch_lock:
         chores_task_info = background_tasks.get(chores_task_id)
-        if not chores_task_info or chores_task_info['status'] not in ['running', 'complete']:
+        if not chores_task_info or chores_task_info["status"] not in [
+            "running",
+            "complete",
+        ]:
             start_chores_background_task = True
 
     if start_chores_background_task:
         # Execute the sync directly instead of in a thread to avoid threading issues
         try:
             from src.google_integration.routes import fetch_google_tasks_background
+
             fetch_google_tasks_background()  # Call directly without threading
         except Exception as e:
             print(f"Error during automatic chores refresh: {e}")
             with google_fetch_lock:
                 if chores_task_id in background_tasks:
-                    background_tasks[chores_task_id]['status'] = 'error'
+                    background_tasks[chores_task_id]["status"] = "error"
 
     # Use the new function to get all events that overlap with this month
     # This ensures we get multi-day events that span across month boundaries
@@ -157,23 +167,27 @@ def view(year=None, month=None):
         week_data = []
         for day_num in week:
             if day_num == 0:
-                week_data.append({
-                    'day_number': '',
-                    'is_current_month': False,
-                    'events': [],
-                    'is_today': False
-                })
+                week_data.append(
+                    {
+                        "day_number": "",
+                        "is_current_month": False,
+                        "events": [],
+                        "is_today": False,
+                    }
+                )
             else:
                 day_date = datetime.date(current_year, current_month, day_num)
-                is_today = (day_date == today_date)
+                is_today = day_date == today_date
                 day_events = _filter_events_for_day(db_events, day_date)
 
-                week_data.append({
-                    'day_number': day_num,
-                    'is_current_month': True,
-                    'events': day_events,
-                    'is_today': is_today
-                })
+                week_data.append(
+                    {
+                        "day_number": day_num,
+                        "is_current_month": True,
+                        "events": day_events,
+                        "is_today": is_today,
+                    }
+                )
         weeks_data.append(week_data)
 
     today_events = _filter_events_for_day(db_events, today_date)
@@ -181,25 +195,27 @@ def view(year=None, month=None):
     weather_data = None
     try:
         weather_data = get_weather_data()
-    except Exception as e:
+    except Exception:
         pass
 
     # Get chores from database instead of direct API call
     from src.chores_app import database as chores_db
+
     chores_to_display = chores_db.get_chores()
 
     month_name = calendar.month_name[current_month]
-    
+
     # Get config for template
     from src.config import get_config
+
     config = get_config()
 
     return render_template(
-        'index.html',
+        "index.html",
         weeks=weeks_data,
         today_events=today_events,
-        chores=chores_to_display, 
-        weather=weather_data, 
+        chores=chores_to_display,
+        weather=weather_data,
         month_name=month_name,
         month_number=current_month,
         year=current_year,
@@ -210,30 +226,34 @@ def view(year=None, month=None):
         today_actual_day=today_date.day,
         today_actual_month=today_date.month,
         today_actual_year=today_date.year,
-        debug_enabled=config.get('app.debug', False),
-        show_pir_feedback=config.get('ui.show_pir_feedback', False),
-        family_name=config.get('app.family_name', 'Family'),
+        debug_enabled=config.get("app.debug", False),
+        show_pir_feedback=config.get("ui.show_pir_feedback", False),
+        family_name=config.get("app.family_name", "Family"),
     )
 
 
-@calendar_bp.route('/check-updates/<int:year>/<int:month>')
+@calendar_bp.route("/check-updates/<int:year>/<int:month>")
 def check_updates(year, month):
     """API endpoint to check if the background task detected calendar or chore updates."""
-    from src.slideshow import database as slideshow_db
     import threading
     import time
-    
+
+    from src.slideshow import database as slideshow_db
+
     calendar_task_id = f"calendar.{month}.{year}"
     chores_task_id = "tasks"
-    
+
     # Only sync photos occasionally (every 10 minutes) to avoid excessive file system operations
-    import time
+
     last_photo_sync_key = "_last_photo_sync"
     current_time = time.time()
-    if (last_photo_sync_key not in background_tasks or 
-        current_time - background_tasks[last_photo_sync_key].get('last_sync', 0) > 600):  # 10 minutes
+    if (
+        last_photo_sync_key not in background_tasks
+        or current_time - background_tasks[last_photo_sync_key].get("last_sync", 0)
+        > 600
+    ):  # 10 minutes
         slideshow_db.sync_photos(current_app.static_folder)
-        background_tasks[last_photo_sync_key] = {'last_sync': current_time}
+        background_tasks[last_photo_sync_key] = {"last_sync": current_time}
 
     updates_available = False
     calendar_task_status = "not_tracked"
@@ -246,53 +266,60 @@ def check_updates(year, month):
         # Check calendar task
         calendar_task_info = background_tasks.get(calendar_task_id)
         if calendar_task_info:
-            calendar_task_status = calendar_task_info['status']
-            if calendar_task_status == 'complete':
-                events_changed = calendar_task_info.get('events_changed', False)
+            calendar_task_status = calendar_task_info["status"]
+            if calendar_task_status == "complete":
+                events_changed = calendar_task_info.get("events_changed", False)
                 if events_changed:
                     updates_available = True
-                    calendar_task_info['events_changed'] = False
-                    calendar_task_info['updated'] = False
-                    
+                    calendar_task_info["events_changed"] = False
+                    calendar_task_info["updated"] = False
+
                 # Check if we need to trigger a refresh due to time elapsed
                 from src.config import get_config
-                sync_interval_seconds = get_config().get('google.sync_interval_minutes', 5) * 60
-                last_update_time = calendar_task_info.get('last_update_time', 0)
+
+                sync_interval_seconds = (
+                    get_config().get("google.sync_interval_minutes", 5) * 60
+                )
+                last_update_time = calendar_task_info.get("last_update_time", 0)
                 current_time = time.time()
                 if current_time - last_update_time > sync_interval_seconds:
                     should_trigger_refresh = True
-                    calendar_task_info['status'] = 'pending_refresh'
+                    calendar_task_info["status"] = "pending_refresh"
         else:
             # No task exists, we should create one
             should_trigger_refresh = True
-        
+
         # Check chores task
         chores_task_info = background_tasks.get(chores_task_id)
         if chores_task_info:
-            chores_task_status = chores_task_info['status']
-            if chores_task_status == 'complete':
-                chores_changed = chores_task_info.get('chores_changed', False)
+            chores_task_status = chores_task_info["status"]
+            if chores_task_status == "complete":
+                chores_changed = chores_task_info.get("chores_changed", False)
                 if chores_changed:
                     updates_available = True
-                    chores_task_info['chores_changed'] = False
-                    chores_task_info['updated'] = False
+                    chores_task_info["chores_changed"] = False
+                    chores_task_info["updated"] = False
 
     # Trigger background refresh if needed
     if should_trigger_refresh:
         from src.google_integration.routes import fetch_google_events_background
+
         google_thread = threading.Thread(
-            target=fetch_google_events_background,
-            args=(month, year)
+            target=fetch_google_events_background, args=(month, year)
         )
         google_thread.daemon = True
         google_thread.start()
-        print(f"Triggered background refresh for {month}/{year} due to time elapsed or missing task")
+        print(
+            f"Triggered background refresh for {month}/{year} due to time elapsed or missing task"
+        )
 
-    return jsonify({
-        "calendar_status": calendar_task_status,
-        "chores_status": chores_task_status,
-        "updates_available": updates_available,
-        "events_changed": events_changed,
-        "chores_changed": chores_changed,
-        "refresh_triggered": should_trigger_refresh
-    })
+    return jsonify(
+        {
+            "calendar_status": calendar_task_status,
+            "chores_status": chores_task_status,
+            "updates_available": updates_available,
+            "events_changed": events_changed,
+            "chores_changed": chores_changed,
+            "refresh_triggered": should_trigger_refresh,
+        }
+    )

@@ -156,6 +156,7 @@ jobs:
     - name: Find unused CSS
       run: |
         echo "=== Checking for unused CSS ==="
+        mkdir -p reports
         purgecss --css 'src/static/css/**/*.css' --content 'src/templates/**/*.html' 'src/static/js/**/*.js' --output reports/used-css || true
         echo "CSS files have been analyzed. Check reports/used-css for optimized versions."
       continue-on-error: true
@@ -166,11 +167,12 @@ jobs:
       with:
         name: css-analysis
         path: reports/used-css
+        if-no-files-found: ignore
 
   sonarcloud:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    if: github.repository_owner != 'dependabot'
+    if: github.repository_owner != 'dependabot' && github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
     - uses: actions/checkout@v4
@@ -178,6 +180,7 @@ jobs:
         fetch-depth: 0  # Shallow clones should be disabled for better analysis
 
     - name: SonarCloud Scan
+      if: env.SONAR_TOKEN != ''
       uses: SonarSource/sonarcloud-github-action@master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -190,3 +193,7 @@ jobs:
           -Dsonar.sources=src
           -Dsonar.tests=tests
       continue-on-error: true
+
+    - name: Skip SonarCloud (no token)
+      if: env.SONAR_TOKEN == ''
+      run: echo "Skipping SonarCloud scan - SONAR_TOKEN not configured"

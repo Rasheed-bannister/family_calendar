@@ -1,6 +1,6 @@
+from . import database as db  # Import the database module
 from .models import Chore
-from pathlib import Path
-from . import database as db # Import the database module
+
 
 def initialize_db():
     """Checks if the chores database exists and creates it if not."""
@@ -8,6 +8,7 @@ def initialize_db():
         print("Chores database not found. Creating...")
         db.create_all()
         print("Chores database created.")
+
 
 def create_chores_from_google_data(google_tasks_data: list[dict]) -> list[Chore]:
     """Processes raw Google Tasks data and converts it into a list of Chore objects."""
@@ -18,11 +19,11 @@ def create_chores_from_google_data(google_tasks_data: list[dict]) -> list[Chore]
     for task in google_tasks_data:
         # Assuming the 'title' contains the assigned person and 'notes' the description
         chore = Chore(
-            id=task.get('id'),
-            title=task.get('title', 'Unassigned'), # Default if title is missing
-            notes=task.get('notes', ''),          # Default if notes are missing
-            status=task.get('status'),
-            due=task.get('due')
+            id=task.get("id"),
+            title=task.get("title", "Unassigned"),  # Default if title is missing
+            notes=task.get("notes", ""),  # Default if notes are missing
+            status=task.get("status"),
+            due=task.get("due"),
         )
         chores_to_add.append(chore)
     return chores_to_add
