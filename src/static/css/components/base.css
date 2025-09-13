@@ -1,59 +1,56 @@
 /* Base CSS - Reset & Layout Structure */
 
 /* Basic Reset & Full Height */
-html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    font-family: sans-serif;
-    overflow: hidden;
-    cursor: none;
-    /* Background image styles */
-    background-size: cover; 
-    background-position: center center; 
-    background-repeat: no-repeat;
-    background-attachment: fixed; 
-    transition: background-image 1s ease-in-out; 
-    box-sizing: border-box; 
-    font-size: 14px; 
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: sans-serif;
+  overflow: hidden;
+  cursor: none;
+  /* Remove conflicting background styles - slideshow handles its own backgrounds */
+  background: none;
+  box-sizing: border-box;
+  font-size: 14px;
 }
 
 /* Disable text selection */
 body {
-    -webkit-user-select: none; /* Safari */
-    -ms-user-select: none; /* IE 10 and IE 11 */
-    user-select: none; /* Standard syntax */
+  -webkit-user-select: none; /* Safari */
+  -ms-user-select: none; /* IE 10 and IE 11 */
+  user-select: none; /* Standard syntax */
 }
 
 /* Main Layout Container */
 .main-container {
-    display: flex;
-    flex-direction: row; 
-    height: 100vh; 
-    padding: 10px; 
-    gap: 10px; 
-    box-sizing: border-box; 
-    opacity: 1;
-    transition: opacity 1s ease-in-out;
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  padding: 10px;
+  gap: 10px;
+  box-sizing: border-box;
+  opacity: 1;
+  transition: opacity 1s ease-in-out;
 }
 
 /* Left Column (Weather + Calendar) */
 .left-column {
-    flex: 4;
-    height: 100%;
-    display: flex;
-    flex-direction: column; 
-    gap: 10px; 
-    box-sizing: border-box;
+  flex: 4;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
 /* Right Column (Daily View) */
 .right-column {
-    flex: 1;
-    height: 100%;
-    display: flex; 
-    flex-direction: column;
-    gap: 10px; 
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Long Inactivity Mode Styles */
@@ -61,10 +58,18 @@ body.long-inactivity-mode .calendar-container,
 body.long-inactivity-mode .daily-view-container,
 body.long-inactivity-mode .weather-container,
 body.long-inactivity-mode .chores-container {
-    display: none !important;
+  display: none !important;
 }
 
 body.long-inactivity-mode .main-container {
-    opacity: 0;
-    transition: opacity 1s ease-in-out;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+  /* Ensure slideshow isn't affected by main container opacity */
+  pointer-events: none;
+}
+
+/* Ensure slideshow background elements are never affected by any body transitions */
+body div[style*="position: fixed"][style*="background-image"] {
+  isolation: isolate;
+  will-change: opacity;
 }

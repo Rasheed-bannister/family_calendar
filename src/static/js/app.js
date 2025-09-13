@@ -2,177 +2,185 @@
  * Main Application
  * Initializes and coordinates all components
  */
-import Calendar from './components/calendar.js';
-import DailyView from './components/dailyView.js';
-import Weather from './components/weather.js';
-import Slideshow from './components/slideshow.js';
-import Chores from './components/chores.js';
-import Modal from './components/modal.js';
-import VirtualKeyboard from './components/virtualKeyboard.js';
-import PIRSensor from './components/pirSensor.js';
-import LoadingIndicator from './components/loadingIndicator.js';
+import Calendar from "./components/calendar.js";
+import DailyView from "./components/dailyView.js";
+import Weather from "./components/weather.js";
+import Slideshow from "./components/slideshow.js";
+import Chores from "./components/chores.js";
+import Modal from "./components/modal.js";
+import VirtualKeyboard from "./components/virtualKeyboard.js";
+import PIRSensor from "./components/pirSensor.js";
+import LoadingIndicator from "./components/loadingIndicator.js";
 
-document.addEventListener('DOMContentLoaded', async function() {
-    
-    // Activity tracking variables
-    let lastActivityTimestamp = Date.now();
-    
-    // Inactivity settings (loaded from config)
-    let DAY_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // Default: 1 hour during daytime
-    let NIGHT_INACTIVITY_TIMEOUT = 5 * 1000;     // Default: 5 seconds at night
-    let DAY_BRIGHTNESS_REDUCTION = 0.6;          // Default: 40% reduction (multiply by 0.6)
-    let NIGHT_BRIGHTNESS_REDUCTION = 0.2;        // Default: 80% reduction (multiply by 0.2)
-    let NIGHT_START_HOUR = 21;                   // Default: 9:00 PM
-    let NIGHT_END_HOUR = 6;                      // Default: 6:00 AM
-    let SLIDESHOW_START_DELAY = 5000;            // Default: 5 seconds after entering inactivity
-    let currentInactivityMode = 'none';            // 'none', 'day-inactive', 'night-inactive'
-    let longInactivityMode = false;                // Track if we're in long inactivity mode
-    let inactivityCheckInterval = null;
-    let lastMovementTime = 0;
-    const MOVEMENT_THROTTLE = 1000;                // Only register movement once per second
-    const DEBUG_MODE = false;                      // Set to false in production
-    
-    // Load configuration from server
-    async function loadInactivityConfig() {
-        try {
-            const response = await fetch('/api/config');
-            const config = await response.json();
-            
-            // Update inactivity settings from config
-            DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;
-            NIGHT_INACTIVITY_TIMEOUT = (config.inactivity?.night_timeout_seconds || 5) * 1000;
-            DAY_BRIGHTNESS_REDUCTION = config.inactivity?.day_brightness_reduction || 0.6;
-            NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
-            NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
-            NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
-            SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
-            
-            if (DEBUG_MODE) {
-                console.log('Loaded inactivity config:', {
-                    DAY_INACTIVITY_TIMEOUT,
-                    NIGHT_INACTIVITY_TIMEOUT,
-                    DAY_BRIGHTNESS_REDUCTION,
-                    NIGHT_BRIGHTNESS_REDUCTION,
-                    NIGHT_START_HOUR,
-                    NIGHT_END_HOUR,
-                    SLIDESHOW_START_DELAY
-                });
-            }
-        } catch (error) {
-            console.error('Failed to load inactivity config:', error);
-        }
+// Global variables for cleanup tracking
+let chorePollingTimeout = null;
+let choreCheckTimeout = null;
+let pirDebugInterval = null;
+let cleanupHandlers = [];
+
+document.addEventListener("DOMContentLoaded", async function () {
+  // Activity tracking variables
+  let lastActivityTimestamp = Date.now();
+  let motionFeedbackTimeout = null; // Declare missing variable
+
+  // Inactivity settings (loaded from config)
+  let DAY_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // Default: 1 hour during daytime
+  let NIGHT_INACTIVITY_TIMEOUT = 5 * 1000; // Default: 5 seconds at night
+  let DAY_BRIGHTNESS_REDUCTION = 0.6; // Default: 40% reduction (multiply by 0.6)
+  let NIGHT_BRIGHTNESS_REDUCTION = 0.2; // Default: 80% reduction (multiply by 0.2)
+  let NIGHT_START_HOUR = 21; // Default: 9:00 PM
+  let NIGHT_END_HOUR = 6; // Default: 6:00 AM
+  let SLIDESHOW_START_DELAY = 5000; // Default: 5 seconds after entering inactivity
+  let currentInactivityMode = "none"; // 'none', 'day-inactive', 'night-inactive'
+  let longInactivityMode = false; // Track if we're in long inactivity mode
+  let inactivityCheckInterval = null;
+  let lastMovementTime = 0;
+  const MOVEMENT_THROTTLE = 1000; // Only register movement once per second
+  const DEBUG_MODE = false; // Set to false in production
+
+  // Load configuration from server
+  async function loadInactivityConfig() {
+    try {
+      const response = await fetch("/api/config");
+      const config = await response.json();
+
+      // Update inactivity settings from config
+      DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;
+      NIGHT_INACTIVITY_TIMEOUT = (config.inactivity?.night_timeout_seconds || 5) * 1000;
+      DAY_BRIGHTNESS_REDUCTION = config.inactivity?.day_brightness_reduction || 0.6;
+      NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
+      NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
+      NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
+      SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
+
+      if (DEBUG_MODE) {
+        console.log("Loaded inactivity config:", {
+          DAY_INACTIVITY_TIMEOUT,
+          NIGHT_INACTIVITY_TIMEOUT,
+          DAY_BRIGHTNESS_REDUCTION,
+          NIGHT_BRIGHTNESS_REDUCTION,
+          NIGHT_START_HOUR,
+          NIGHT_END_HOUR,
+          SLIDESHOW_START_DELAY,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load inactivity config:", error);
     }
-    
-    // Load configuration first
-    await loadInactivityConfig();
-    
-    // Detect if we're on a touch device and add appropriate class to body
-    function detectTouchDevice() {
-        const isTouchDevice = (
-            ('ontouchstart' in window) ||
-            (navigator.maxTouchPoints > 0) ||
-            (navigator.msMaxTouchPoints > 0)
-        );
-        
-        if (isTouchDevice) {
-            document.body.classList.add('touch-device');
-        }
-        
-        return isTouchDevice;
+  }
+
+  // Load configuration first
+  await loadInactivityConfig();
+
+  // Detect if we're on a touch device and add appropriate class to body
+  function detectTouchDevice() {
+    const isTouchDevice =
+      "ontouchstart" in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+
+    if (isTouchDevice) {
+      document.body.classList.add("touch-device");
     }
-    
-    // Run the detection immediately
-    const isTouchDevice = detectTouchDevice();
-    
-    // Initialize core components first
-    const componentsStatus = {
-        loadingIndicator: await LoadingIndicator.init(),
-        modal: Modal.init(), // This initializes the event modal
-        addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true, 
-        calendar: await Calendar.init(),
-        dailyView: await DailyView.init(),
-        weather: Weather.init(),
-        slideshow: Slideshow.init(),
-        chores: Chores.init()
-    };
-    
-    // Initialize async components without blocking
-    VirtualKeyboard.init().then(result => {
-        componentsStatus.virtualKeyboard = result;
-    }).catch(err => {
-        console.error("Virtual keyboard initialization failed:", err);
-        componentsStatus.virtualKeyboard = false;
+
+    return isTouchDevice;
+  }
+
+  // Run the detection immediately
+  const isTouchDevice = detectTouchDevice();
+
+  // Initialize core components first
+  const componentsStatus = {
+    loadingIndicator: await LoadingIndicator.init(),
+    modal: Modal.init(), // This initializes the event modal
+    addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
+    calendar: await Calendar.init(),
+    dailyView: await DailyView.init(),
+    weather: Weather.init(),
+    slideshow: await Slideshow.init(),
+    chores: Chores.init(),
+  };
+
+  // Initialize async components without blocking
+  VirtualKeyboard.init()
+    .then((result) => {
+      componentsStatus.virtualKeyboard = result;
+    })
+    .catch((err) => {
+      console.error("Virtual keyboard initialization failed:", err);
+      componentsStatus.virtualKeyboard = false;
     });
-    
-    PIRSensor.init((activityType) => {
-        registerActivity(`pir-${activityType}`);
-    }).then(result => {
-        componentsStatus.pirSensor = result;
-    }).catch(err => {
-        console.error("PIR sensor initialization failed:", err);
-        componentsStatus.pirSensor = false;
+
+  PIRSensor.init((activityType) => {
+    registerActivity(`pir-${activityType}`);
+  })
+    .then((result) => {
+      componentsStatus.pirSensor = result;
+    })
+    .catch((err) => {
+      console.error("PIR sensor initialization failed:", err);
+      componentsStatus.pirSensor = false;
     });
-    
-    // Check if all components initialized successfully
-    const failedComponents = Object.entries(componentsStatus)
-        .filter(([name, status]) => !status)
-        .map(([name]) => name);
-    
-    if (failedComponents.length > 0) {
-        console.error(`Failed to initialize components: ${failedComponents.join(', ')}`);
+
+  // Check if all components initialized successfully
+  const failedComponents = Object.entries(componentsStatus)
+    .filter(([name, status]) => !status)
+    .map(([name]) => name);
+
+  if (failedComponents.length > 0) {
+    console.error(`Failed to initialize components: ${failedComponents.join(", ")}`);
+  }
+
+  // Create stylesheet for brightness control
+  const createBrightnessStylesheet = function () {
+    const styleElement = document.createElement("style");
+    styleElement.id = "brightness-control-style";
+    document.head.appendChild(styleElement);
+    return styleElement.sheet;
+  };
+
+  const brightnessStylesheet = createBrightnessStylesheet();
+
+  // Function to check if it's night time
+  function isNightTime() {
+    const now = new Date();
+    const hour = now.getHours();
+
+    // Between 9 PM and 6 AM is considered night
+    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+  }
+
+  // Function to get the appropriate timeout based on time of day
+  function getCurrentInactivityTimeout() {
+    return isNightTime() ? NIGHT_INACTIVITY_TIMEOUT : DAY_INACTIVITY_TIMEOUT;
+  }
+
+  // Function to get brightness reduction based on time of day
+  function getCurrentBrightnessReduction() {
+    return isNightTime() ? NIGHT_BRIGHTNESS_REDUCTION : DAY_BRIGHTNESS_REDUCTION;
+  }
+
+  // Function to register any user activity
+  function registerActivity(type = "generic") {
+    const now = Date.now();
+    lastActivityTimestamp = now;
+
+    // Activity detected
+
+    // If we were in any inactivity mode, exit it now
+    if (currentInactivityMode !== "none") {
+      exitInactivityMode();
     }
-    
-    // Create stylesheet for brightness control
-    const createBrightnessStylesheet = function() {
-        const styleElement = document.createElement('style');
-        styleElement.id = 'brightness-control-style';
-        document.head.appendChild(styleElement);
-        return styleElement.sheet;
-    };
-    
-    const brightnessStylesheet = createBrightnessStylesheet();
-    
-    // Function to check if it's night time
-    function isNightTime() {
-        const now = new Date();
-        const hour = now.getHours();
-        
-        // Between 9 PM and 6 AM is considered night
-        return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+  }
+
+  // Function to apply brightness reduction
+  function applyBrightnessReduction(brightnessLevel) {
+    // Clear existing rules
+    while (brightnessStylesheet.cssRules.length > 0) {
+      brightnessStylesheet.deleteRule(0);
     }
-    
-    // Function to get the appropriate timeout based on time of day
-    function getCurrentInactivityTimeout() {
-        return isNightTime() ? NIGHT_INACTIVITY_TIMEOUT : DAY_INACTIVITY_TIMEOUT;
-    }
-    
-    // Function to get brightness reduction based on time of day
-    function getCurrentBrightnessReduction() {
-        return isNightTime() ? NIGHT_BRIGHTNESS_REDUCTION : DAY_BRIGHTNESS_REDUCTION;
-    }
-    
-    // Function to register any user activity
-    function registerActivity(type = 'generic') {
-        const now = Date.now();
-        lastActivityTimestamp = now;
-        
-        // Activity detected
-        
-        // If we were in any inactivity mode, exit it now
-        if (currentInactivityMode !== 'none') {
-            exitInactivityMode();
-        }
-    }
-    
-    // Function to apply brightness reduction
-    function applyBrightnessReduction(brightnessLevel) {
-        // Clear existing rules
-        while(brightnessStylesheet.cssRules.length > 0) {
-            brightnessStylesheet.deleteRule(0);
-        }
-        
-        // Add new rule
-        brightnessStylesheet.insertRule(`
+
+    // Add new rule - CRITICAL: Use z-index BELOW slideshow elements to prevent flashes
+    brightnessStylesheet.insertRule(
+      `
             body::after {
                 content: "";
                 position: fixed;
@@ -182,498 +190,591 @@ document.addEventListener('DOMContentLoaded', async function() {
                 height: 100%;
                 background-color: rgba(0, 0, 0, ${1 - brightnessLevel});
                 pointer-events: none;
-                z-index: 9999;
+                z-index: 100;
                 transition: background-color 1s ease;
+                will-change: background-color;
             }
-        `, 0);
+        `,
+      0
+    );
+  }
+
+  // Function to enter appropriate inactivity mode based on time of day
+  function enterInactivityMode() {
+    const isNight = isNightTime();
+    const newMode = isNight ? "night-inactive" : "day-inactive";
+
+    if (currentInactivityMode === newMode) return; // Already in this mode
+
+    const brightness = getCurrentBrightnessReduction();
+    currentInactivityMode = newMode;
+
+    // Add class to body for CSS styling
+    document.body.classList.add("reduced-brightness-mode");
+    document.body.classList.add(currentInactivityMode);
+
+    // Apply the brightness reduction
+    applyBrightnessReduction(brightness);
+
+    // If we're entering long inactivity mode (after a long period)
+    if (isNight && Date.now() - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
+      enterLongInactivityMode();
     }
-    
-    // Function to enter appropriate inactivity mode based on time of day
-    function enterInactivityMode() {
-        const isNight = isNightTime();
-        const newMode = isNight ? 'night-inactive' : 'day-inactive';
-        
-        if (currentInactivityMode === newMode) return; // Already in this mode
-        
-        const brightness = getCurrentBrightnessReduction();
-        currentInactivityMode = newMode;
-        
-        // Add class to body for CSS styling
-        document.body.classList.add('reduced-brightness-mode');
-        document.body.classList.add(currentInactivityMode);
-        
-        // Apply the brightness reduction
-        applyBrightnessReduction(brightness);
-        
-        // If we're entering long inactivity mode (after a long period)
-        if (isNight && Date.now() - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
-            enterLongInactivityMode();
-        }
-        
-        // Display notification if in debug mode
-        if (DEBUG_MODE) {
-            showDebugNotification(`Entered ${isNight ? 'night' : 'day'} inactivity mode`);
-        }
+
+    // Display notification if in debug mode
+    if (DEBUG_MODE) {
+      showDebugNotification(`Entered ${isNight ? "night" : "day"} inactivity mode`);
     }
-    
-    // Function to exit inactivity mode when activity is detected
-    function exitInactivityMode() {
-        if (currentInactivityMode === 'none') return; // Not in any inactivity mode
-        
-        // Exiting inactivity mode
-        
-        // Remove classes from body
-        document.body.classList.remove('reduced-brightness-mode');
-        document.body.classList.remove(currentInactivityMode);
-        currentInactivityMode = 'none';
-        
-        // Remove the brightness filter
-        applyBrightnessReduction(1.0); // Full brightness
-        
-        // If we were in long inactivity mode, exit that too
-        if (longInactivityMode) {
-            exitLongInactivityMode();
-        }
-        
-        // Display notification if in debug mode
-        if (DEBUG_MODE) {
-            showDebugNotification("Exited inactivity mode");
-        }
+  }
+
+  // Function to exit inactivity mode when activity is detected
+  function exitInactivityMode() {
+    if (currentInactivityMode === "none") return; // Not in any inactivity mode
+
+    // Exiting inactivity mode
+
+    // Remove classes from body
+    document.body.classList.remove("reduced-brightness-mode");
+    document.body.classList.remove(currentInactivityMode);
+    currentInactivityMode = "none";
+
+    // Remove the brightness filter
+    applyBrightnessReduction(1.0); // Full brightness
+
+    // If we were in long inactivity mode, exit that too
+    if (longInactivityMode) {
+      exitLongInactivityMode();
     }
-    
-    // Function to enter long inactivity mode after period of no activity
-    function enterLongInactivityMode() {
-        if (longInactivityMode) return; // Already in this mode
-        
-        // Entering long inactivity mode
-        longInactivityMode = true;
-        
-        // Add class to body for CSS styling
-        document.body.classList.add('long-inactivity-mode');
-        
-        // Pause components that need live updates
-        Calendar.pause();
-        Weather.pause();
-        DailyView.pause();
-        Chores.pause();
-        
-        // Start slideshow with a small delay to ensure smooth transition
-        setTimeout(() => {
-            if (longInactivityMode) { // Check if we're still in long inactivity mode
-                Slideshow.start();
-            }
-        }, SLIDESHOW_START_DELAY);
-        
-        // Display notification if in debug mode
-        if (DEBUG_MODE) {
-            showDebugNotification("Entered long inactivity mode - slideshow will start");
-        }
+
+    // Display notification if in debug mode
+    if (DEBUG_MODE) {
+      showDebugNotification("Exited inactivity mode");
     }
-    
-    // Function to exit long inactivity mode when activity is detected
-    function exitLongInactivityMode() {
-        if (!longInactivityMode) return; // Not in this mode
-        
-        // Exiting long inactivity mode
-        longInactivityMode = false;
-        
-        // Remove class from body
-        document.body.classList.remove('long-inactivity-mode');
-        
-        // Stop slideshow
-        Slideshow.stop();
-        
-        // Resume components
-        Calendar.resume();
-        Weather.resume();
-        DailyView.resume();
-        Chores.resume();
-        
-        // Display notification if in debug mode
-        if (DEBUG_MODE) {
-            showDebugNotification("Exited long inactivity mode");
-        }
+  }
+
+  // Function to enter long inactivity mode after period of no activity
+  function enterLongInactivityMode() {
+    if (longInactivityMode) return; // Already in this mode
+
+    // Entering long inactivity mode
+    longInactivityMode = true;
+
+    // Add class to body for CSS styling
+    document.body.classList.add("long-inactivity-mode");
+
+    // Pause components that need live updates
+    Calendar.pause();
+    Weather.pause();
+    DailyView.pause();
+    Chores.pause();
+
+    // Start slideshow with a small delay to ensure smooth transition
+    setTimeout(() => {
+      if (longInactivityMode) {
+        // Check if we're still in long inactivity mode
+        Slideshow.start();
+      }
+    }, SLIDESHOW_START_DELAY);
+
+    // Display notification if in debug mode
+    if (DEBUG_MODE) {
+      showDebugNotification("Entered long inactivity mode - slideshow will start");
     }
-    
-    // Show debug notification
-    function showDebugNotification(message) {
-        const notification = document.createElement('div');
-        notification.classList.add('debug-notification');
-        notification.textContent = message;
-        
-        // Style the notification
-        Object.assign(notification.style, {
-            position: 'fixed',
-            top: '10px',
-            right: '10px',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '4px',
-            zIndex: '9999',
-            fontSize: '14px'
-        });
-        
-        document.body.appendChild(notification);
-        
-        // Remove after 3 seconds
-        setTimeout(() => {
-            if (document.body.contains(notification)) {
-                document.body.removeChild(notification);
-            }
-        }, 3000);
+  }
+
+  // Function to exit long inactivity mode when activity is detected
+  function exitLongInactivityMode() {
+    if (!longInactivityMode) return; // Not in this mode
+
+    // Exiting long inactivity mode
+    longInactivityMode = false;
+
+    // Remove class from body
+    document.body.classList.remove("long-inactivity-mode");
+
+    // Stop slideshow
+    Slideshow.stop();
+
+    // Resume components
+    Calendar.resume();
+    Weather.resume();
+    DailyView.resume();
+    Chores.resume();
+
+    // Display notification if in debug mode
+    if (DEBUG_MODE) {
+      showDebugNotification("Exited long inactivity mode");
     }
-    
-    // Show time until inactivity if in debug mode
-    function updateDebugInfo() {
-        if (!DEBUG_MODE) return;
-        
-        let debugElement = document.getElementById('activity-debug-info');
-        
-        if (!debugElement) {
-            debugElement = document.createElement('div');
-            debugElement.id = 'activity-debug-info';
-            
-            // Style the debug element
-            Object.assign(debugElement.style, {
-                position: 'fixed',
-                bottom: '10px',
-                right: '10px',
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                color: 'white',
-                padding: '10px',
-                borderRadius: '4px',
-                zIndex: '9999',
-                fontSize: '14px'
-            });
-            
-            document.body.appendChild(debugElement);
-        }
-        
-        // Calculate time until inactivity
-        const currentTimeout = getCurrentInactivityTimeout();
-        const timeSinceActivity = Date.now() - lastActivityTimestamp;
-        const timeUntilInactivity = Math.max(0, currentTimeout - timeSinceActivity);
-        const secondsUntilInactivity = Math.ceil(timeUntilInactivity / 1000);
-        
-        debugElement.innerHTML = `
+  }
+
+  // Show debug notification
+  function showDebugNotification(message) {
+    const notification = document.createElement("div");
+    notification.classList.add("debug-notification");
+    notification.textContent = message;
+
+    // Style the notification
+    Object.assign(notification.style, {
+      position: "fixed",
+      top: "10px",
+      right: "10px",
+      backgroundColor: "rgba(0, 0, 0, 0.7)",
+      color: "white",
+      padding: "10px",
+      borderRadius: "4px",
+      zIndex: "9999",
+      fontSize: "14px",
+    });
+
+    document.body.appendChild(notification);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 3000);
+  }
+
+  // Show time until inactivity if in debug mode
+  function updateDebugInfo() {
+    if (!DEBUG_MODE) return;
+
+    let debugElement = document.getElementById("activity-debug-info");
+
+    if (!debugElement) {
+      debugElement = document.createElement("div");
+      debugElement.id = "activity-debug-info";
+
+      // Style the debug element
+      Object.assign(debugElement.style, {
+        position: "fixed",
+        bottom: "10px",
+        right: "10px",
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
+        color: "white",
+        padding: "10px",
+        borderRadius: "4px",
+        zIndex: "9999",
+        fontSize: "14px",
+      });
+
+      document.body.appendChild(debugElement);
+    }
+
+    // Calculate time until inactivity
+    const currentTimeout = getCurrentInactivityTimeout();
+    const timeSinceActivity = Date.now() - lastActivityTimestamp;
+    const timeUntilInactivity = Math.max(0, currentTimeout - timeSinceActivity);
+    const secondsUntilInactivity = Math.ceil(timeUntilInactivity / 1000);
+
+    debugElement.innerHTML = `
             <div>Activity Debug:</div>
-            <div>Time Mode: ${isNightTime() ? 'Night' : 'Day'}</div>
+            <div>Time Mode: ${isNightTime() ? "Night" : "Day"}</div>
             <div>Inactivity Mode: ${currentInactivityMode}</div>
-            <div>Long Inactivity: ${longInactivityMode ? 'Yes' : 'No'}</div>
+            <div>Long Inactivity: ${longInactivityMode ? "Yes" : "No"}</div>
             <div>Seconds until inactive: ${secondsUntilInactivity}</div>
             <div>Last activity: ${new Date(lastActivityTimestamp).toLocaleTimeString()}</div>
             <div><button id="test-inactive-day">Test Day Inactive</button></div>
             <div><button id="test-inactive-night">Test Night Inactive</button></div>
             <div><button id="test-inactive-long">Test Long Inactive</button></div>
         `;
-        
-        // Add event listeners to test buttons
-        const testDayButton = document.getElementById('test-inactive-day');
-        if (testDayButton) {
-            testDayButton.addEventListener('click', function(e) {
-                e.stopPropagation(); // Prevent this from registering as activity
-                
-                if (currentInactivityMode === 'day-inactive') {
-                    exitInactivityMode();
-                } else {
-                    currentInactivityMode = 'none';
-                    document.body.classList.remove('night-inactive');
-                    applyBrightnessReduction(DAY_BRIGHTNESS_REDUCTION);
-                    document.body.classList.add('day-inactive');
-                    document.body.classList.add('reduced-brightness-mode');
-                    currentInactivityMode = 'day-inactive';
-                }
-            });
-        }
-        
-        const testNightButton = document.getElementById('test-inactive-night');
-        if (testNightButton) {
-            testNightButton.addEventListener('click', function(e) {
-                e.stopPropagation(); // Prevent this from registering as activity
-                
-                if (currentInactivityMode === 'night-inactive') {
-                    exitInactivityMode();
-                } else {
-                    currentInactivityMode = 'none';
-                    document.body.classList.remove('day-inactive');
-                    applyBrightnessReduction(NIGHT_BRIGHTNESS_REDUCTION);
-                    document.body.classList.add('night-inactive');
-                    document.body.classList.add('reduced-brightness-mode');
-                    currentInactivityMode = 'night-inactive';
-                }
-            });
-        }
-        
-        const testLongButton = document.getElementById('test-inactive-long');
-        if (testLongButton) {
-            testLongButton.addEventListener('click', function(e) {
-                e.stopPropagation(); // Prevent this from registering as activity
-                
-                if (longInactivityMode) {
-                    exitLongInactivityMode();
-                } else {
-                    enterLongInactivityMode();
-                }
-            });
-        }
-    }
-    
-    // Set up event listeners for various forms of user activity
-    function setupActivityTracking() {
-        // Mouse movement (throttled)
-        document.addEventListener('mousemove', function(e) {
-            const now = Date.now();
-            // Only register movement if it's been longer than the throttle time
-            if (now - lastMovementTime > MOVEMENT_THROTTLE) {
-                lastMovementTime = now;
-                registerActivity('mousemove');
-            }
-        });
-        
-        // Mouse clicks
-        document.addEventListener('click', function() {
-            registerActivity('click');
-        });
-        
-        // Key presses (will work with IR sensor that simulates key press)
-        document.addEventListener('keydown', function(e) {
-            registerActivity('keydown: ' + e.key);
-        });
-        
-        // Touch events for touchscreens
-        document.addEventListener('touchstart', function() {
-            registerActivity('touchstart');
-        });
-        
-        document.addEventListener('touchmove', function() {
-            const now = Date.now();
-            // Throttle touch moves like mouse movements
-            if (now - lastMovementTime > MOVEMENT_THROTTLE) {
-                lastMovementTime = now;
-                registerActivity('touchmove');
-            }
-        });
-        
-        // Start interval to check for inactivity
-        inactivityCheckInterval = setInterval(() => {
-            const currentTime = Date.now();
-            const currentTimeout = getCurrentInactivityTimeout();
-            
-            // Check if the activity timeout has been reached
-            if (currentTime - lastActivityTimestamp > currentTimeout) {
-                // Check if we need to enter inactivity mode
-                if (currentInactivityMode === 'none') {
-                    enterInactivityMode();
-                }
-                
-                // Check if we should enter long inactivity mode (based on day timeout)
-                if (!longInactivityMode && currentTime - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
-                    enterLongInactivityMode();
-                }
-            }
-            
-            // Update debug info if enabled
-            if (DEBUG_MODE) {
-                updateDebugInfo();
-            }
-        }, 500); // Check every half second for more responsive changes
-        
-        // Activity tracking started
-    }
-    
-    // Initialize activity tracking
-    setupActivityTracking();
-    
-    // Calendar application initialized
 
-// Add cleanup on page unload to prevent memory leaks
-window.addEventListener('beforeunload', function() {
-    // Clean up slideshow
-    if (Slideshow && typeof Slideshow.cleanup === 'function') {
-        Slideshow.cleanup();
-    }
-    
-    // Clean up PIR sensor
-    if (PIRSensor && typeof PIRSensor.cleanup === 'function') {
-        PIRSensor.cleanup();
-    }
-    
-    // Clear inactivity check interval
-    if (inactivityCheckInterval) {
-        clearInterval(inactivityCheckInterval);
-        inactivityCheckInterval = null;
-    }
-    
-    // Clear any remaining timeouts
-    if (motionFeedbackTimeout) {
-        clearTimeout(motionFeedbackTimeout);
-    }
-});
+    // Add event listeners to test buttons
+    const testDayButton = document.getElementById("test-inactive-day");
+    if (testDayButton) {
+      testDayButton.addEventListener("click", function (e) {
+        e.stopPropagation(); // Prevent this from registering as activity
 
-// Also add periodic memory cleanup every 30 minutes
-setInterval(() => {
-    // Force garbage collection hint (doesn't guarantee it will run)
-    if (window.gc && typeof window.gc === 'function') {
-        try {
-            window.gc();
-        } catch (e) {
-            // Ignore errors
+        if (currentInactivityMode === "day-inactive") {
+          exitInactivityMode();
+        } else {
+          currentInactivityMode = "none";
+          document.body.classList.remove("night-inactive");
+          applyBrightnessReduction(DAY_BRIGHTNESS_REDUCTION);
+          document.body.classList.add("day-inactive");
+          document.body.classList.add("reduced-brightness-mode");
+          currentInactivityMode = "day-inactive";
         }
+      });
     }
-    
-    // Remove debug notifications if they accumulate
-    const notifications = document.querySelectorAll('.debug-notification');
-    notifications.forEach(notification => {
-        if (document.body.contains(notification)) {
-            document.body.removeChild(notification);
+
+    const testNightButton = document.getElementById("test-inactive-night");
+    if (testNightButton) {
+      testNightButton.addEventListener("click", function (e) {
+        e.stopPropagation(); // Prevent this from registering as activity
+
+        if (currentInactivityMode === "night-inactive") {
+          exitInactivityMode();
+        } else {
+          currentInactivityMode = "none";
+          document.body.classList.remove("day-inactive");
+          applyBrightnessReduction(NIGHT_BRIGHTNESS_REDUCTION);
+          document.body.classList.add("night-inactive");
+          document.body.classList.add("reduced-brightness-mode");
+          currentInactivityMode = "night-inactive";
         }
+      });
+    }
+
+    const testLongButton = document.getElementById("test-inactive-long");
+    if (testLongButton) {
+      testLongButton.addEventListener("click", function (e) {
+        e.stopPropagation(); // Prevent this from registering as activity
+
+        if (longInactivityMode) {
+          exitLongInactivityMode();
+        } else {
+          enterLongInactivityMode();
+        }
+      });
+    }
+  }
+
+  // Set up event listeners for various forms of user activity
+  function setupActivityTracking() {
+    // Mouse movement (throttled)
+    document.addEventListener("mousemove", function (e) {
+      const now = Date.now();
+      // Only register movement if it's been longer than the throttle time
+      if (now - lastMovementTime > MOVEMENT_THROTTLE) {
+        lastMovementTime = now;
+        registerActivity("mousemove");
+      }
     });
-}, 30 * 60 * 1000); // 30 minutes
+
+    // Mouse clicks
+    document.addEventListener("click", function () {
+      registerActivity("click");
+    });
+
+    // Key presses (will work with IR sensor that simulates key press)
+    document.addEventListener("keydown", function (e) {
+      registerActivity("keydown: " + e.key);
+    });
+
+    // Touch events for touchscreens
+    document.addEventListener("touchstart", function () {
+      registerActivity("touchstart");
+    });
+
+    document.addEventListener("touchmove", function () {
+      const now = Date.now();
+      // Throttle touch moves like mouse movements
+      if (now - lastMovementTime > MOVEMENT_THROTTLE) {
+        lastMovementTime = now;
+        registerActivity("touchmove");
+      }
+    });
+
+    // Start interval to check for inactivity
+    inactivityCheckInterval = setInterval(() => {
+      const currentTime = Date.now();
+      const currentTimeout = getCurrentInactivityTimeout();
+
+      // Check if the activity timeout has been reached
+      if (currentTime - lastActivityTimestamp > currentTimeout) {
+        // Check if we need to enter inactivity mode
+        if (currentInactivityMode === "none") {
+          enterInactivityMode();
+        }
+
+        // Check if we should enter long inactivity mode (based on day timeout)
+        if (!longInactivityMode && currentTime - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
+          enterLongInactivityMode();
+        }
+      }
+
+      // Update debug info if enabled
+      if (DEBUG_MODE) {
+        updateDebugInfo();
+      }
+    }, 500); // Check every half second for more responsive changes
+
+    // Activity tracking started
+  }
+
+  // Initialize activity tracking
+  setupActivityTracking();
+
+  // Calendar application initialized
+
+  // Add cleanup on page unload to prevent memory leaks
+  window.addEventListener("beforeunload", function () {
+    // Clean up all components
+    if (Slideshow && typeof Slideshow.cleanup === "function") {
+      Slideshow.cleanup();
+    }
+
+    if (PIRSensor && typeof PIRSensor.cleanup === "function") {
+      PIRSensor.cleanup();
+    }
+
+    if (Calendar && typeof Calendar.cleanup === "function") {
+      Calendar.cleanup();
+    }
+
+    if (DailyView && typeof DailyView.cleanup === "function") {
+      DailyView.cleanup();
+    }
+
+    if (Weather && typeof Weather.cleanup === "function") {
+      Weather.cleanup();
+    }
+
+    if (Chores && typeof Chores.cleanup === "function") {
+      Chores.cleanup();
+    }
+
+    if (VirtualKeyboard && typeof VirtualKeyboard.cleanup === "function") {
+      VirtualKeyboard.cleanup();
+    }
+
+    // Clear all intervals and timeouts
+    if (inactivityCheckInterval) {
+      clearInterval(inactivityCheckInterval);
+      inactivityCheckInterval = null;
+    }
+
+    if (motionFeedbackTimeout) {
+      clearTimeout(motionFeedbackTimeout);
+      motionFeedbackTimeout = null;
+    }
+
+    if (chorePollingTimeout) {
+      clearTimeout(chorePollingTimeout);
+      chorePollingTimeout = null;
+    }
+
+    if (choreCheckTimeout) {
+      clearTimeout(choreCheckTimeout);
+      choreCheckTimeout = null;
+    }
+
+    if (pirDebugInterval) {
+      clearInterval(pirDebugInterval);
+      pirDebugInterval = null;
+    }
+
+    // Execute any registered cleanup handlers
+    cleanupHandlers.forEach((handler) => {
+      try {
+        handler();
+      } catch (e) {
+        console.error("Cleanup handler error:", e);
+      }
+    });
+    cleanupHandlers = [];
+  });
+
+  // Also add periodic memory cleanup every 30 minutes
+  const memoryCleanupInterval = setInterval(
+    () => {
+      // Force garbage collection hint (doesn't guarantee it will run)
+      if (window.gc && typeof window.gc === "function") {
+        try {
+          window.gc();
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+
+      // Remove debug notifications if they accumulate
+      const notifications = document.querySelectorAll(".debug-notification");
+      notifications.forEach((notification) => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      });
+    },
+    30 * 60 * 1000
+  ); // 30 minutes
+
+  // Register cleanup for memory cleanup interval
+  if (typeof cleanupHandlers !== "undefined") {
+    cleanupHandlers.push(() => {
+      if (memoryCleanupInterval) {
+        clearInterval(memoryCleanupInterval);
+      }
+    });
+  }
 });
 
 // Chore polling mechanism
-const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full refresh cycle  
+const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full refresh cycle
 const CHORE_CHECK_UPDATE_INTERVAL = 10000; // 10 seconds: How often to check status after triggering
 let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
 
 async function triggerChoresRefresh() {
-    if (isCheckingChoreUpdates) {
-        return;
-    }
-    isCheckingChoreUpdates = true;
+  if (isCheckingChoreUpdates) {
+    return;
+  }
+  isCheckingChoreUpdates = true;
 
-    try {
-        const response = await fetch('/chores/refresh', { method: 'POST' }); // Corrected endpoint and added POST method
-        if (response.ok) {
-            setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL); // Start checking status
-        } else {
-            console.error('Chores: Failed to trigger refresh. Status:', response.status);
-            isCheckingChoreUpdates = false;
-            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
-        }
-    } catch (error) {
-        console.error('Chores: Error during triggerChoresRefresh:', error);
-        isCheckingChoreUpdates = false;
-        setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
+  try {
+    const response = await fetch("/chores/refresh", { method: "POST" }); // Corrected endpoint and added POST method
+    if (response.ok) {
+      // Clear any existing timeout before setting new one
+      if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
+        clearTimeout(choreCheckTimeout);
+      }
+      choreCheckTimeout = setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL); // Start checking status
+    } else {
+      console.error("Chores: Failed to trigger refresh. Status:", response.status);
+      isCheckingChoreUpdates = false;
+      // Clear any existing timeout before setting new one
+      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+        clearTimeout(chorePollingTimeout);
+      }
+      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
     }
+  } catch (error) {
+    console.error("Chores: Error during triggerChoresRefresh:", error);
+    isCheckingChoreUpdates = false;
+    // Clear any existing timeout before setting new one
+    if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+      clearTimeout(chorePollingTimeout);
+    }
+    chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
+  }
 }
 
 async function checkChoresUpdatesLoop() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1; // JavaScript months are 0-indexed
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1; // JavaScript months are 0-indexed
 
-    try {
-        const response = await fetch(`/calendar/check-updates/${year}/${month}`); // Ensure this path is correct
-        if (!response.ok) {
-            console.error('Chores: Failed to check for updates. Status:', response.status);
-            isCheckingChoreUpdates = false;
-            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL);
-            return;
-        }
-
-        const data = await response.json();
-
-        if (data.chores_status === 'running') {
-            setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL);
-        } else if (data.chores_status === 'complete') {
-            isCheckingChoreUpdates = false;
-            if (data.chores_changed) {
-                // Chores changed, reloading page
-                window.location.reload();
-            } else {
-                setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-            }
-        } else if (data.chores_status === 'error') {
-            console.error('Chores: Refresh completed with an error.');
-            isCheckingChoreUpdates = false;
-            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-        } else {
-            isCheckingChoreUpdates = false;
-            setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-        }
-    } catch (error) {
-        console.error('Chores: Error during checkChoresUpdatesLoop:', error);
-        isCheckingChoreUpdates = false;
-        setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+  try {
+    const response = await fetch(`/calendar/check-updates/${year}/${month}`); // Ensure this path is correct
+    if (!response.ok) {
+      console.error("Chores: Failed to check for updates. Status:", response.status);
+      isCheckingChoreUpdates = false;
+      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+        clearTimeout(chorePollingTimeout);
+      }
+      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL);
+      return;
     }
+
+    const data = await response.json();
+
+    if (data.chores_status === "running") {
+      if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
+        clearTimeout(choreCheckTimeout);
+      }
+      choreCheckTimeout = setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL);
+    } else if (data.chores_status === "complete") {
+      isCheckingChoreUpdates = false;
+      if (data.chores_changed) {
+        // Chores changed, reloading page
+        window.location.reload();
+      } else {
+        if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+          clearTimeout(chorePollingTimeout);
+        }
+        chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+      }
+    } else if (data.chores_status === "error") {
+      console.error("Chores: Refresh completed with an error.");
+      isCheckingChoreUpdates = false;
+      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+        clearTimeout(chorePollingTimeout);
+      }
+      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+    } else {
+      isCheckingChoreUpdates = false;
+      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+        clearTimeout(chorePollingTimeout);
+      }
+      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+    }
+  } catch (error) {
+    console.error("Chores: Error during checkChoresUpdatesLoop:", error);
+    isCheckingChoreUpdates = false;
+    if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+      clearTimeout(chorePollingTimeout);
+    }
+    chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+  }
 }
 
 function initChoresPolling() {
-    triggerChoresRefresh(); // Start the first refresh cycle
+  triggerChoresRefresh(); // Start the first refresh cycle
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initChoresPolling);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initChoresPolling);
 } else {
-    initChoresPolling(); // DOMContentLoaded has already fired
+  initChoresPolling(); // DOMContentLoaded has already fired
 }
 
 // PIR Sensor Debug Panel Setup
 function setupPIRDebugPanel() {
-    const debugToggle = document.getElementById('debug-toggle');
-    const debugPanel = document.getElementById('debug-panel');
-    const pirTestBtn = document.getElementById('pir-test-btn');
-    const pirToggleDebug = document.getElementById('pir-toggle-debug');
-    const pirStatus = document.getElementById('pir-status');
-    
-    if (!debugToggle || !debugPanel) return;
-    
-    let debugVisible = false;
-    
-    debugToggle.addEventListener('click', () => {
-        debugVisible = !debugVisible;
-        debugPanel.style.display = debugVisible ? 'block' : 'none';
-        debugToggle.style.display = debugVisible ? 'none' : 'block';
+  const debugToggle = document.getElementById("debug-toggle");
+  const debugPanel = document.getElementById("debug-panel");
+  const pirTestBtn = document.getElementById("pir-test-btn");
+  const pirToggleDebug = document.getElementById("pir-toggle-debug");
+  const pirStatus = document.getElementById("pir-status");
+
+  if (!debugToggle || !debugPanel) return;
+
+  let debugVisible = false;
+
+  debugToggle.addEventListener("click", () => {
+    debugVisible = !debugVisible;
+    debugPanel.style.display = debugVisible ? "block" : "none";
+    debugToggle.style.display = debugVisible ? "none" : "block";
+  });
+
+  if (pirToggleDebug) {
+    pirToggleDebug.addEventListener("click", () => {
+      debugVisible = false;
+      debugPanel.style.display = "none";
+      debugToggle.style.display = "block";
     });
-    
-    if (pirToggleDebug) {
-        pirToggleDebug.addEventListener('click', () => {
-            debugVisible = false;
-            debugPanel.style.display = 'none';
-            debugToggle.style.display = 'block';
-        });
-    }
-    
-    if (pirTestBtn) {
-        pirTestBtn.addEventListener('click', async () => {
-            pirTestBtn.disabled = true;
-            pirTestBtn.textContent = 'Testing...';
-            
-            try {
-                const success = await PIRSensor.triggerTestMotion();
-                if (success) {
-                    pirTestBtn.textContent = 'Test Success!';
-                    setTimeout(() => {
-                        pirTestBtn.textContent = 'Test Motion';
-                        pirTestBtn.disabled = false;
-                    }, 2000);
-                } else {
-                    pirTestBtn.textContent = 'Test Failed';
-                    setTimeout(() => {
-                        pirTestBtn.textContent = 'Test Motion';
-                        pirTestBtn.disabled = false;
-                    }, 2000);
-                }
-            } catch (error) {
-                console.error('PIR test error:', error);
-                pirTestBtn.textContent = 'Error';
-                setTimeout(() => {
-                    pirTestBtn.textContent = 'Test Motion';
-                    pirTestBtn.disabled = false;
-                }, 2000);
-            }
-        });
-    }
-    
-    // Update PIR status periodically
-    if (pirStatus) {
-        setInterval(() => {
-            const status = PIRSensor.getStatus();
-            pirStatus.textContent = `Initialized: ${status.initialized}, Monitoring: ${status.monitoring}`;
+  }
+
+  if (pirTestBtn) {
+    pirTestBtn.addEventListener("click", async () => {
+      pirTestBtn.disabled = true;
+      pirTestBtn.textContent = "Testing...";
+
+      try {
+        const success = await PIRSensor.triggerTestMotion();
+        if (success) {
+          pirTestBtn.textContent = "Test Success!";
+          setTimeout(() => {
+            pirTestBtn.textContent = "Test Motion";
+            pirTestBtn.disabled = false;
+          }, 2000);
+        } else {
+          pirTestBtn.textContent = "Test Failed";
+          setTimeout(() => {
+            pirTestBtn.textContent = "Test Motion";
+            pirTestBtn.disabled = false;
+          }, 2000);
+        }
+      } catch (error) {
+        console.error("PIR test error:", error);
+        pirTestBtn.textContent = "Error";
+        setTimeout(() => {
+          pirTestBtn.textContent = "Test Motion";
+          pirTestBtn.disabled = false;
         }, 2000);
+      }
+    });
+  }
+
+  // Update PIR status periodically
+  if (pirStatus) {
+    if (typeof pirDebugInterval !== "undefined" && pirDebugInterval) {
+      clearInterval(pirDebugInterval);
     }
+    pirDebugInterval = setInterval(() => {
+      const status = PIRSensor.getStatus();
+      pirStatus.textContent = `Initialized: ${status.initialized}, Monitoring: ${status.monitoring}`;
+    }, 2000);
+  }
 }
 
 // Setup debug panel after components are initialized
