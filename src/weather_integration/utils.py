@@ -1,4 +1,4 @@
-def get_weather_icon(code):
+def get_weather_icon(code: int) -> str:
     """Maps WMO weather code to an emoji icon."""
     if code == 0:
         return "☀️"  # Clear sky

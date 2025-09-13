@@ -87,7 +87,7 @@ def create_calendar_events_from_google_data(
         google_cal_id = event_data["calendar_id"]
         google_cal_summary = event_data["calendar_name"]
 
-        calendar_obj = db.get_calendar(google_cal_id)
+        calendar_obj = db.get_calendar(google_cal_id)  # type: ignore
         calendar_needs_db_update = False
 
         # Get the display name from aliases if available
@@ -111,9 +111,9 @@ def create_calendar_events_from_google_data(
             calendars_changed = True
 
         if calendar_needs_db_update:
-            db.add_calendar(calendar_obj)
+            db.add_calendar(calendar_obj)  # type: ignore
             # Re-fetch the calendar object in case a color was assigned by add_calendar
-            calendar_obj = db.get_calendar(google_cal_id)
+            calendar_obj = db.get_calendar(google_cal_id)  # type: ignore
             if not calendar_obj:
                 print(
                     f"Error: Failed to get calendar {google_cal_id} after adding/updating."

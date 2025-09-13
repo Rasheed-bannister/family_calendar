@@ -1,5 +1,10 @@
+from typing import Optional
+
+
 class Chore:
-    def __init__(self, id: str, title: str, notes: str, status: str, due: str):
+    def __init__(
+        self, id: str, title: str, notes: str, status: str, due: Optional[str] = None
+    ):
         self.id = id
         self.title = title  # Make title available as both title and assigned_to
         self.assigned_to = title

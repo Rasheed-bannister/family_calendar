@@ -43,7 +43,7 @@ def get_pir_status():
     sensor = get_pir_sensor()
     if not sensor:
         return jsonify(
-            {"status": "not_initialized", "monitoring": False, "gpio_available": False}
+            {"status": "not_initialized", "monitoring": False, "gpio_available": False},
         )
 
     return jsonify(
@@ -52,7 +52,7 @@ def get_pir_status():
             "monitoring": sensor.is_monitoring,
             "gpio_available": sensor.gpio_available,
             "pin": sensor.pin,
-        }
+        },
     )
 
 
@@ -63,15 +63,14 @@ def start_monitoring():
         success = start_pir_monitoring()
         if success:
             return jsonify({"success": True, "message": "PIR monitoring started"})
-        else:
-            return (
-                jsonify(
-                    {"success": False, "message": "Failed to start PIR monitoring"}
-                ),
-                500,
-            )
+        return (
+            jsonify(
+                {"success": False, "message": "Failed to start PIR monitoring"},
+            ),
+            500,
+        )
     except Exception as e:
-        logging.error(f"Error starting PIR monitoring: {e}")
+        logging.exception(f"Error starting PIR monitoring: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -82,7 +81,7 @@ def stop_monitoring():
         stop_pir_monitoring()
         return jsonify({"success": True, "message": "PIR monitoring stopped"})
     except Exception as e:
-        logging.error(f"Error stopping PIR monitoring: {e}")
+        logging.exception(f"Error stopping PIR monitoring: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -106,10 +105,10 @@ def report_activity():
                 "success": True,
                 "message": "Activity reported",
                 "activity_type": activity_type,
-            }
+            },
         )
     except Exception as e:
-        logging.error(f"Error reporting PIR activity: {e}")
+        logging.exception(f"Error reporting PIR activity: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -131,7 +130,7 @@ def pir_events():
                     + "}\n\n"
                 )
             except Exception as e:
-                logging.error(f"Error in PIR SSE stream: {e}")
+                logging.exception(f"Error in PIR SSE stream: {e}")
                 break
 
     return Response(
@@ -149,5 +148,5 @@ def trigger_test_motion():
         motion_detected_sse()
         return jsonify({"success": True, "message": "Test motion triggered"})
     except Exception as e:
-        logging.error(f"Error triggering test motion: {e}")
+        logging.exception(f"Error triggering test motion: {e}")
         return jsonify({"success": False, "message": str(e)}), 500

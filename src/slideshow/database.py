@@ -1,11 +1,12 @@
 import os
 import sqlite3
+from typing import Optional
 
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), "slideshow.db")
 PHOTOS_STATIC_REL_PATH = "photos"  # Relative path within the static folder
 
 
-def init_db():
+def init_db() -> None:
     """Initializes the slideshow database and creates the table if it doesn't exist."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
@@ -22,7 +23,7 @@ def init_db():
     print("Slideshow database initialized.")
 
 
-def sync_photos(static_folder_path):
+def sync_photos(static_folder_path: str) -> None:
     """Scans the photos directory and updates the database."""
     photos_dir = os.path.join(static_folder_path, PHOTOS_STATIC_REL_PATH)
     if not os.path.isdir(photos_dir):
@@ -74,7 +75,7 @@ def sync_photos(static_folder_path):
             conn.close()
 
 
-def get_random_photo_filename():
+def get_random_photo_filename() -> Optional[str]:
     """Fetches a random photo filename from the database."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()

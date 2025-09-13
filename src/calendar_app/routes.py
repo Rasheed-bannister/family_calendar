@@ -1,6 +1,7 @@
 import calendar
 import datetime
 import threading
+from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, render_template
 
@@ -217,7 +218,7 @@ def _filter_events_for_day(events: list, target_date: datetime.date) -> list:
 
 @calendar_bp.route("/")
 @calendar_bp.route("/<int:year>/<int:month>")
-def view(year: int = None, month: int = None):
+def view(year: Optional[int] = None, month: Optional[int] = None):
     """Renders the calendar view for a specific month and year."""
     now = datetime.datetime.now(tz=datetime.timezone.utc)
 
@@ -240,7 +241,7 @@ def view(year: int = None, month: int = None):
 
     # Register current month in database
     current_calendar_month = CalendarMonth(year=current_year, month=current_month)
-    db.add_month(current_calendar_month)
+    db.add_month(current_calendar_month)  # type: ignore
 
     # Handle calendar background sync
     task_id = f"calendar.{current_month}.{current_year}"
@@ -252,7 +253,7 @@ def view(year: int = None, month: int = None):
         _start_chores_background_sync()
 
     # Get calendar events data
-    db_events = db.get_all_events_for_month_range(current_year, current_month)
+    db_events = db.get_all_events_for_month_range(current_year, current_month)  # type: ignore
     weeks_data = _build_calendar_weeks_data(
         current_year, current_month, today_date, db_events
     )
@@ -307,7 +308,8 @@ def _sync_photos_if_needed() -> None:
         or current_time - background_tasks[last_photo_sync_key].get("last_sync", 0)
         > 600
     ):  # 10 minutes
-        slideshow_db.sync_photos(current_app.static_folder)
+        if current_app.static_folder:
+            slideshow_db.sync_photos(current_app.static_folder)
         background_tasks[last_photo_sync_key] = {"last_sync": current_time}
 
 

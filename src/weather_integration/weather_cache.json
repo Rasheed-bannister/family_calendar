@@ -1,18 +1,18 @@
 {
-  "cached_at": "2025-09-13T10:41:12.093966",
+  "cached_at": "2025-09-13T15:26:30.641788",
   "data": {
     "current": {
-      "time": "2025-09-13T10:30:00",
-      "apparent_temperature": 92.02648162841797,
+      "time": "2025-09-13T15:15:00",
+      "apparent_temperature": 88.9075698852539,
       "is_day": 1.0,
-      "weather_code": 3.0
+      "weather_code": 1.0
     },
     "daily": [
       {
         "date": "2025-09-13T04:00:00+00:00",
-        "weather_code": 80.0,
-        "apparent_temperature_max": 96.02095031738281,
-        "apparent_temperature_min": 74.1934814453125,
+        "weather_code": 81.0,
+        "apparent_temperature_max": 96.20674896240234,
+        "apparent_temperature_min": 80.86241149902344,
         "sunrise": "2025-09-13T07:05:59",
         "sunset": "2025-09-13T19:27:52",
         "precipitation_probability_max": 30.0
@@ -21,55 +21,55 @@
         "date": "2025-09-14T04:00:00+00:00",
         "weather_code": 81.0,
         "apparent_temperature_max": 93.75743103027344,
-        "apparent_temperature_min": 77.78325653076172,
+        "apparent_temperature_min": 78.42000579833984,
         "sunrise": "2025-09-14T07:06:25",
         "sunset": "2025-09-14T19:26:42",
-        "precipitation_probability_max": 32.0
+        "precipitation_probability_max": 30.0
       },
       {
         "date": "2025-09-15T04:00:00+00:00",
-        "weather_code": 51.0,
-        "apparent_temperature_max": 95.31316375732422,
+        "weather_code": 2.0,
+        "apparent_temperature_max": 95.3930892944336,
         "apparent_temperature_min": 78.02069854736328,
         "sunrise": "2025-09-15T07:06:51",
         "sunset": "2025-09-15T19:25:32",
-        "precipitation_probability_max": 32.0
+        "precipitation_probability_max": 29.0
       },
       {
         "date": "2025-09-16T04:00:00+00:00",
-        "weather_code": 3.0,
-        "apparent_temperature_max": 94.13323211669922,
-        "apparent_temperature_min": 81.5645980834961,
+        "weather_code": 1.0,
+        "apparent_temperature_max": 94.23887634277344,
+        "apparent_temperature_min": 82.03530883789062,
         "sunrise": "2025-09-16T07:07:17",
         "sunset": "2025-09-16T19:24:22",
-        "precipitation_probability_max": 32.0
+        "precipitation_probability_max": 25.0
       },
       {
         "date": "2025-09-17T04:00:00+00:00",
-        "weather_code": 81.0,
-        "apparent_temperature_max": 91.29780578613281,
-        "apparent_temperature_min": 80.13861846923828,
+        "weather_code": 53.0,
+        "apparent_temperature_max": 89.36984252929688,
+        "apparent_temperature_min": 80.12834167480469,
         "sunrise": "2025-09-17T07:07:43",
         "sunset": "2025-09-17T19:23:13",
-        "precipitation_probability_max": 48.0
+        "precipitation_probability_max": 44.0
       },
       {
         "date": "2025-09-18T04:00:00+00:00",
-        "weather_code": 53.0,
-        "apparent_temperature_max": 87.27058410644531,
-        "apparent_temperature_min": 81.23274230957031,
+        "weather_code": 55.0,
+        "apparent_temperature_max": 85.78099822998047,
+        "apparent_temperature_min": 80.3687973022461,
         "sunrise": "2025-09-18T07:08:09",
         "sunset": "2025-09-18T19:22:03",
-        "precipitation_probability_max": 65.0
+        "precipitation_probability_max": 58.0
       },
       {
         "date": "2025-09-19T04:00:00+00:00",
         "weather_code": 53.0,
-        "apparent_temperature_max": 88.51119995117188,
-        "apparent_temperature_min": 81.4211654663086,
+        "apparent_temperature_max": 89.75177001953125,
+        "apparent_temperature_min": 80.99850463867188,
         "sunrise": "2025-09-19T07:08:36",
         "sunset": "2025-09-19T19:20:54",
-        "precipitation_probability_max": 64.0
+        "precipitation_probability_max": 62.0
       }
     ]
   }

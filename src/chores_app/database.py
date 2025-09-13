@@ -1,13 +1,14 @@
 import sqlite3
 import uuid  # Add this import for generating UUIDs
 from pathlib import Path
+from typing import Any, Optional
 
 from .models import Chore
 
 DATABASE_FILE = Path(__file__).parent / "chores.db"
 
 
-def create_all():
+def create_all() -> None:
     """
     Creates the necessary tables in the database.
     This function is called only when it's confirmed that there is no database file.
@@ -36,7 +37,7 @@ def create_all():
     conn.close()
 
 
-def update_chore_status(chore_id: str, new_status: str):
+def update_chore_status(chore_id: str, new_status: str) -> None:
     """Updates the status of a specific chore in the database."""
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
@@ -52,7 +53,7 @@ def update_chore_status(chore_id: str, new_status: str):
     conn.close()
 
 
-def add_chores(chores: list[Chore]):
+def add_chores(chores: list[Chore]) -> None:
     """
     Adds a list of chores to the database, or replaces existing ones if they have the same ID,
     unless the existing chore has status 'invisible'.
@@ -90,9 +91,9 @@ def add_chore(
     assigned_to: str,
     description: str,
     status: str = "needsAction",
-    due: str = None,
-    google_id: str = None,
-) -> Chore:
+    due: Optional[str] = None,
+    google_id: Optional[str] = None,
+) -> Optional[Chore]:
     """
     Adds a single chore to the database.
     Generates a new UUID for the local ID if one isn't provided (e.g., from Google Tasks).
@@ -151,7 +152,7 @@ def add_chore(
         conn.close()
 
 
-def update_chore_google_id(local_chore_id: str, google_task_id: str):
+def update_chore_google_id(local_chore_id: str, google_task_id: str) -> None:
     """Updates a locally created chore with its corresponding Google Task ID."""
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
@@ -208,7 +209,7 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
         conn.close()
 
 
-def get_chores(include_invisible=False) -> list[dict]:
+def get_chores(include_invisible: bool = False) -> list[dict[str, Any]]:
     """
     Fetches chores from the database.
     By default, filters out chores with status 'invisible'.

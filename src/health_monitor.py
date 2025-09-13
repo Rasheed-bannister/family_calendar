@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import psutil
 
@@ -17,11 +17,11 @@ import psutil
 class HealthMonitor:
     """System health and resource monitoring."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.start_time = time.time()
         self.error_count = 0
-        self.last_error_time = None
-        self.critical_errors = []
+        self.last_error_time: Optional[datetime] = None
+        self.critical_errors: List[Dict[str, Any]] = []
         self.max_critical_errors = 10
         self.restart_threshold = 5  # Restart after 5 critical errors in 10 minutes
         self.restart_window = 600  # 10 minutes
@@ -137,7 +137,9 @@ class HealthMonitor:
             "monitoring_enabled": self.monitoring_enabled,
         }
 
-    def record_error(self, error_type: str, message: str, is_critical: bool = False):
+    def record_error(
+        self, error_type: str, message: str, is_critical: bool = False
+    ) -> bool:
         """Record an application error."""
         with self.lock:
             self.error_count += 1
@@ -180,7 +182,7 @@ class HealthMonitor:
             error for error in self.critical_errors if error["timestamp"] > cutoff_time
         ]
 
-    def _cleanup_old_critical_errors(self):
+    def _cleanup_old_critical_errors(self) -> None:
         """Remove old critical errors to prevent memory buildup."""
         cutoff_time = datetime.now() - timedelta(seconds=self.restart_window * 2)
         self.critical_errors = [
@@ -219,12 +221,12 @@ class HealthMonitor:
 
         return db_status
 
-    def enable_monitoring(self):
+    def enable_monitoring(self) -> None:
         """Enable health monitoring."""
         self.monitoring_enabled = True
         logging.info("Health monitoring enabled")
 
-    def disable_monitoring(self):
+    def disable_monitoring(self) -> None:
         """Disable health monitoring."""
         self.monitoring_enabled = False
         logging.info("Health monitoring disabled")

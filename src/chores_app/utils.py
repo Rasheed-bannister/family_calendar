@@ -19,11 +19,11 @@ def create_chores_from_google_data(google_tasks_data: list[dict]) -> list[Chore]
     for task in google_tasks_data:
         # Assuming the 'title' contains the assigned person and 'notes' the description
         chore = Chore(
-            id=task.get("id"),
+            id=task.get("id", ""),
             title=task.get("title", "Unassigned"),  # Default if title is missing
             notes=task.get("notes", ""),  # Default if notes are missing
-            status=task.get("status"),
-            due=task.get("due"),
+            status=task.get("status", "needsAction"),  # Default status
+            due=task.get("due"),  # This can be None now
         )
         chores_to_add.append(chore)
     return chores_to_add

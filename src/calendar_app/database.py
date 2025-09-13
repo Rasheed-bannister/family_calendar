@@ -1,6 +1,8 @@
 import datetime
 import sqlite3
+from functools import wraps
 from pathlib import Path
+from typing import Any, Callable, Optional, TypeVar
 
 from .models import Calendar, CalendarEvent, CalendarMonth
 
@@ -22,8 +24,12 @@ DEFAULT_COLORS = [
 
 
 # create a decorator to wrap database functions in a connection and close after use
-def db_connection(func):
-    def wrapper(*args, **kwargs):
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def db_connection(func: F) -> F:
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         try:
@@ -37,10 +43,10 @@ def db_connection(func):
         finally:
             conn.close()
 
-    return wrapper
+    return wrapper  # type: ignore
 
 
-def create_all():
+def create_all() -> None:
     """
     Creates the necessary tables in the database.
     This function is called only when it's confirmed that there is no database file.
@@ -131,7 +137,7 @@ def create_all():
     conn.close()
 
 
-def run_migrations():
+def run_migrations() -> None:
     """Run database migrations to update schema"""
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
@@ -150,7 +156,7 @@ def run_migrations():
 
 
 @db_connection
-def add_calendar(cursor, calendar: Calendar):
+def add_calendar(cursor: sqlite3.Cursor, calendar: Calendar) -> None:
     """Adds or replaces a Calendar in the database."""
     if calendar.color is None:
         calendar.color = get_next_color(cursor)
@@ -165,7 +171,7 @@ def add_calendar(cursor, calendar: Calendar):
 
 
 @db_connection
-def get_calendar(cursor, calendar_id: str) -> Calendar | None:
+def get_calendar(cursor: sqlite3.Cursor, calendar_id: str) -> Optional[Calendar]:
     cursor.execute(
         "SELECT calendar_id, name, display_name, color FROM Calendar WHERE calendar_id = ?",
         (calendar_id,),
@@ -179,7 +185,7 @@ def get_calendar(cursor, calendar_id: str) -> Calendar | None:
 
 
 @db_connection
-def add_month(cursor, month: CalendarMonth):
+def add_month(cursor: sqlite3.Cursor, month: CalendarMonth) -> None:
     """Adds or replaces a CalendarMonth in the database."""
     cursor.execute(
         """
@@ -191,7 +197,7 @@ def add_month(cursor, month: CalendarMonth):
 
 
 @db_connection
-def get_month(cursor, month_id: str) -> CalendarMonth | None:
+def get_month(cursor: sqlite3.Cursor, month_id: str) -> Optional[CalendarMonth]:
     """Retrieves a CalendarMonth by its ID."""
     cursor.execute(
         "SELECT id, year, month FROM CalendarMonth WHERE id = ?", (month_id,)
@@ -203,7 +209,7 @@ def get_month(cursor, month_id: str) -> CalendarMonth | None:
 
 
 @db_connection
-def add_event(cursor, event: CalendarEvent):
+def add_event(cursor: sqlite3.Cursor, event: CalendarEvent) -> None:
     """
     Adds a CalendarEvent to the database.
     """
@@ -232,7 +238,9 @@ def add_event(cursor, event: CalendarEvent):
 
 
 @db_connection
-def check_event_exists(cursor, event_id: str) -> CalendarEvent | None:
+def check_event_exists(
+    cursor: sqlite3.Cursor, event_id: str
+) -> Optional[CalendarEvent]:
     """
     Checks if an event with the given ID exists in the database.
     """
@@ -280,7 +288,9 @@ def check_event_exists(cursor, event_id: str) -> CalendarEvent | None:
 
 
 @db_connection
-def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
+def get_all_events(
+    cursor: sqlite3.Cursor, month: CalendarMonth
+) -> list[dict[str, Any]]:
     """
     Retrieves all events for a specific month from the database.
     Returns a list of dictionaries, including the event ID as 'google_event_id'.
@@ -329,7 +339,9 @@ def get_all_events(cursor, month: CalendarMonth) -> list[dict]:
 
 
 @db_connection
-def get_all_events_for_month_range(cursor, year: int, month: int) -> list[dict]:
+def get_all_events_for_month_range(
+    cursor: sqlite3.Cursor, year: int, month: int
+) -> list[dict[str, Any]]:
     """
     Retrieves all events that overlap with the specified month.
     This includes events that:
@@ -392,7 +404,7 @@ def get_all_events_for_month_range(cursor, year: int, month: int) -> list[dict]:
     return events
 
 
-def get_next_color(cursor) -> str:
+def get_next_color(cursor: sqlite3.Cursor) -> str:
     """Gets the next default color from the database and increments the index."""
     # Get current index and total number of colors
     cursor.execute("SELECT current_index FROM ColorIndex WHERE id = 1")
