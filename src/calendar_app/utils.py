@@ -185,14 +185,11 @@ def cleanup_deleted_events(
         if events_to_delete:
             print(f"Cleaning up {len(events_to_delete)} deleted events from database")
 
-            # Delete the orphaned events
-            placeholders = ",".join("?" * len(events_to_delete))
-            cursor.execute(
-                f"""
-                DELETE FROM CalendarEvent
-                WHERE id IN ({placeholders})
-            """,
-                list(events_to_delete),
+            # Delete the orphaned events using safe parameterized query
+            # Use executemany for completely safe deletion
+            delete_query = "DELETE FROM CalendarEvent WHERE id = ?"
+            cursor.executemany(
+                delete_query, [(event_id,) for event_id in events_to_delete]
             )
 
             return True
@@ -202,9 +199,6 @@ def cleanup_deleted_events(
     except sqlite3.Error as e:
         print(f"Error during event cleanup: {e}")
         return False
-
-
-from .models import CalendarEvent, CalendarMonth
 
 
 def load_calendar_aliases():

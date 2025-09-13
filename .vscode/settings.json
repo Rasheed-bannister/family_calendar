@@ -26,7 +26,7 @@
     "--max-complexity=10",
     "--max-line-length=88"
   ],
-  "ruff.args": [
+  "ruff.lint.args": [
     "--line-length=88",
     "--select=F,E,W,C90,I,N,UP,YTT,ANN,S,BLE,FBT,B,A,COM,C4,DTZ,T10,EM,EXE,ISC,ICN,G,INP,PIE,PYI,PT,Q,RSE,RET,SLF,SIM,TID,TCH,ARG,PTH,ERA,PD,PGH,PL,TRY,NPY,RUF",
     "--ignore=E501,ANN101,ANN102,S101"

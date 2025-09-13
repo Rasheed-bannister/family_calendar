@@ -152,7 +152,6 @@ def get_events_current_month(service, month: int, year: int):
 
     for calendar in calendars:
         calendar_id = calendar["id"]
-        calendar_summary = calendar.get("summary", calendar_id)
         page_token = None
         page_count = 0
         while True:
