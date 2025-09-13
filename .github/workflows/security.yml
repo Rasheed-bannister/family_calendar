@@ -1,0 +1,183 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scan daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-scan:
+    runs-on: ubuntu-latest
+    name: Dependency Vulnerability Scan
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Run pip-audit
+      run: |
+        uv pip install pip-audit
+        uv run pip-audit --desc --format json --output audit-report.json || true
+        uv run pip-audit --desc
+      continue-on-error: true
+
+    - name: Upload pip-audit results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: pip-audit-results
+        path: audit-report.json
+
+    - name: Run Safety check
+      run: |
+        uv pip install safety
+        uv run safety check --json --output safety-report.json || true
+        uv run safety check
+      continue-on-error: true
+
+    - name: Upload Safety results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: safety-results
+        path: safety-report.json
+
+  code-security:
+    runs-on: ubuntu-latest
+    name: Code Security Analysis
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        pip install bandit[toml] semgrep
+
+    - name: Run Bandit security linter
+      run: |
+        bandit -r src -f json -o bandit-report.json -ll --skip B101 || true
+        bandit -r src -ll --skip B101
+      continue-on-error: true
+
+    - name: Upload Bandit results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-results
+        path: bandit-report.json
+
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/python
+          p/flask
+          p/owasp-top-ten
+      continue-on-error: true
+
+  secret-scanning:
+    runs-on: ubuntu-latest
+    name: Secret Detection
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better secret detection
+
+    - name: TruffleHog OSS
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        extra_args: --debug --only-verified
+      continue-on-error: true
+
+    - name: Detect secrets with detect-secrets
+      run: |
+        pip install detect-secrets
+        detect-secrets scan --baseline .secrets.baseline || true
+        detect-secrets audit .secrets.baseline || true
+      continue-on-error: true
+
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    name: CodeQL Analysis
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python, javascript
+        queries: security-extended
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+  docker-scan:
+    runs-on: ubuntu-latest
+    name: Container Security (if applicable)
+    if: contains(github.repository, 'Dockerfile')
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: moderate
+        allow-licenses: MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Python-2.0
+        deny-licenses: GPL-3.0, AGPL-3.0

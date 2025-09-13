@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Static libraries
+src/static/js/lib/
+
+# Generated files
+*.min.js
+*.min.css
+
+# Data files
+*.db
+*.log
+*.json
+!.prettierrc.json
+!package.json
+!tsconfig.json
+
+# Lock files
+uv.lock
+package-lock.json
+yarn.lock
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Photos
+src/static/photos/

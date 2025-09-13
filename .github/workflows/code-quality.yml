@@ -1,0 +1,192 @@
+name: Code Quality Analysis
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  dead-code-analysis:
+    runs-on: ubuntu-latest
+    name: Dead Code & Complexity Analysis
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install analysis tools
+      run: |
+        pip install vulture autoflake radon flake8 flake8-cognitive-complexity
+
+    - name: Dead code detection with Vulture
+      run: |
+        echo "=== Checking for dead code with Vulture ==="
+        vulture src/ --min-confidence 80 --exclude "*/tests/*,*/migrations/*" || true
+      continue-on-error: true
+
+    - name: Unused imports with Autoflake
+      run: |
+        echo "=== Checking for unused imports ==="
+        autoflake --check-diff --remove-unused-variables --remove-all-unused-imports --recursive src/ || true
+      continue-on-error: true
+
+    - name: Cyclomatic complexity analysis
+      run: |
+        echo "=== Cyclomatic Complexity Analysis ==="
+        flake8 src/ --max-complexity 10 --select C901 || true
+      continue-on-error: true
+
+    - name: Radon complexity metrics
+      run: |
+        echo "=== Radon Code Metrics ==="
+        echo "Cyclomatic Complexity:"
+        radon cc src/ -s -nc
+        echo ""
+        echo "Maintainability Index:"
+        radon mi src/ -s
+        echo ""
+        echo "Raw Metrics:"
+        radon raw src/ -s
+      continue-on-error: true
+
+    - name: Generate complexity report
+      run: |
+        mkdir -p reports
+        radon cc src/ --json > reports/complexity.json
+        radon mi src/ --json > reports/maintainability.json
+        vulture src/ --min-confidence 80 > reports/dead-code.txt || true
+      continue-on-error: true
+
+    - name: Upload complexity reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: complexity-reports
+        path: reports/
+
+  code-duplication:
+    runs-on: ubuntu-latest
+    name: Code Duplication Detection
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install PMD CPD
+      run: |
+        wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-dist-7.0.0-bin.zip
+        unzip pmd-dist-7.0.0-bin.zip
+        rm pmd-dist-7.0.0-bin.zip
+
+    - name: Run CPD for Python
+      run: |
+        echo "=== Checking for code duplication ==="
+        pmd-bin-7.0.0/bin/pmd cpd --minimum-tokens 50 --language python --files src/ --format text || true
+      continue-on-error: true
+
+    - name: Python duplicate detection with pylint
+      run: |
+        pip install pylint
+        echo "=== Checking for similar code with pylint ==="
+        pylint src/ --disable=all --enable=duplicate-code --min-similarity-lines=10 || true
+      continue-on-error: true
+
+  javascript-analysis:
+    runs-on: ubuntu-latest
+    name: JavaScript Dead Code & Complexity
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install JS analysis tools
+      run: |
+        npm install -g eslint eslint-plugin-unused-imports jscpd complexity-report
+
+    - name: Dead code detection in JavaScript
+      run: |
+        echo "=== Checking for unused JS code ==="
+        npx eslint src/static/js/ --no-eslintrc --rule 'no-unused-vars: error' --rule 'no-unreachable: error' --rule 'no-dead-code: error' || true
+      continue-on-error: true
+
+    - name: JavaScript complexity analysis
+      run: |
+        echo "=== JavaScript Complexity Analysis ==="
+        npx cr --format plain --output reports/js-complexity.txt src/static/js/ || true
+      continue-on-error: true
+
+    - name: JavaScript duplication detection
+      run: |
+        echo "=== JavaScript Duplication Detection ==="
+        npx jscpd src/static/js/ --min-lines 5 --min-tokens 50 || true
+      continue-on-error: true
+
+  css-analysis:
+    runs-on: ubuntu-latest
+    name: CSS Dead Code Detection
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install PurgeCSS
+      run: npm install -g purgecss
+
+    - name: Find unused CSS
+      run: |
+        echo "=== Checking for unused CSS ==="
+        purgecss --css 'src/static/css/**/*.css' --content 'src/templates/**/*.html' 'src/static/js/**/*.js' --output reports/used-css || true
+        echo "CSS files have been analyzed. Check reports/used-css for optimized versions."
+      continue-on-error: true
+
+    - name: Upload CSS analysis
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: css-analysis
+        path: reports/used-css
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    if: github.repository_owner != 'dependabot'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: >
+          -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+          -Dsonar.organization=${{ github.repository_owner }}
+          -Dsonar.python.coverage.reportPaths=coverage.xml
+          -Dsonar.sources=src
+          -Dsonar.tests=tests
+      continue-on-error: true

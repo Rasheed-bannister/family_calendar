@@ -1,0 +1,162 @@
+{
+  // Python settings
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit",
+      "source.fixAll": "explicit"
+    },
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.rulers": [88]
+  },
+
+  // Python formatting
+  "black-formatter.args": [
+    "--line-length=88"
+  ],
+
+  // Python linting
+  "python.linting.enabled": true,
+  "python.linting.lintOnSave": true,
+  "python.linting.ruffEnabled": true,
+  "python.linting.banditEnabled": true,
+  "python.linting.mypyEnabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Args": [
+    "--max-complexity=10",
+    "--max-line-length=88"
+  ],
+  "ruff.args": [
+    "--line-length=88",
+    "--select=F,E,W,C90,I,N,UP,YTT,ANN,S,BLE,FBT,B,A,COM,C4,DTZ,T10,EM,EXE,ISC,ICN,G,INP,PIE,PYI,PT,Q,RSE,RET,SLF,SIM,TID,TCH,ARG,PTH,ERA,PD,PGH,PL,TRY,NPY,RUF",
+    "--ignore=E501,ANN101,ANN102,S101"
+  ],
+  "mypy-type-checker.args": [
+    "--ignore-missing-imports",
+    "--no-strict-optional",
+    "--warn-unused-ignores",
+    "--warn-redundant-casts",
+    "--warn-unreachable"
+  ],
+
+  // Import sorting
+  "isort.args": [
+    "--profile", "black",
+    "--line-length", "88"
+  ],
+
+  // JavaScript/TypeScript settings
+  "[javascript]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    }
+  },
+
+  "[javascriptreact]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // CSS settings
+  "[css]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // JSON settings
+  "[json]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  "[jsonc]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // HTML settings
+  "[html]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // Prettier configuration
+  "prettier.tabWidth": 2,
+  "prettier.useTabs": false,
+  "prettier.semi": true,
+  "prettier.singleQuote": false,
+  "prettier.trailingComma": "es5",
+  "prettier.bracketSpacing": true,
+  "prettier.arrowParens": "always",
+  "prettier.printWidth": 100,
+
+  // File associations
+  "files.associations": {
+    "*.css": "css",
+    "*.js": "javascript",
+    "*.json": "json",
+    "*.py": "python"
+  },
+
+  // Exclude patterns for search and watchers
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/node_modules": true,
+    "**/.venv": true,
+    "**/*.db": true,
+    "**/*.log": true
+  },
+
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/.venv": true,
+    "**/uv.lock": true,
+    "**/*.db": true,
+    "**/*.log": true,
+    "**/src/static/photos": true
+  },
+
+  // Editor settings
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "editor.rulers": [88, 100],
+  "editor.trimAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+
+  // Python specific
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+
+  // Terminal
+  "terminal.integrated.env.osx": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+
+  // Git
+  "git.ignoreLimitWarning": true,
+
+  // Auto-save
+  "files.autoSave": "onFocusChange",
+
+  // Recommended extensions hint
+  "extensions.ignoreRecommendations": false
+}

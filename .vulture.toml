@@ -1,0 +1,9 @@
+# Vulture configuration for dead code detection
+
+[tool.vulture]
+min_confidence = 80
+paths = ["src"]
+exclude = ["tests/", "migrations/", "__pycache__/"]
+ignore_names = ["setUp", "tearDown", "setUpClass", "tearDownClass", "test_*"]
+ignore_decorators = ["@app.route", "@blueprint.route", "@pytest.fixture"]
+make_whitelist = true

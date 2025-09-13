@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "rasheed.bannister"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    ignore:
+      # Ignore major version updates for critical packages
+      - dependency-name: "flask"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "google-*"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

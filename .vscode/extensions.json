@@ -1,0 +1,32 @@
+{
+  "recommendations": [
+    // Python
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "ms-python.isort",
+    "charliermarsh.ruff",
+    "ms-python.mypy-type-checker",
+
+    // JavaScript/Web
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+
+    // Git & Version Control
+    "eamodio.gitlens",
+
+    // Utilities
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+    "yzhang.markdown-all-in-one",
+    "tamasfe.even-better-toml",
+
+    // Testing
+    "littlefoxteam.vscode-python-test-adapter"
+  ],
+
+  "unwantedRecommendations": [
+    "ms-python.pylint",  // Using Ruff instead
+    "ms-python.flake8"   // Using Ruff instead
+  ]
+}
