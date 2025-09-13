@@ -24,4 +24,9 @@ maintainability.json
 dead-code.txt
 reports/
 
+# Generated files that change frequently
+calendar.log
+src/weather_integration/weather_cache.json
+uv.lock
+
 .github/

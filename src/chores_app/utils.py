@@ -12,7 +12,7 @@ def initialize_db():
 
 def create_chores_from_google_data(google_tasks_data: list[dict]) -> list[Chore]:
     """Processes raw Google Tasks data and converts it into a list of Chore objects."""
-    chores_to_add = []
+    chores_to_add: list[Chore] = []
     if not google_tasks_data:
         return chores_to_add
 

@@ -42,12 +42,61 @@ uv run pytest tests/calendar_app/test_routes.py::test_function_name
 ```
 
 ### Code Quality
+
+#### Automated Code Quality (Recommended)
+```bash
+# Smart commit that auto-handles formatting and fixes
+./git-smart-commit.sh "your commit message"
+
+# Or using the git alias
+git smart-commit "your commit message"
+```
+
+The smart commit script automatically:
+- Runs pre-commit hooks
+- Auto-fixes formatting, import sorting, and linting issues
+- Includes the fixes in the commit
+- Only fails if there are unfixable issues
+
+#### Manual Code Quality Tools
 ```bash
 # Format code with Black
-black src tests
+uv run black src tests
 
 # Sort imports with isort
-isort src tests
+uv run isort src tests
+
+# Lint with Ruff (auto-fix)
+uv run ruff check --fix src tests
+
+# Type checking with MyPy
+uv run mypy src
+
+# Security scanning with Bandit
+uv run bandit -r src
+
+# Complexity analysis with Radon
+uv run radon cc src --show-closures
+
+# Dead code detection with Vulture
+uv run vulture src --min-confidence 80
+```
+
+#### Pre-commit Hooks
+Pre-commit hooks are configured to run automatically on commit and include:
+- Code formatting (Black, isort, Ruff)
+- Security scanning (Bandit)
+- Type checking (MyPy)
+- Dead code detection (Vulture)
+- Complexity analysis
+- Import validation
+
+```bash
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Run hooks manually on all files
+uv run pre-commit run --all-files
 ```
 
 ## Architecture Overview

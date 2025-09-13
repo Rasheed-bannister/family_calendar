@@ -14,10 +14,10 @@ class Config:
     """Configuration manager for the Family Calendar application."""
 
     # Default configuration values
-    DEFAULTS = {
+    DEFAULTS: dict[str, dict[str, Any]] = {
         "app": {
             "debug": False,
-            "host": "0.0.0.0",
+            "host": "0.0.0.0",  # nosec B104 # Intentional for family calendar local network access
             "port": 5000,
             "secret_key": None,  # Should be set in config file
             "use_reloader": False,
@@ -99,7 +99,7 @@ class Config:
         import secrets
 
         default_config = self.DEFAULTS.copy()
-        default_config["app"]["secret_key"] = secrets.token_hex(32)
+        default_config["app"]["secret_key"] = secrets.token_hex(32)  # type: ignore[index]
 
         try:
             with open(path, "w") as f:
@@ -158,33 +158,52 @@ class Config:
         for env_var, (section, key, converter) in env_mappings.items():
             if env_var in os.environ:
                 try:
-                    config[section][key] = converter(os.environ[env_var])
+                    config[section][key] = converter(os.environ[env_var])  # type: ignore[operator]
                     print(f"Override from environment: {env_var}")
                 except (ValueError, KeyError) as e:
                     print(f"Error applying environment override {env_var}: {e}")
 
-    def _validate_config(self):
-        """Validate configuration values."""
-        errors = []
-
-        # Validate required fields
+    def _ensure_secret_key(self) -> None:
+        """Ensure secret key exists or generate one."""
         if not self.config["app"].get("secret_key"):
             import secrets
 
             self.config["app"]["secret_key"] = secrets.token_hex(32)
             print("No secret key configured. Generated a random one.")
 
-        # Validate numeric ranges
-        if not 0 <= self.config["weather"]["latitude"] <= 90:
-            errors.append("Weather latitude must be between 0 and 90")
+    def _validate_numeric_ranges(self) -> list[str]:
+        """Validate numeric configuration ranges.
 
-        if not -180 <= self.config["weather"]["longitude"] <= 180:
+        Returns:
+            list: List of validation errors
+        """
+        errors = []
+
+        # Validate latitude range
+        latitude = self.config["weather"]["latitude"]
+        if not -90 <= latitude <= 90:
+            errors.append("Weather latitude must be between -90 and 90")
+
+        # Validate longitude range
+        longitude = self.config["weather"]["longitude"]
+        if not -180 <= longitude <= 180:
             errors.append("Weather longitude must be between -180 and 180")
 
-        if not 1 <= self.config["app"]["port"] <= 65535:
+        # Validate port range
+        port = self.config["app"]["port"]
+        if not 1 <= port <= 65535:
             errors.append("Port must be between 1 and 65535")
 
-        # Validate paths exist or can be created
+        return errors
+
+    def _validate_paths(self) -> list[str]:
+        """Validate path configurations.
+
+        Returns:
+            list: List of validation errors
+        """
+        errors = []
+
         for path_key, path_value in self.config["paths"].items():
             if path_value and not Path(path_value).exists():
                 try:
@@ -192,6 +211,19 @@ class Config:
                 except OSError as e:
                     errors.append(f"Cannot create {path_key}: {e}")
 
+        return errors
+
+    def _validate_config(self) -> None:
+        """Validate configuration values."""
+        # Ensure required fields
+        self._ensure_secret_key()
+
+        # Collect all validation errors
+        errors = []
+        errors.extend(self._validate_numeric_ranges())
+        errors.extend(self._validate_paths())
+
+        # Report errors if any
         if errors:
             for error in errors:
                 print(f"Configuration error: {error}")

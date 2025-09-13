@@ -17,11 +17,10 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from ..slideshow import database as slideshow_db
-from .auth import (
-    generate_upload_url,
-    rate_limit_upload,
-    require_upload_token,
-)
+from .auth import generate_upload_url, rate_limit_upload, require_upload_token
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 try:
     from PIL import Image
@@ -115,7 +114,7 @@ def optimize_image(image_path):
             # Try to remove the file since browsers can't display it
             try:
                 os.remove(image_path)
-            except:
+            except OSError:
                 pass
             return None
 
@@ -159,7 +158,7 @@ def optimize_image(image_path):
                 logger.info(
                     f"Removed incompatible HEIC file: {os.path.basename(image_path)}"
                 )
-            except:
+            except OSError:
                 pass
             return None
         return image_path
@@ -284,7 +283,7 @@ def upload_photos():
             if os.path.exists(filepath):
                 try:
                     os.remove(filepath)
-                except:
+                except OSError:
                     pass
 
     # Sync database with new photos

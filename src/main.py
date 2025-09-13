@@ -12,7 +12,9 @@ from src.weather_integration.utils import get_weather_icon
 
 # Shared resources across components
 google_fetch_lock = threading.Lock()  # Global lock for Google API fetching
-background_tasks = {}  # Dict to track background task status by month/year
+background_tasks: dict[str, dict] = (
+    {}
+)  # Dict to track background task status by month/year
 
 
 def _make_chores_comparable(chores_list):
@@ -59,7 +61,6 @@ def _make_chores_comparable(chores_list):
             except Exception as e:
                 print(f"Error making chore comparable: {e}")
                 # Just ignore items we can't process
-                pass
     return comparable_set
 
 
@@ -204,7 +205,9 @@ if __name__ == "__main__":
 
         # Get app configuration
         debug_mode = config.get("app.debug", False)
-        host = config.get("app.host", "0.0.0.0")
+        host = config.get(
+            "app.host", "0.0.0.0"
+        )  # nosec B104 # Intentional for family calendar local network access
         port = config.get("app.port", 5000)
         use_reloader = config.get("app.use_reloader", False)
 

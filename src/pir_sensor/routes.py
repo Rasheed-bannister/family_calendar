@@ -20,7 +20,7 @@ from .sensor import (
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 
 # Global queue for SSE events
-_sse_queue = Queue()
+_sse_queue: Queue = Queue()
 
 
 def motion_detected_sse():

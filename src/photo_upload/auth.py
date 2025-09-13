@@ -145,7 +145,7 @@ class UploadTokenManager:
             if token_id in self.active_tokens:
                 del self.active_tokens[token_id]
                 return True
-        except:
+        except (KeyError, ValueError, TypeError):
             pass
         return False
 
