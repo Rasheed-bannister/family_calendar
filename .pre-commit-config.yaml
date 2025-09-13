@@ -65,8 +65,9 @@ repos:
     rev: v2.11
     hooks:
       - id: vulture
-        args: ['--min-confidence', '80', '--exclude', '*/tests/*,*/migrations/*', 'src/']
-        pass_filenames: false
+        args: ['--min-confidence', '80', '--exclude', '*/tests/*,*/migrations/*']
+        pass_filenames: true
+        files: ^src/.*\.py$
 
   # Unused imports and variables with autoflake
   - repo: https://github.com/PyCQA/autoflake

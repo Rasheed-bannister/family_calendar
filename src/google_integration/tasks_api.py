@@ -176,11 +176,9 @@ def update_chore(chore_id, task_list_id=None, updates=None):
             current_task[key] = value
 
         # Update the task
-        result = (
-            service.tasks()
-            .update(tasklist=task_list_id, task=chore_id, body=current_task)
-            .execute()
-        )
+        service.tasks().update(
+            tasklist=task_list_id, task=chore_id, body=current_task
+        ).execute()
 
         return True
     except HttpError as error:
