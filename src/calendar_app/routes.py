@@ -386,9 +386,7 @@ def _trigger_calendar_refresh_if_needed(
     )
     google_thread.daemon = True
     google_thread.start()
-    print(
-        f"Triggered background refresh for {month}/{year} due to time elapsed or missing task"
-    )
+    # Background refresh triggered (normal operation)
 
 
 @calendar_bp.route("/check-updates/<int:year>/<int:month>")

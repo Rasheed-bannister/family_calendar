@@ -18,6 +18,9 @@ let choreCheckTimeout = null;
 let pirDebugInterval = null;
 let cleanupHandlers = [];
 
+// Global UI state tracking
+let updateCheckEnabled = true; // Control flag for API polling based on UI activity
+
 document.addEventListener("DOMContentLoaded", async function () {
   // Activity tracking variables
   let lastActivityTimestamp = Date.now();
@@ -264,6 +267,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // Entering long inactivity mode
     longInactivityMode = true;
+    updateCheckEnabled = false; // Disable API polling during inactivity
 
     // Add class to body for CSS styling
     document.body.classList.add("long-inactivity-mode");
@@ -288,6 +292,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // Exiting long inactivity mode
     longInactivityMode = false;
+    updateCheckEnabled = true; // Re-enable API polling when returning to active
 
     // Remove class from body
     document.body.classList.remove("long-inactivity-mode");
@@ -627,11 +632,11 @@ async function updateChoresSection() {
       currentChoresSection.innerHTML = newChoresSection.innerHTML;
 
       // Reinitialize the chores component to attach event listeners
-      if (window.Chores && window.Chores.cleanup) {
-        window.Chores.cleanup();
+      if (Chores && Chores.cleanup) {
+        Chores.cleanup();
       }
-      if (window.Chores && window.Chores.init) {
-        window.Chores.init();
+      if (Chores && Chores.init) {
+        Chores.init();
       }
 
       console.log("Chores section updated dynamically without page reload");
@@ -779,13 +784,16 @@ window.showConnectionError = showConnectionError;
 window.hideConnectionError = hideConnectionError;
 
 async function triggerChoresRefresh() {
+  // Respect UI active state - don't poll when inactive
+  if (!updateCheckEnabled) return;
+
   if (isCheckingChoreUpdates) {
     return;
   }
   isCheckingChoreUpdates = true;
 
   try {
-    const response = await fetch("/chores/refresh", { method: "POST" }); // Corrected endpoint and added POST method
+    const response = await fetch("/chores/refresh", { method: "POST" });
     if (response.ok) {
       // Clear any existing timeout before setting new one
       if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
@@ -799,7 +807,11 @@ async function triggerChoresRefresh() {
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
         clearTimeout(chorePollingTimeout);
       }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
+      chorePollingTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          triggerChoresRefresh();
+        }
+      }, CHORE_POLLING_INTERVAL); // Retry full cycle later
     }
   } catch (error) {
     console.error("Chores: Error during triggerChoresRefresh:", error);
@@ -813,19 +825,26 @@ async function triggerChoresRefresh() {
 }
 
 async function checkChoresUpdatesLoop() {
+  // Respect UI active state - don't poll when inactive
+  if (!updateCheckEnabled) return;
+
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1; // JavaScript months are 0-indexed
 
   try {
-    const response = await fetch(`/calendar/check-updates/${year}/${month}`); // Ensure this path is correct
+    const response = await fetch(`/calendar/check-updates/${year}/${month}`);
     if (!response.ok) {
       console.error("Chores: Failed to check for updates. Status:", response.status);
       isCheckingChoreUpdates = false;
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
         clearTimeout(chorePollingTimeout);
       }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL);
+      chorePollingTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          triggerChoresRefresh();
+        }
+      }, CHORE_POLLING_INTERVAL);
       return;
     }
 
@@ -835,7 +854,11 @@ async function checkChoresUpdatesLoop() {
       if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
         clearTimeout(choreCheckTimeout);
       }
-      choreCheckTimeout = setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL);
+      choreCheckTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          checkChoresUpdatesLoop();
+        }
+      }, CHORE_CHECK_UPDATE_INTERVAL);
     } else if (data.chores_status === "complete") {
       isCheckingChoreUpdates = false;
       if (data.chores_changed) {
@@ -845,20 +868,32 @@ async function checkChoresUpdatesLoop() {
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
         clearTimeout(chorePollingTimeout);
       }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+      chorePollingTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          triggerChoresRefresh();
+        }
+      }, CHORE_POLLING_INTERVAL); // Schedule next full cycle
     } else if (data.chores_status === "error") {
       console.error("Chores: Refresh completed with an error.");
       isCheckingChoreUpdates = false;
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
         clearTimeout(chorePollingTimeout);
       }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+      chorePollingTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          triggerChoresRefresh();
+        }
+      }, CHORE_POLLING_INTERVAL); // Schedule next full cycle
     } else {
       isCheckingChoreUpdates = false;
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
         clearTimeout(chorePollingTimeout);
       }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+      chorePollingTimeout = setTimeout(() => {
+        if (updateCheckEnabled) {
+          triggerChoresRefresh();
+        }
+      }, CHORE_POLLING_INTERVAL); // Schedule next full cycle
     }
   } catch (error) {
     console.error("Chores: Error during checkChoresUpdatesLoop:", error);

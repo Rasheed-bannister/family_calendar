@@ -2,199 +2,198 @@
 
 /* Weather Container */
 .weather-container {
-    display: flex;
-    align-items: stretch; 
-    background-color: rgba(0, 0, 0, 0.15); 
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border-radius: 12px;
-    margin-bottom: 10px;
-    min-height: 85px;
-    border: 1px solid rgba(255, 255, 255, 0.15); 
-    overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: stretch;
+  background-color: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 12px;
+  min-height: 85px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
 /* Current Weather Section */
 .current-weather {
-    flex: 1 1 25%;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    border-right: 1px solid rgba(255, 255, 255, 0.2);
-    position: relative;
-    transition: background-image 0.5s ease-in-out;
-    padding: 8px;
-    box-sizing: border-box;
+  flex: 1 1 25%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+  transition: background-image 0.5s ease-in-out;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 /* Weather Day Title */
 .weather-day-title {
-    text-align: center;
-    font-weight: 600;
-    color: #ffffff;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    padding-bottom: 4px;
-    flex-shrink: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    margin-bottom: 4px;
-    font-size: 0.95em;
-    letter-spacing: 0.5px;
+  text-align: center;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  padding-bottom: 4px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 4px;
+  font-size: 0.95em;
+  letter-spacing: 0.5px;
 }
 
 /* Current time display */
 #current-time {
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-    letter-spacing: 0.5px;
-    font-weight: 500;
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace;
+  letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
 /* Weather Day Contents */
 .weather-day-contents {
-    display: flex;
-    flex-direction: row; /* Icon and text side-by-side */
-    align-items: center;
-    flex-grow: 1;
-    width: 100%;
+  display: flex;
+  flex-direction: row; /* Icon and text side-by-side */
+  align-items: center;
+  flex-grow: 1;
+  width: 100%;
 }
 
 /* Weather Icon Container */
 .weather-icon-container {
-    flex: 1 1 50%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    font-size: 2.8em;
-    color: #ffffff;
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 2.8em;
+  color: #ffffff;
 }
 
 /* Sunrise/Sunset Times */
 .sunrise-time,
 .sunset-time {
-    font-size: 0.25em;
-    color: #f5f5f5;
-    text-align: center;
-    width: 100%;
-    line-height: 1.2;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    font-weight: 500;
+  font-size: 0.25em;
+  color: #f5f5f5;
+  text-align: center;
+  width: 100%;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-weight: 500;
 }
 
 .sunrise-time {
-    margin-bottom: 2px;
+  margin-bottom: 2px;
 }
 
 .sunset-time {
-    margin-top: 2px;
+  margin-top: 2px;
 }
 
 /* Weather Text Container */
 .weather-text-container {
-    flex: 1 1 50%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    align-items: center;
-    height: 100%;
-    padding: 0 3px;
-    box-sizing: border-box;
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
+  height: 100%;
+  padding: 0 3px;
+  box-sizing: border-box;
 }
 
 /* Temperature Styles */
 .current-weather .temp-high {
-    font-size: 1em;
-    color: #ff6b35;
-    text-align: center;
-    font-weight: 600;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 1em;
+  color: #ff6b35;
+  text-align: center;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .current-weather .temp-low {
-    font-size: 1em;
-    color: #4a9eff;
-    text-align: center;
-    font-weight: 600;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 1em;
+  color: #4a9eff;
+  text-align: center;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .current-weather .temp-current {
-    font-size: 2.4em;
-    font-weight: 700;
-    color: #ffffff;
-    text-align: center;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-    line-height: 1;
+  font-size: 2.4em;
+  font-weight: 700;
+  color: #ffffff;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  line-height: 1;
 }
 
 /* Weather Background Gradients */
 .day-gradient {
-    background-image: linear-gradient(to bottom, #87CEEB, #4682B4);
+  background-image: linear-gradient(to bottom, #87ceeb, #4682b4);
 }
 
 .night-gradient {
-    background-image: linear-gradient(to bottom, #1c233f, #0a0e1a);
+  background-image: linear-gradient(to bottom, #1c233f, #0a0e1a);
 }
 
 /* Forecast Weather Section */
 .forecast-weather {
-    flex: 3 1 75%;
-    display: flex;
-    justify-content: space-around;
-    align-items: stretch;
-    padding-left: 8px;
-    position: relative;
-    background-color: transparent;
+  flex: 3 1 75%;
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  padding-left: 8px;
+  position: relative;
+  background-color: transparent;
 }
 
 /* Individual Forecast Day */
 .forecast-day {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 8px 6px;
-    box-sizing: border-box;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 6px;
+  box-sizing: border-box;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .forecast-day:last-child {
-    border-right: none;
+  border-right: none;
 }
 
 .forecast-day .weather-icon-container {
-    font-size: 2em;
+  font-size: 2em;
 }
 
 .forecast-day .sunrise-time,
 .forecast-day .sunset-time {
-    font-size: 0.4em;
+  font-size: 0.4em;
 }
 
 .forecast-day .temp-high {
-    font-size: 1em;
-    color: #ff6b35;
-    width: 100%;
-    text-align: center;
-    font-weight: 600;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 1em;
+  color: #ff6b35;
+  width: 100%;
+  text-align: center;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .forecast-day .temp-low {
-    font-size: 1em;
-    color: #4a9eff;
-    width: 100%;
-    text-align: center;
-    font-weight: 600;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-size: 1em;
+  color: #4a9eff;
+  width: 100%;
+  text-align: center;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .forecast-day .precip-chance {
-    font-size: 0.9em;
-    color: #ffffff;
-    margin: 2px 0;
-    width: 100%;
-    text-align: center;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    font-weight: 500;
+  font-size: 0.9em;
+  color: #ffffff;
+  margin: 2px 0;
+  width: 100%;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  font-weight: 500;
 }
