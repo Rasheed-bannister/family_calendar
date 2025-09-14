@@ -1,6 +1,4 @@
-"""
-Authentication and security for photo upload feature.
-"""
+"""Authentication and security for photo upload feature."""
 
 import hashlib
 import hmac
@@ -9,10 +7,18 @@ import logging
 import secrets
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from functools import wraps
+from typing import Any
 
-from flask import jsonify, request
+from flask import Flask, Response, current_app, jsonify, request
+
+# Constants
+TOKEN_PARTS_COUNT = 2
+
+# Type alias for Flask route return types
+FlaskRouteReturn = Response | tuple[Response, int] | str
 
 logger = logging.getLogger(__name__)
 
@@ -20,27 +26,33 @@ logger = logging.getLogger(__name__)
 class UploadTokenManager:
     """Manages secure tokens for photo upload access."""
 
-    def __init__(self, secret_key=None, token_lifetime=3600):
-        """
-        Initialize the token manager.
+    def __init__(
+        self,
+        secret_key: str | None = None,
+        token_lifetime: int = 3600,
+    ) -> None:
+        """Initialize the token manager.
 
         Args:
             secret_key: Secret key for HMAC signatures (will generate if not provided)
             token_lifetime: Token lifetime in seconds (default: 1 hour)
+
         """
         self.secret_key = secret_key or secrets.token_hex(32)
         self.token_lifetime = token_lifetime
-        self.active_tokens = {}  # Store active tokens with metadata
+        self.active_tokens: dict[str, dict[str, Any]] = (
+            {}
+        )  # Store active tokens with metadata
 
-    def generate_token(self, ip_address=None):
-        """
-        Generate a new secure upload token.
+    def generate_token(self, ip_address: str | None = None) -> dict[str, Any]:
+        """Generate a new secure upload token.
 
         Args:
             ip_address: Optional IP address to bind the token to
 
         Returns:
             dict: Token data including the token string and expiry
+
         """
         # Generate random token
         token_id = secrets.token_urlsafe(32)
@@ -75,9 +87,12 @@ class UploadTokenManager:
 
         return {"token": token, "expiry": expiry, "lifetime": self.token_lifetime}
 
-    def validate_token(self, token, ip_address=None):
-        """
-        Validate an upload token.
+    def validate_token(
+        self,
+        token: str,
+        ip_address: str | None = None,
+    ) -> tuple[bool, str | None]:
+        """Validate an upload token.
 
         Args:
             token: The token string to validate
@@ -85,37 +100,30 @@ class UploadTokenManager:
 
         Returns:
             tuple: (is_valid, error_message)
+
         """
         try:
             # Split token and signature
             parts = token.split(".")
-            if len(parts) != 2:
+            if len(parts) != TOKEN_PARTS_COUNT:
                 return False, "Invalid token format"
 
             token_id, signature = parts
 
-            # Check if token exists and is not expired
+            # Check if token exists
             if token_id not in self.active_tokens:
                 return False, "Token not found or expired"
 
             token_data = self.active_tokens[token_id]
 
-            # Check expiry
-            if time.time() > token_data["expiry"]:
-                del self.active_tokens[token_id]
-                return False, "Token expired"
-
-            # Check use count
-            if token_data["uses"] >= token_data["max_uses"]:
-                return False, "Token use limit exceeded"
-
-            # Verify IP if provided
-            if ip_address and token_data.get("ip"):
-                if ip_address != token_data["ip"]:
-                    logger.warning(
-                        f"IP mismatch for token: expected {token_data['ip']}, got {ip_address}"
-                    )
-                    # Don't fail on IP mismatch, just log it (for NAT scenarios)
+            # Validate token conditions
+            error_message = self._validate_token_conditions(
+                token_id,
+                token_data,
+                ip_address,
+            )
+            if error_message:
+                return False, error_message
 
             # Verify signature
             expected_payload = {
@@ -131,14 +139,60 @@ class UploadTokenManager:
 
             # Increment use count
             token_data["uses"] += 1
-
+        except Exception:
+            logger.exception("Token validation error")
+            return False, "Token validation failed"
+        else:
             return True, None
 
-        except Exception as e:
-            logger.error(f"Token validation error: {e}")
-            return False, "Token validation failed"
+    def _validate_token_conditions(
+        self,
+        token_id: str,
+        token_data: dict[str, Any],
+        ip_address: str | None,
+    ) -> str | None:
+        """Validate token expiry, usage limits, and IP if applicable."""
+        # Check expiry
+        if time.time() > token_data["expiry"]:
+            del self.active_tokens[token_id]
+            return "Token expired"
 
-    def revoke_token(self, token):
+        # Check use count
+        if token_data["uses"] >= token_data["max_uses"]:
+            return "Token use limit exceeded"
+
+        # Verify IP if token was bound to an IP - allow same local network (first two octets)
+        if token_data.get("ip"):
+            if not ip_address:
+                return "Invalid client IP address"
+            if not self._is_same_local_network(token_data["ip"], ip_address):
+                logger.warning(
+                    "IP network mismatch for token: expected network %s, got %s",
+                    token_data["ip"],
+                    ip_address,
+                )
+                return "Token not valid for this network"
+
+        return None
+
+    def _is_same_local_network(self, ip1: str, ip2: str) -> bool:
+        """Check if two IP addresses are on the same local network (same first two octets)."""
+        try:
+            # Split IPs and compare first two octets
+            octets1 = ip1.split(".")
+            octets2 = ip2.split(".")
+
+            # Both must be valid IPv4 addresses (4 octets)
+            if len(octets1) != 4 or len(octets2) != 4:
+                return False
+
+            # Compare first two octets for local network match
+            return octets1[0] == octets2[0] and octets1[1] == octets2[1]
+        except (AttributeError, IndexError, ValueError):
+            # If IP parsing fails, deny access for security
+            return False
+
+    def revoke_token(self, token: str) -> bool:
         """Revoke a token immediately."""
         try:
             token_id = token.split(".")[0]
@@ -149,15 +203,16 @@ class UploadTokenManager:
             pass
         return False
 
-    def _create_signature(self, payload):
+    def _create_signature(self, payload: dict[str, Any]) -> str:
         """Create HMAC signature for a payload."""
         payload_str = json.dumps(payload, sort_keys=True)
-        signature = hmac.new(
-            self.secret_key.encode(), payload_str.encode(), hashlib.sha256
+        return hmac.new(
+            self.secret_key.encode(),
+            payload_str.encode(),
+            hashlib.sha256,
         ).hexdigest()
-        return signature
 
-    def _cleanup_expired_tokens(self):
+    def _cleanup_expired_tokens(self) -> None:
         """Remove expired tokens from memory."""
         current_time = time.time()
         expired = [
@@ -169,33 +224,36 @@ class UploadTokenManager:
             del self.active_tokens[token_id]
 
         if expired:
-            logger.info(f"Cleaned up {len(expired)} expired tokens")
+            logger.info("Cleaned up %d expired tokens", len(expired))
 
 
 # Global token manager instance
 token_manager = None
 
 
-def init_token_manager(app):
+def init_token_manager(app: Flask) -> UploadTokenManager:
     """Initialize the global token manager with app config."""
-    global token_manager
+    global token_manager  # noqa: PLW0603
 
     secret_key = app.config.get("SECRET_KEY", secrets.token_hex(32))
     token_lifetime = app.config.get("UPLOAD_TOKEN_LIFETIME", 3600)  # 1 hour default
 
     token_manager = UploadTokenManager(
-        secret_key=secret_key, token_lifetime=token_lifetime
+        secret_key=secret_key,
+        token_lifetime=token_lifetime,
     )
 
     logger.info(
-        f"Upload token manager initialized with {token_lifetime}s token lifetime"
+        "Upload token manager initialized with %ds token lifetime",
+        token_lifetime,
     )
     return token_manager
 
 
-def require_upload_token(f):
-    """
-    Decorator to require a valid upload token for a route.
+def require_upload_token(
+    f: Callable[..., FlaskRouteReturn],
+) -> Callable[..., FlaskRouteReturn]:
+    """Require a valid upload token for a route.
 
     The token can be provided in:
     - Query parameter: ?token=xxx
@@ -204,7 +262,7 @@ def require_upload_token(f):
     """
 
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: Any, **kwargs: Any) -> FlaskRouteReturn:  # noqa: ANN401
         # Get token from various sources
         token_from_args = request.args.get("token")
         token_from_headers = request.headers.get("X-Upload-Token")
@@ -212,33 +270,31 @@ def require_upload_token(f):
 
         token = token_from_args or token_from_headers or token_from_form
 
-        logger.info(f"Token validation attempt from {request.remote_addr}")
-        logger.info(f"Token from args: {'Yes' if token_from_args else 'No'}")
-        logger.info(f"Token from headers: {'Yes' if token_from_headers else 'No'}")
-        logger.info(f"Token from form: {'Yes' if token_from_form else 'No'}")
-        logger.info(f"Final token: {'Yes' if token else 'No'}")
+        logger.info("Token validation attempt from %s", request.remote_addr)
+        logger.info("Token from args: %s", "Yes" if token_from_args else "No")
+        logger.info("Token from headers: %s", "Yes" if token_from_headers else "No")
+        logger.info("Token from form: %s", "Yes" if token_from_form else "No")
+        logger.info("Final token: %s", "Yes" if token else "No")
         if token:
-            logger.info(f"Token preview: {token[:20]}...")
+            logger.info("Token preview: %s...", token[:20])
 
         if not token:
-            logger.warning(f"No token provided from {request.remote_addr}")
+            logger.warning("No token provided from %s", request.remote_addr)
             return jsonify({"error": "Upload token required"}), 401
 
         # Get client IP
         client_ip = request.remote_addr
 
         # Ensure token manager is initialized
-        global token_manager
+        global token_manager  # noqa: PLW0603
         if token_manager is None:
-            from flask import current_app
-
             token_manager = init_token_manager(current_app)
 
         # Validate token
         is_valid, error = token_manager.validate_token(token, client_ip)
 
         if not is_valid:
-            logger.warning(f"Invalid token attempt from {client_ip}: {error}")
+            logger.warning("Invalid token attempt from %s: %s", client_ip, error)
             return jsonify({"error": error or "Invalid token"}), 401
 
         # Token is valid, proceed with the request
@@ -247,7 +303,7 @@ def require_upload_token(f):
     return decorated_function
 
 
-def generate_upload_url(base_url, token):
+def generate_upload_url(base_url: str, token: str) -> str:
     """Generate a secure upload URL with embedded token."""
     return f"{base_url}?token={token}"
 
@@ -255,8 +311,9 @@ def generate_upload_url(base_url, token):
 class RateLimiter:
     """Simple rate limiter for upload endpoints."""
 
-    def __init__(self):
-        self.requests = defaultdict(list)
+    def __init__(self) -> None:
+        """Initialize the rate limiter with default upload limits."""
+        self.requests: defaultdict[str, list[datetime]] = defaultdict(list)
         self.upload_limits = {
             "per_minute": 10,
             "per_hour": 100,
@@ -264,9 +321,9 @@ class RateLimiter:
             "max_files_per_request": 10,
         }
 
-    def is_allowed(self, identifier):
+    def is_allowed(self, identifier: str) -> tuple[bool, str | None]:
         """Check if a request is allowed based on rate limits."""
-        now = datetime.now()
+        now = datetime.now()  # noqa: DTZ005
         minute_ago = now - timedelta(minutes=1)
         hour_ago = now - timedelta(hours=1)
 
@@ -298,22 +355,25 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-def rate_limit_upload(f):
-    """Decorator to apply rate limiting to upload endpoints."""
+def rate_limit_upload(
+    f: Callable[..., FlaskRouteReturn],
+) -> Callable[..., FlaskRouteReturn]:
+    """Apply rate limiting to upload endpoints."""
 
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: Any, **kwargs: Any) -> FlaskRouteReturn:  # noqa: ANN401
         # Use token or IP as identifier
         identifier = (
             request.args.get("token")
             or request.headers.get("X-Upload-Token")
             or request.remote_addr
+            or "unknown"
         )
 
         is_allowed, error = rate_limiter.is_allowed(identifier)
 
         if not is_allowed:
-            logger.warning(f"Rate limit exceeded for {identifier}: {error}")
+            logger.warning("Rate limit exceeded for %s: %s", identifier, error)
             return jsonify({"error": error}), 429  # Too Many Requests
 
         return f(*args, **kwargs)
