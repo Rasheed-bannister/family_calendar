@@ -17,21 +17,21 @@ const Calendar = (function () {
   let selectedCell = null;
   let inactivityTimer = null;
   let monthInactivityTimer = null;
-  const INACTIVITY_TIMEOUT = 60 * 1000; // 1 minute
-  const MONTH_INACTIVITY_TIMEOUT = 300 * 1000; // 5 minutes for month navigation
+  let INACTIVITY_TIMEOUT = 60 * 1000; // Default: 1 minute - will be loaded from config
+  let MONTH_INACTIVITY_TIMEOUT = 300 * 1000; // Default: 5 minutes for month navigation - will be loaded from config
   let currentDisplayedMonth;
   let currentDisplayedYear;
 
   // Google Calendar update checking
   let googleUpdateTimer = null;
   let UPDATE_CHECK_INTERVAL = 300000; // Default: Check every 5 minutes, will be loaded from config
-  const INITIAL_CHECK_INTERVAL = 5000; // Check every 5 seconds initially until task completes
+  let INITIAL_CHECK_INTERVAL = 5000; // Default: Check every 5 seconds initially - will be loaded from config
   let FORCE_REFRESH_INTERVAL = 600000; // Default: Force refresh every 10 minutes, will be loaded from config
   let updateCheckEnabled = true; // Control flag
   let initialLoadComplete = false; // Flag to track whether we've completed initial load
   let inDebounce = false; // Debounce flag
   let initialLoadTimeout = null; // Timeout to force refresh if initial load takes too long
-  const INITIAL_LOAD_TIMEOUT = 15000; // Force refresh after 15 seconds if no update received
+  let INITIAL_LOAD_TIMEOUT = 15000; // Default: Force refresh after 15 seconds - will be loaded from config
   let lastForceRefreshTime = Date.now(); // Track when we last forced a refresh
 
   // Private methods
@@ -117,7 +117,10 @@ const Calendar = (function () {
 
       // Trigger manual refresh with timeout
       const refreshTimeoutController = new AbortController();
-      const refreshTimeoutId = setTimeout(() => refreshTimeoutController.abort(), 5000);
+      const refreshTimeoutId = setTimeout(
+        () => refreshTimeoutController.abort(),
+        (window.appConfig?.timeouts?.network_request_seconds || 5) * 1000
+      );
 
       fetch(`/google/refresh-calendar/${currentDisplayedYear}/${currentDisplayedMonth}`, {
         method: "GET",
@@ -152,7 +155,10 @@ const Calendar = (function () {
 
     // Create fetch request with 5-second timeout
     const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 5000);
+    const timeoutId = setTimeout(
+      () => timeoutController.abort(),
+      (window.appConfig?.timeouts?.network_request_seconds || 5) * 1000
+    );
 
     fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`, {
       signal: timeoutController.signal,
@@ -243,7 +249,8 @@ const Calendar = (function () {
 
         // Log different messages based on the error type
         if (err.name === "AbortError") {
-          console.error("Calendar API request timed out after 5 seconds");
+          const timeoutSeconds = window.appConfig?.timeouts?.network_request_seconds || 5;
+          console.error(`Calendar API request timed out after ${timeoutSeconds} seconds`);
         } else if (err instanceof TypeError && err.message === "Failed to fetch") {
           console.error(
             "Error checking for Google Calendar updates: Could not connect to the server"
@@ -315,8 +322,8 @@ const Calendar = (function () {
   let touchStartY = 0;
   let touchEndX = 0;
   let touchEndY = 0;
-  const MIN_SWIPE_DISTANCE = 50;
-  const MAX_VERTICAL_DRIFT = 100;
+  let MIN_SWIPE_DISTANCE = 50; // Default: minimum swipe distance - will be loaded from config
+  let MAX_VERTICAL_DRIFT = 100; // Default: maximum vertical drift - will be loaded from config
 
   function setupEventListeners() {
     if (!calendar) return;
@@ -460,10 +467,23 @@ const Calendar = (function () {
       const response = await fetch("/api/config");
       const config = await response.json();
 
+      // Store config globally for timeout access
+      window.appConfig = config;
+
       // Update sync intervals from config
       const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;
       UPDATE_CHECK_INTERVAL = syncIntervalMinutes * 60 * 1000; // Convert to milliseconds
       FORCE_REFRESH_INTERVAL = UPDATE_CHECK_INTERVAL * 2; // Force refresh at 2x sync interval
+
+      // Update timeout values from config
+      INACTIVITY_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 60) * 1000;
+      MONTH_INACTIVITY_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 60) * 5 * 1000; // 5x modal timeout
+      INITIAL_CHECK_INTERVAL = (config.polling?.chores_check_interval_seconds || 10) * 500; // Half of chores check interval
+      INITIAL_LOAD_TIMEOUT = config.timeouts?.modal_auto_close_seconds || 15;
+
+      // Update swipe gesture settings
+      MIN_SWIPE_DISTANCE = 50; // Keep fixed for touch usability
+      MAX_VERTICAL_DRIFT = 100; // Keep fixed for touch usability
     } catch (error) {
       console.error("Failed to load calendar config:", error);
       // Keep default values if config load fails

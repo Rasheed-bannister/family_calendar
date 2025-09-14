@@ -13,7 +13,7 @@ const Modal = (function () {
   let modalLocation;
   let modalDescription;
   let modalCloseTimer = null;
-  const MODAL_TIMEOUT = 15000; // 15 seconds
+  let MODAL_TIMEOUT = 15000; // Default: 15 seconds - will be loaded from config
 
   // Private methods
   function closeModal() {
@@ -23,9 +23,29 @@ const Modal = (function () {
     // Modal closed
   }
 
+  // Load configuration from server
+  async function loadModalConfig() {
+    try {
+      const response = await fetch("/api/config");
+      const config = await response.json();
+
+      // Store config globally for access in other functions
+      window.appConfig = config;
+
+      // Update modal timeout from config
+      MODAL_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 15) * 1000;
+    } catch (error) {
+      console.error("Failed to load modal config:", error);
+      // Keep default values if config load fails
+    }
+  }
+
   // Public methods
   return {
-    init: function () {
+    init: async function () {
+      // Load configuration first
+      await loadModalConfig();
+
       // Initialize modal DOM elements
       eventModal = document.getElementById("event-modal");
       if (!eventModal) {
@@ -106,9 +126,10 @@ const Modal = (function () {
       const openModal = () => {
         addChoreModal.style.display = "block";
         // Focus the first input field when the modal opens
+        const animationDuration = window.appConfig?.ui?.animation_duration_ms || 300;
         setTimeout(() => {
           document.getElementById("chore-title").focus();
-        }, 300);
+        }, animationDuration);
       };
 
       const closeModal = () => {
@@ -207,7 +228,8 @@ const Modal = (function () {
                 modalContent.classList.remove("keyboard-visible");
                 document.body.classList.remove("keyboard-focus-active");
               }
-            }, 100);
+              const animationDelay = (window.appConfig?.ui?.animation_duration_ms || 300) / 3; // One-third of animation duration
+            }, animationDelay);
           });
 
           // Add touch event to explicitly trigger virtual keyboard on mobile
@@ -276,12 +298,16 @@ const Modal = (function () {
             LoadingIndicator.showToast(
               `Error adding chore: ${errorData.message || "Unknown error"}`,
               "error",
-              3000
+              window.appConfig?.timeouts?.toast_duration_ms || 3000
             );
           }
         } catch (error) {
           console.error("Error submitting chore:", error);
-          LoadingIndicator.showToast("An error occurred while adding the chore.", "error", 3000);
+          LoadingIndicator.showToast(
+            "An error occurred while adding the chore.",
+            "error",
+            window.appConfig?.timeouts?.toast_duration_ms || 3000
+          );
         }
       });
       return true;

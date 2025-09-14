@@ -42,6 +42,24 @@ class Config:
             "slideshow_delay_seconds": 5,
         },
         "google": {"sync_interval_minutes": 3, "max_retry_attempts": 3},
+        "polling": {
+            "chores_interval_minutes": 1,
+            "chores_check_interval_seconds": 10,
+            "calendar_sync_interval_minutes": 3,
+            "weather_update_interval_minutes": 5,
+            "pir_status_check_interval_seconds": 5,
+        },
+        "slideshow": {
+            "interval_seconds": 30,
+            "preload_seconds": 20,
+            "network_timeout_seconds": 5,
+        },
+        "timeouts": {
+            "modal_auto_close_seconds": 15,
+            "network_request_seconds": 5,
+            "movement_throttle_ms": 1000,
+            "toast_duration_ms": 3000,
+        },
         "ui": {
             "show_loading_indicators": False,
             "show_pir_feedback": False,

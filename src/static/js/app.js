@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   let longInactivityMode = false; // Track if we're in long inactivity mode
   let inactivityCheckInterval = null;
   let lastMovementTime = 0;
-  const MOVEMENT_THROTTLE = 1000; // Only register movement once per second
+  let MOVEMENT_THROTTLE = 1000; // Default: Only register movement once per second
   const DEBUG_MODE = false; // Set to false in production
 
   // Load configuration from server
@@ -56,8 +56,15 @@ document.addEventListener("DOMContentLoaded", async function () {
       NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
       SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
 
+      // Update polling intervals from config
+      CHORE_POLLING_INTERVAL = (config.polling?.chores_interval_minutes || 1) * 60 * 1000;
+      CHORE_CHECK_UPDATE_INTERVAL = (config.polling?.chores_check_interval_seconds || 10) * 1000;
+
+      // Update timeout values from config
+      MOVEMENT_THROTTLE = config.timeouts?.movement_throttle_ms || 1000;
+
       if (DEBUG_MODE) {
-        console.log("Loaded inactivity config:", {
+        console.log("Loaded app config:", {
           DAY_INACTIVITY_TIMEOUT,
           NIGHT_INACTIVITY_TIMEOUT,
           DAY_BRIGHTNESS_REDUCTION,
@@ -65,6 +72,9 @@ document.addEventListener("DOMContentLoaded", async function () {
           NIGHT_START_HOUR,
           NIGHT_END_HOUR,
           SLIDESHOW_START_DELAY,
+          CHORE_POLLING_INTERVAL,
+          CHORE_CHECK_UPDATE_INTERVAL,
+          MOVEMENT_THROTTLE,
         });
       }
     } catch (error) {
@@ -93,13 +103,13 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Initialize core components first
   const componentsStatus = {
     loadingIndicator: await LoadingIndicator.init(),
-    modal: Modal.init(), // This initializes the event modal
+    modal: await Modal.init(), // This initializes the event modal
     addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
     calendar: await Calendar.init(),
     dailyView: await DailyView.init(),
-    weather: Weather.init(),
+    weather: await Weather.init(),
     slideshow: await Slideshow.init(),
-    chores: Chores.init(),
+    chores: await Chores.init(),
   };
 
   // Start slideshow immediately after initialization - it should run continuously
@@ -604,9 +614,9 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 });
 
-// Chore polling mechanism
-const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full refresh cycle
-const CHORE_CHECK_UPDATE_INTERVAL = 10000; // 10 seconds: How often to check status after triggering
+// Configuration-driven chore polling mechanism
+let CHORE_POLLING_INTERVAL = 60000; // Default 1 minute: How often to trigger a full refresh cycle
+let CHORE_CHECK_UPDATE_INTERVAL = 10000; // Default 10 seconds: How often to check status after triggering
 let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
 
 // Function to dynamically update only the chores section

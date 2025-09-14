@@ -5,14 +5,15 @@
 const Slideshow = (function () {
   // Private variables
   let slideshowInterval = null;
-  const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
+  let SLIDESHOW_INTERVAL_MS = 30000; // Default: Change photo every 30 seconds
+  let PRELOAD_DELAY_MS = 20000; // Default: Start preloading 20 seconds before transition
+  let NETWORK_TIMEOUT_MS = 5000; // Default: Network timeout for photo fetching
   let currentPhotoUrl = null;
   let isPreloading = false;
   let isRunning = false;
   let backgroundElement = null;
   let nextBackgroundElement = null;
   let preloadTimer = null;
-  const PRELOAD_DELAY_MS = 20000; // Start preloading 10 seconds before transition
 
   // Private methods
   async function fetchNextPhotoUrl(maxAttempts = 5) {
@@ -22,7 +23,7 @@ const Slideshow = (function () {
       try {
         // Add timeout to prevent slideshow from being affected by server network issues
         const timeoutController = new AbortController();
-        timeoutId = setTimeout(() => timeoutController.abort(), 5000); // 5 second timeout for local network
+        timeoutId = setTimeout(() => timeoutController.abort(), NETWORK_TIMEOUT_MS);
 
         const response = await fetch("/api/random-photo", {
           signal: timeoutController.signal,
@@ -60,7 +61,7 @@ const Slideshow = (function () {
         if (timeoutId) clearTimeout(timeoutId);
         if (error.name === "AbortError") {
           console.error(
-            "Slideshow photo fetch timed out after 5 seconds (attempt",
+            `Slideshow photo fetch timed out after ${NETWORK_TIMEOUT_MS / 1000} seconds (attempt`,
             attempt + 1 + ")"
           );
         } else {
@@ -483,9 +484,28 @@ const Slideshow = (function () {
     currentPhotoUrl = null;
   }
 
+  // Load slideshow configuration from server
+  async function loadSlideshowConfig() {
+    try {
+      const response = await fetch("/api/config");
+      const config = await response.json();
+
+      // Update slideshow timing from config
+      SLIDESHOW_INTERVAL_MS = (config.slideshow?.interval_seconds || 30) * 1000;
+      PRELOAD_DELAY_MS = (config.slideshow?.preload_seconds || 20) * 1000;
+      NETWORK_TIMEOUT_MS = (config.slideshow?.network_timeout_seconds || 5) * 1000;
+    } catch (error) {
+      console.error("Failed to load slideshow config:", error);
+      // Keep default values if config load fails
+    }
+  }
+
   // Public methods
   return {
     init: async function () {
+      // Load configuration from server first
+      await loadSlideshowConfig();
+
       // Ensure elements are created before setting running state
       createBackgroundElements();
 

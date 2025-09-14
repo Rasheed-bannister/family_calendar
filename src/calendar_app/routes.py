@@ -348,18 +348,23 @@ def _check_calendar_task_status(calendar_task_id: str) -> tuple[str, bool, bool]
     return calendar_task_status, events_changed, should_trigger_refresh
 
 
-def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
+def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool, bool]:
     """Check chores task status and return status info.
 
     Returns:
-        tuple: (task_status, chores_changed)
+        tuple: (task_status, chores_changed, should_trigger_refresh)
     """
+    import time
+
+    from src.config import get_config
+
     chores_task_info = background_tasks.get(chores_task_id)
     if not chores_task_info:
-        return "not_tracked", False
+        return "not_tracked", False, True
 
     chores_task_status = chores_task_info["status"]
     chores_changed = False
+    should_trigger_refresh = False
 
     if chores_task_status == "complete":
         chores_changed = chores_task_info.get("chores_changed", False)
@@ -367,7 +372,17 @@ def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
             chores_task_info["chores_changed"] = False
             chores_task_info["updated"] = False
 
-    return chores_task_status, chores_changed
+        # Check if we need to trigger a refresh due to time elapsed
+        sync_interval_seconds = (
+            get_config().get("polling.chores_interval_minutes", 1) * 60
+        )
+        last_update_time = chores_task_info.get("last_update_time", 0)
+        current_time = time.time()
+        if current_time - last_update_time > sync_interval_seconds:
+            should_trigger_refresh = True
+            chores_task_info["status"] = "pending_refresh"
+
+    return chores_task_status, chores_changed, should_trigger_refresh
 
 
 def _trigger_calendar_refresh_if_needed(
@@ -389,6 +404,21 @@ def _trigger_calendar_refresh_if_needed(
     # Background refresh triggered (normal operation)
 
 
+def _trigger_chores_refresh_if_needed(should_trigger_refresh: bool) -> None:
+    """Trigger background chores refresh if needed."""
+    if not should_trigger_refresh:
+        return
+
+    import threading
+
+    from src.google_integration.routes import fetch_google_tasks_background
+
+    tasks_thread = threading.Thread(target=fetch_google_tasks_background)
+    tasks_thread.daemon = True
+    tasks_thread.start()
+    # Background chores refresh triggered (normal operation)
+
+
 @calendar_bp.route("/check-updates/<int:year>/<int:month>")
 def check_updates(year: int, month: int):
     """API endpoint to check if the background task detected calendar or chore updates."""
@@ -400,7 +430,8 @@ def check_updates(year: int, month: int):
 
     # Initialize status variables
     updates_available = False
-    should_trigger_refresh = False
+    should_trigger_calendar_refresh = False
+    should_trigger_chores_refresh = False
 
     with google_fetch_lock:
         # Check calendar task status
@@ -410,15 +441,20 @@ def check_updates(year: int, month: int):
         if events_changed:
             updates_available = True
         if calendar_refresh_needed:
-            should_trigger_refresh = True
+            should_trigger_calendar_refresh = True
 
         # Check chores task status
-        chores_task_status, chores_changed = _check_chores_task_status(chores_task_id)
+        chores_task_status, chores_changed, chores_refresh_needed = (
+            _check_chores_task_status(chores_task_id)
+        )
         if chores_changed:
             updates_available = True
+        if chores_refresh_needed:
+            should_trigger_chores_refresh = True
 
-    # Trigger refresh outside of lock
-    _trigger_calendar_refresh_if_needed(should_trigger_refresh, month, year)
+    # Trigger refreshes outside of lock
+    _trigger_calendar_refresh_if_needed(should_trigger_calendar_refresh, month, year)
+    _trigger_chores_refresh_if_needed(should_trigger_chores_refresh)
 
     return jsonify(
         {
@@ -427,6 +463,7 @@ def check_updates(year: int, month: int):
             "updates_available": updates_available,
             "events_changed": events_changed,
             "chores_changed": chores_changed,
-            "refresh_triggered": should_trigger_refresh,
+            "refresh_triggered": should_trigger_calendar_refresh
+            or should_trigger_chores_refresh,
         }
     )

@@ -11,7 +11,7 @@ const Chores = (function () {
   let mouseEndX = 0;
   let isMouseDown = false;
   let activeChoreItem = null;
-  const swipeThreshold = 60; // Minimum swipe distance to reveal delete button (matches button width)
+  let swipeThreshold = 60; // Default: Minimum swipe distance to reveal delete button - will be loaded from config
   let isPaused = false;
   let activeSwipedChore = null; // Track which chore is currently swiped
 
@@ -135,7 +135,8 @@ const Chores = (function () {
     const diffX = touchStartX - touchEndX;
 
     // If it's a short touch/tap (not a significant swipe)
-    if (Math.abs(diffX) < 30) {
+    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
+    if (Math.abs(diffX) < minTapThreshold) {
       // If we're tapping on a swiped item, don't toggle it
       if (choreItem.classList.contains("swiping")) {
         return;
@@ -152,7 +153,8 @@ const Chores = (function () {
     }
 
     // If it's a significant swipe left but not enough to fully reveal
-    if (diffX > 30 && diffX < swipeThreshold) {
+    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
+    if (diffX > minTapThreshold && diffX < swipeThreshold) {
       // Reset the transform
       choreTextContent.style.transform = "";
       choreItem.classList.remove("swiping");
@@ -272,7 +274,8 @@ const Chores = (function () {
     const diffX = mouseStartX - mouseEndX;
 
     // If it's just a click (not a significant drag)
-    if (Math.abs(diffX) < 30) {
+    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
+    if (Math.abs(diffX) < minTapThreshold) {
       // If we're clicking on a swiped item, don't toggle it
       if (!activeChoreItem.classList.contains("swiping")) {
         toggleChoreStatus(activeChoreItem);
@@ -281,7 +284,8 @@ const Chores = (function () {
     // Only process swipe actions for completed chores
     else if (canBeDeleted(activeChoreItem)) {
       // If it's a significant drag left but not enough to fully reveal
-      if (diffX > 30 && diffX < swipeThreshold) {
+      const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
+      if (diffX > minTapThreshold && diffX < swipeThreshold) {
         // Reset the transform
         choreTextContent.style.transform = "";
         activeChoreItem.classList.remove("swiping");
@@ -298,7 +302,10 @@ const Chores = (function () {
         activeChoreItem.classList.remove("swiping");
         activeSwipedChore = null;
       }
-    } else if (!canBeDeleted(activeChoreItem) && Math.abs(diffX) >= 30) {
+    } else if (
+      !canBeDeleted(activeChoreItem) &&
+      Math.abs(diffX) >= (window.appConfig?.ui?.min_tap_threshold || 30)
+    ) {
       // If dragged a non-deletable item, ensure it resets
       choreTextContent.style.transform = "";
     }
@@ -365,13 +372,15 @@ const Chores = (function () {
       choreItem.style.height = "0";
       choreItem.style.margin = "0";
       choreItem.style.padding = "0";
-      choreItem.style.transition = "opacity 0.3s, height 0.3s, margin 0.3s, padding 0.3s";
+      const animationDuration = window.appConfig?.ui?.animation_duration_ms || 300;
+      const animationSeconds = animationDuration / 1000; // Convert to seconds
+      choreItem.style.transition = `opacity ${animationSeconds}s, height ${animationSeconds}s, margin ${animationSeconds}s, padding ${animationSeconds}s`;
 
       // Remove from DOM after animation completes
       setTimeout(() => {
         choreItem.remove();
         activeSwipedChore = null;
-      }, 300);
+      }, animationDuration);
     }
   }
 
@@ -410,9 +419,29 @@ const Chores = (function () {
     // Chores component initialized with trash button functionality
   }
 
+  // Load configuration from server
+  async function loadChoresConfig() {
+    try {
+      const response = await fetch("/api/config");
+      const config = await response.json();
+
+      // Store config globally for gesture access
+      window.appConfig = config;
+
+      // Update swipe threshold from config (keep reasonable default)
+      swipeThreshold = 60; // Keep fixed for usability
+    } catch (error) {
+      console.error("Failed to load chores config:", error);
+      // Keep default values if config load fails
+    }
+  }
+
   // Public methods
   return {
-    init: function () {
+    init: async function () {
+      // Load configuration first
+      await loadChoresConfig();
+
       choresContainer = document.querySelector(".chores-list");
       if (!choresContainer) {
         // Chores component: .chores-list element not found during init

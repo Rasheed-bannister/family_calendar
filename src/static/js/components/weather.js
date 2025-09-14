@@ -7,8 +7,8 @@ const Weather = (function () {
   let weatherContainer;
   let weatherUpdateTimer = null;
   let timeUpdateTimer = null;
-  const WEATHER_UPDATE_INTERVAL = 300000; // Check for weather updates every 5 minutes (300000ms)
-  const TIME_UPDATE_INTERVAL = 60000; // Update time display every 60 seconds (60000ms)
+  let WEATHER_UPDATE_INTERVAL = 300000; // Default: Check for weather updates every 5 minutes - will be loaded from config
+  let TIME_UPDATE_INTERVAL = 60000; // Default: Update time display every 60 seconds - will be loaded from config
   let lastWeatherUpdate = new Date().getTime();
 
   // Private methods
@@ -128,9 +128,27 @@ const Weather = (function () {
     });
   }
 
+  // Load configuration from server
+  async function loadWeatherConfig() {
+    try {
+      const response = await fetch("/api/config");
+      const config = await response.json();
+
+      // Update weather timing from config
+      WEATHER_UPDATE_INTERVAL = (config.polling?.weather_update_interval_minutes || 5) * 60 * 1000;
+      TIME_UPDATE_INTERVAL = 60000; // Keep fixed at 1 minute for time display
+    } catch (error) {
+      console.error("Failed to load weather config:", error);
+      // Keep default values if config load fails
+    }
+  }
+
   // Public methods
   return {
-    init: function () {
+    init: async function () {
+      // Load configuration first
+      await loadWeatherConfig();
+
       weatherContainer = document.querySelector(".weather-container");
       if (!weatherContainer) {
         console.error("Weather component: weather-container element not found!");

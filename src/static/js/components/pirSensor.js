@@ -15,9 +15,9 @@ const PIRSensor = (function () {
   let config = null;
   let reconnectTimeout = null;
   let reconnectAttempts = 0;
-  const MAX_RECONNECT_ATTEMPTS = 10;
+  let MAX_RECONNECT_ATTEMPTS = 10; // Default: max reconnect attempts - will be loaded from config
 
-  const STATUS_CHECK_INTERVAL = 5000; // Check status every 5 seconds
+  let STATUS_CHECK_INTERVAL = 5000; // Default: Check status every 5 seconds - will be loaded from config
   const ACTIVITY_ENDPOINT = "/pir/activity";
   const STATUS_ENDPOINT = "/pir/status";
   const START_ENDPOINT = "/pir/start";
@@ -104,19 +104,22 @@ const PIRSensor = (function () {
     }, 10);
 
     // Hide after delay
-    motionFeedbackTimeout = setTimeout(() => {
-      if (visualIndicator) {
-        visualIndicator.style.display = "none";
-        visualIndicator.classList.remove("motion-detected");
-      }
+    motionFeedbackTimeout = setTimeout(
+      () => {
+        if (visualIndicator) {
+          visualIndicator.style.display = "none";
+          visualIndicator.classList.remove("motion-detected");
+        }
 
-      // Remove ripple
-      if (ripple && document.body.contains(ripple)) {
-        document.body.removeChild(ripple);
-        ripple = null; // Clear reference
-      }
-      motionFeedbackTimeout = null; // Clear timeout reference
-    }, 2000);
+        // Remove ripple
+        if (ripple && document.body.contains(ripple)) {
+          document.body.removeChild(ripple);
+          ripple = null; // Clear reference
+        }
+        motionFeedbackTimeout = null; // Clear timeout reference
+      },
+      config?.animation_duration * 6 || 2000
+    ); // 6x animation duration for motion feedback
   }
 
   async function loadConfiguration() {
@@ -129,6 +132,10 @@ const PIRSensor = (function () {
           show_pir_feedback: fullConfig.ui?.show_pir_feedback ?? true,
           animation_duration: fullConfig.ui?.animation_duration_ms ?? 300,
         };
+
+        // Update timing values from config
+        STATUS_CHECK_INTERVAL = (fullConfig.polling?.pir_status_check_interval_seconds || 5) * 1000;
+        MAX_RECONNECT_ATTEMPTS = 10; // Keep fixed for stability
       } else {
         // Use defaults
         config = {
