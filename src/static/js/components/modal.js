@@ -220,6 +220,7 @@ const Modal = (function () {
 
           input.addEventListener("blur", () => {
             // Remove class if no other inputs are focused
+            const animationDelay = (window.appConfig?.ui?.animation_duration_ms || 300) / 3; // One-third of animation duration
             setTimeout(() => {
               if (
                 !modalContent.contains(document.activeElement) ||
@@ -228,7 +229,6 @@ const Modal = (function () {
                 modalContent.classList.remove("keyboard-visible");
                 document.body.classList.remove("keyboard-focus-active");
               }
-              const animationDelay = (window.appConfig?.ui?.animation_duration_ms || 300) / 3; // One-third of animation duration
             }, animationDelay);
           });
 

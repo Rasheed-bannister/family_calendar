@@ -133,9 +133,9 @@ const Chores = (function () {
 
     // Always allow toggling status via tap regardless of completion state
     const diffX = touchStartX - touchEndX;
+    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
 
     // If it's a short touch/tap (not a significant swipe)
-    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
     if (Math.abs(diffX) < minTapThreshold) {
       // If we're tapping on a swiped item, don't toggle it
       if (choreItem.classList.contains("swiping")) {
@@ -153,7 +153,6 @@ const Chores = (function () {
     }
 
     // If it's a significant swipe left but not enough to fully reveal
-    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
     if (diffX > minTapThreshold && diffX < swipeThreshold) {
       // Reset the transform
       choreTextContent.style.transform = "";
@@ -272,9 +271,9 @@ const Chores = (function () {
 
     // Calculate swipe distance
     const diffX = mouseStartX - mouseEndX;
+    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
 
     // If it's just a click (not a significant drag)
-    const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
     if (Math.abs(diffX) < minTapThreshold) {
       // If we're clicking on a swiped item, don't toggle it
       if (!activeChoreItem.classList.contains("swiping")) {
@@ -284,7 +283,6 @@ const Chores = (function () {
     // Only process swipe actions for completed chores
     else if (canBeDeleted(activeChoreItem)) {
       // If it's a significant drag left but not enough to fully reveal
-      const minTapThreshold = window.appConfig?.ui?.min_tap_threshold || 30;
       if (diffX > minTapThreshold && diffX < swipeThreshold) {
         // Reset the transform
         choreTextContent.style.transform = "";
