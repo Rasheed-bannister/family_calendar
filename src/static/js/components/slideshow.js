@@ -6,7 +6,6 @@ const Slideshow = (function () {
   // Private variables
   let slideshowInterval = null;
   const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
-  let nextPhotoUrl = null;
   let currentPhotoUrl = null;
   let isPreloading = false;
   let isRunning = false;
@@ -32,10 +31,10 @@ const Slideshow = (function () {
             return data.url;
           }
           // If it's the same, try again (unless it's our last attempt)
+          // On last attempt, return it anyway to prevent infinite loop
           if (attempt < maxAttempts - 1) {
             continue;
           } else {
-            // On last attempt, return it anyway to prevent infinite loop
             console.warn(
               "Could not find different image after",
               maxAttempts,
@@ -108,13 +107,66 @@ const Slideshow = (function () {
     }
   }
 
+  function setupPortraitDisplay(element, imageUrl, imgWidth, imgHeight) {
+    // Remove any existing overlays
+    const existingBlur = element.querySelector(".portrait-blur-bg");
+    const existingSharp = element.querySelector(".portrait-sharp");
+    if (existingBlur) existingBlur.remove();
+    if (existingSharp) existingSharp.remove();
+
+    // Calculate the width needed to fit the image height to viewport
+    const viewportHeight = window.innerHeight;
+    const imageAspectRatio = imgWidth / imgHeight;
+    const displayedWidth = imageAspectRatio * viewportHeight * (1 / 0.75);
+
+    // Create blurred background layer (fills entire viewport)
+    const blurBg = document.createElement("div");
+    blurBg.className = "portrait-blur-bg";
+    blurBg.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url(${imageUrl});
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      filter: blur(20px) brightness(0.6);
+      transform: scale(1.1);
+      z-index: 0;
+    `;
+    element.appendChild(blurBg);
+
+    // Create sharp center overlay element
+    const sharpOverlay = document.createElement("div");
+    sharpOverlay.className = "portrait-sharp";
+    sharpOverlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: ${displayedWidth}px;
+      height: 100%;
+      background-image: url(${imageUrl});
+      background-size: 100% 133.33%;
+      background-position: center top;
+      background-repeat: no-repeat;
+      z-index: 1;
+    `;
+    element.appendChild(sharpOverlay);
+
+    return { blurBg, sharpOverlay };
+  }
+
   function preloadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
         img.onload = null;
         img.onerror = null;
-        resolve(url);
+        // Return both URL and dimensions for aspect ratio calculation
+        resolve({ url, width: img.width, height: img.height });
       };
       img.onerror = () => {
         img.onload = null;
@@ -125,7 +177,60 @@ const Slideshow = (function () {
     });
   }
 
-  function switchBackground(url) {
+  function getOptimalBackgroundStyle(imgWidth, imgHeight) {
+    const viewportRatio = window.innerWidth / window.innerHeight;
+    const imageRatio = imgWidth / imgHeight;
+
+    // Check if viewport is landscape (wider than tall)
+    const isViewportLandscape = viewportRatio > 1.2;
+    // Check if image is portrait (height is 10% larger than width)
+    // This means width/height < 1/1.1 = 0.909...
+    const isImagePortrait = imageRatio < 1 / 1.1;
+
+    // For portrait images on landscape screens, use special handling
+    if (isViewportLandscape && isImagePortrait) {
+      return {
+        size: "auto 100%", // Fit to viewport height, auto width
+        position: "center top", // Center horizontally, align to top
+        needsBlurredBackground: true, // Use blurred background fill
+        isPortraitOptimized: true,
+        cropTop75Percent: true, // Flag to indicate top 75% cropping
+      };
+    }
+
+    // For landscape images or matching aspect ratios, use cover
+    return {
+      size: "cover",
+      position: "center",
+      needsBlurredBackground: false,
+      isPortraitOptimized: false,
+    };
+  }
+
+  // Calculate intelligent focus point based on image aspect ratio
+  function getIntelligentFocusPoint(imgWidth, imgHeight) {
+    const imageRatio = imgWidth / imgHeight;
+
+    // Default focus points based on common photo compositions
+    const focusPresets = {
+      extremePortrait: "center 25%", // Focus on upper quarter (faces)
+      tallPortrait: "center 30%", // Focus on upper third
+      portrait: "center 35%", // Focus on upper-middle
+      square: "center", // Center for square images
+      landscape: "center", // Center for landscape
+      panoramic: "center", // Center for panoramic
+    };
+
+    // Determine image type
+    if (imageRatio < 0.5) return focusPresets.extremePortrait;
+    if (imageRatio < 0.7) return focusPresets.tallPortrait;
+    if (imageRatio < 0.9) return focusPresets.portrait;
+    if (imageRatio < 1.1) return focusPresets.square;
+    if (imageRatio < 2.0) return focusPresets.landscape;
+    return focusPresets.panoramic;
+  }
+
+  function switchBackground(url, imgWidth, imgHeight) {
     if (!url || !isRunning) return;
 
     // Skip transition if it's the same as current image
@@ -135,6 +240,12 @@ const Slideshow = (function () {
 
     // Update current photo URL tracking
     currentPhotoUrl = url;
+
+    // Determine optimal display style based on image and viewport aspect ratios
+    const displayStyle = getOptimalBackgroundStyle(
+      imgWidth || window.innerWidth,
+      imgHeight || window.innerHeight
+    );
 
     // Critical: Wait for image to be fully decoded before starting transition
     const testImg = new Image();
@@ -147,8 +258,31 @@ const Slideshow = (function () {
         .then(() => {
           if (!isRunning) return;
 
-          // Set the new image on the front element AFTER it's decoded
-          nextBackgroundElement.style.backgroundImage = `url(${url})`;
+          // Apply appropriate background style based on aspect ratio
+          if (displayStyle.needsBlurredBackground && displayStyle.cropTop75Percent) {
+            // Portrait image - clear main background and use layers
+            nextBackgroundElement.style.backgroundImage = "";
+            nextBackgroundElement.style.filter = "none";
+            nextBackgroundElement.style.transform = "translateZ(0)";
+
+            // Setup portrait display with blurred background and sharp center
+            setupPortraitDisplay(nextBackgroundElement, url, imgWidth, imgHeight);
+          } else {
+            // Standard landscape image - remove any portrait layers
+            const existingBlur = nextBackgroundElement.querySelector(".portrait-blur-bg");
+            const existingSharp = nextBackgroundElement.querySelector(".portrait-sharp");
+            if (existingBlur) existingBlur.remove();
+            if (existingSharp) existingSharp.remove();
+
+            // Apply standard background
+            nextBackgroundElement.style.backgroundImage = `url(${url})`;
+            nextBackgroundElement.style.backgroundSize = displayStyle.size;
+            nextBackgroundElement.style.backgroundPosition = displayStyle.position;
+            nextBackgroundElement.style.backgroundRepeat = "no-repeat";
+            nextBackgroundElement.style.filter = "none";
+            nextBackgroundElement.style.transform = "translateZ(0) scale(1.0)";
+          }
+
           nextBackgroundElement.style.opacity = "0";
 
           // Single-step crossfade: fade out current, then fade in new
@@ -167,7 +301,32 @@ const Slideshow = (function () {
         .catch(() => {
           // Fallback if decode() not supported
           if (!isRunning) return;
-          nextBackgroundElement.style.backgroundImage = `url(${url})`;
+
+          // Apply same styling without decode (fallback path)
+          if (displayStyle.needsBlurredBackground && displayStyle.cropTop75Percent) {
+            // Portrait image - clear main background and use layers
+            nextBackgroundElement.style.backgroundImage = "";
+            nextBackgroundElement.style.filter = "none";
+            nextBackgroundElement.style.transform = "translateZ(0)";
+
+            // Setup portrait display with blurred background and sharp center
+            setupPortraitDisplay(nextBackgroundElement, url, imgWidth, imgHeight);
+          } else {
+            // Standard landscape image - remove any portrait layers
+            const existingBlur = nextBackgroundElement.querySelector(".portrait-blur-bg");
+            const existingSharp = nextBackgroundElement.querySelector(".portrait-sharp");
+            if (existingBlur) existingBlur.remove();
+            if (existingSharp) existingSharp.remove();
+
+            // Apply standard background
+            nextBackgroundElement.style.backgroundImage = `url(${url})`;
+            nextBackgroundElement.style.backgroundSize = displayStyle.size;
+            nextBackgroundElement.style.backgroundPosition = displayStyle.position;
+            nextBackgroundElement.style.backgroundRepeat = "no-repeat";
+            nextBackgroundElement.style.filter = "none";
+            nextBackgroundElement.style.transform = "translateZ(0) scale(1.0)";
+          }
+
           nextBackgroundElement.style.opacity = "0";
 
           requestAnimationFrame(() => {
@@ -201,19 +360,22 @@ const Slideshow = (function () {
     }, 2050); // Slightly longer to account for the 50ms delay
   }
 
+  // Store preloaded image data including dimensions
+  let nextPhotoData = null;
+
   async function cyclePhoto() {
     if (!isRunning || isPreloading) return;
 
     isPreloading = true;
 
     try {
-      // If we have a preloaded URL ready, use it
-      if (nextPhotoUrl) {
-        const urlToDisplay = nextPhotoUrl;
-        nextPhotoUrl = null;
+      // If we have a preloaded image ready, use it
+      if (nextPhotoData) {
+        const imageData = nextPhotoData;
+        nextPhotoData = null;
 
-        // Display the preloaded image
-        switchBackground(urlToDisplay);
+        // Display the preloaded image with dimension info
+        switchBackground(imageData.url, imageData.width, imageData.height);
 
         // Start preparing next image immediately but asynchronously
         prepareNextImage();
@@ -221,10 +383,10 @@ const Slideshow = (function () {
         // No preloaded image ready, fetch and load one now
         const url = await fetchNextPhotoUrl();
         if (url && isRunning) {
-          await preloadImage(url);
+          const imageData = await preloadImage(url);
           if (isRunning) {
             // Check again after async operation
-            switchBackground(url);
+            switchBackground(imageData.url, imageData.width, imageData.height);
 
             // Start preparing next image
             prepareNextImage();
@@ -241,16 +403,16 @@ const Slideshow = (function () {
   async function prepareNextImage() {
     // Non-blocking preparation of next image
     setTimeout(async () => {
-      if (!isRunning || nextPhotoUrl) return; // Already have one prepared
+      if (!isRunning || nextPhotoData) return; // Already have one prepared
 
       try {
         const url = await fetchNextPhotoUrl();
-        if (url && isRunning && !nextPhotoUrl) {
+        if (url && isRunning && !nextPhotoData) {
           // Double-check we still need it
-          await preloadImage(url);
+          const imageData = await preloadImage(url);
           if (isRunning) {
             // Final check after async operation
-            nextPhotoUrl = url;
+            nextPhotoData = imageData;
           }
         }
       } catch (error) {
@@ -271,6 +433,16 @@ const Slideshow = (function () {
       preloadTimer = null;
     }
 
+    // Clean up portrait overlay DOM elements
+    [backgroundElement, nextBackgroundElement].forEach((element) => {
+      if (element) {
+        const existingBlur = element.querySelector(".portrait-blur-bg");
+        const existingSharp = element.querySelector(".portrait-sharp");
+        if (existingBlur) existingBlur.remove();
+        if (existingSharp) existingSharp.remove();
+      }
+    });
+
     if (backgroundElement && backgroundElement.parentNode) {
       backgroundElement.parentNode.removeChild(backgroundElement);
       backgroundElement = null;
@@ -290,7 +462,7 @@ const Slideshow = (function () {
 
     isRunning = false;
     isPreloading = false;
-    nextPhotoUrl = null;
+    nextPhotoData = null;
     currentPhotoUrl = null;
   }
 
@@ -310,14 +482,40 @@ const Slideshow = (function () {
         // Fetch and load the first image
         const firstUrl = await fetchNextPhotoUrl();
         if (firstUrl) {
-          // Preload first image
-          await preloadImage(firstUrl);
+          // Preload first image with dimensions
+          const imageData = await preloadImage(firstUrl);
 
           // Set the first image directly without transition only after elements are verified
           if (backgroundElement && isRunning) {
-            backgroundElement.style.backgroundImage = `url(${firstUrl})`;
+            // Determine optimal display style for first image
+            const displayStyle = getOptimalBackgroundStyle(imageData.width, imageData.height);
+
+            // Apply the same styling logic as switchBackground
+            if (displayStyle.needsBlurredBackground && displayStyle.cropTop75Percent) {
+              // Portrait image - clear main background and use layers
+              backgroundElement.style.backgroundImage = "";
+              backgroundElement.style.filter = "none";
+              backgroundElement.style.transform = "translateZ(0)";
+
+              // Setup portrait display with blurred background and sharp center
+              setupPortraitDisplay(
+                backgroundElement,
+                imageData.url,
+                imageData.width,
+                imageData.height
+              );
+            } else {
+              // Standard landscape image
+              backgroundElement.style.backgroundImage = `url(${imageData.url})`;
+              backgroundElement.style.backgroundSize = displayStyle.size;
+              backgroundElement.style.backgroundPosition = displayStyle.position;
+              backgroundElement.style.backgroundRepeat = "no-repeat";
+              backgroundElement.style.filter = "none";
+              backgroundElement.style.transform = "translateZ(0) scale(1.0)";
+            }
+
             backgroundElement.style.opacity = "1";
-            currentPhotoUrl = firstUrl; // Track the first image
+            currentPhotoUrl = imageData.url; // Track the first image
           }
 
           // Start preparing the second image using the coordinated function
