@@ -18,8 +18,17 @@ const Slideshow = (function () {
   async function fetchNextPhotoUrl(maxAttempts = 5) {
     // Fetching next background photo URL with duplicate prevention
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let timeoutId; // Declare outside try block for proper scope
       try {
-        const response = await fetch("/api/random-photo");
+        // Add timeout to prevent slideshow from being affected by server network issues
+        const timeoutController = new AbortController();
+        timeoutId = setTimeout(() => timeoutController.abort(), 5000); // 5 second timeout for local network
+
+        const response = await fetch("/api/random-photo", {
+          signal: timeoutController.signal,
+        });
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -48,7 +57,15 @@ const Slideshow = (function () {
         }
         return null;
       } catch (error) {
-        console.error("Could not fetch next photo URL (attempt", attempt + 1 + "):", error);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (error.name === "AbortError") {
+          console.error(
+            "Slideshow photo fetch timed out after 5 seconds (attempt",
+            attempt + 1 + ")"
+          );
+        } else {
+          console.error("Could not fetch next photo URL (attempt", attempt + 1 + "):", error);
+        }
         if (attempt === maxAttempts - 1) {
           return null;
         }

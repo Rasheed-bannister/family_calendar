@@ -99,6 +99,12 @@ document.addEventListener("DOMContentLoaded", async function () {
     chores: Chores.init(),
   };
 
+  // Start slideshow immediately after initialization - it should run continuously
+  if (componentsStatus.slideshow) {
+    Slideshow.start();
+    console.log("Slideshow started continuously in background");
+  }
+
   // Initialize async components without blocking
   VirtualKeyboard.init()
     .then((result) => {
@@ -268,17 +274,11 @@ document.addEventListener("DOMContentLoaded", async function () {
     DailyView.pause();
     Chores.pause();
 
-    // Start slideshow with a small delay to ensure smooth transition
-    setTimeout(() => {
-      if (longInactivityMode) {
-        // Check if we're still in long inactivity mode
-        Slideshow.start();
-      }
-    }, SLIDESHOW_START_DELAY);
+    // Slideshow continues running in background - no need to start/stop
 
     // Display notification if in debug mode
     if (DEBUG_MODE) {
-      showDebugNotification("Entered long inactivity mode - slideshow will start");
+      showDebugNotification("Entered long inactivity mode");
     }
   }
 
@@ -292,8 +292,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Remove class from body
     document.body.classList.remove("long-inactivity-mode");
 
-    // Stop slideshow
-    Slideshow.stop();
+    // Slideshow continues running in background - no need to stop
 
     // Resume components
     Calendar.resume();
@@ -605,6 +604,180 @@ const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full
 const CHORE_CHECK_UPDATE_INTERVAL = 10000; // 10 seconds: How often to check status after triggering
 let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
 
+// Function to dynamically update only the chores section
+async function updateChoresSection() {
+  try {
+    // Fetch the current page HTML
+    const response = await fetch(window.location.href);
+    if (!response.ok) {
+      console.error("Failed to fetch updated chores HTML");
+      return;
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const newDoc = parser.parseFromString(html, "text/html");
+
+    // Find the chores section in both old and new HTML
+    const currentChoresSection = document.querySelector(".chores-list");
+    const newChoresSection = newDoc.querySelector(".chores-list");
+
+    if (currentChoresSection && newChoresSection) {
+      // Replace the old chores section with the new one
+      currentChoresSection.innerHTML = newChoresSection.innerHTML;
+
+      // Reinitialize the chores component to attach event listeners
+      if (window.Chores && window.Chores.cleanup) {
+        window.Chores.cleanup();
+      }
+      if (window.Chores && window.Chores.init) {
+        window.Chores.init();
+      }
+
+      console.log("Chores section updated dynamically without page reload");
+    }
+  } catch (error) {
+    console.error("Error updating chores section:", error);
+    // Fallback to reload if dynamic update fails
+    window.location.reload();
+  }
+}
+
+// Export to window for access from other modules
+window.updateChoresSection = updateChoresSection;
+
+// Function to dynamically update only the calendar section
+async function updateCalendarSection() {
+  try {
+    // Fetch the current page HTML
+    const response = await fetch(window.location.href);
+    if (!response.ok) {
+      console.error("Failed to fetch updated calendar HTML");
+      return;
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const newDoc = parser.parseFromString(html, "text/html");
+
+    // Find the calendar section in both old and new HTML
+    const currentCalendarSection = document.querySelector("#main-calendar-area");
+    const newCalendarSection = newDoc.querySelector("#main-calendar-area");
+
+    if (currentCalendarSection && newCalendarSection) {
+      // Replace the old calendar section with the new one
+      currentCalendarSection.innerHTML = newCalendarSection.innerHTML;
+
+      // Reinitialize the calendar component to attach event listeners
+      if (Calendar && Calendar.cleanup) {
+        Calendar.cleanup();
+      }
+      if (Calendar && Calendar.init) {
+        Calendar.init();
+      }
+
+      console.log("Calendar section updated dynamically without page reload");
+    }
+  } catch (error) {
+    console.error("Error updating calendar section:", error);
+    showConnectionError();
+  }
+}
+
+// Function to dynamically update only the weather section
+async function updateWeatherSection() {
+  try {
+    const response = await fetch(window.location.href);
+    if (!response.ok) {
+      console.error("Failed to fetch updated weather HTML");
+      return;
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const newDoc = parser.parseFromString(html, "text/html");
+
+    const currentWeatherSection = document.querySelector(".weather-container");
+    const newWeatherSection = newDoc.querySelector(".weather-container");
+
+    if (currentWeatherSection && newWeatherSection) {
+      currentWeatherSection.innerHTML = newWeatherSection.innerHTML;
+
+      if (Weather && Weather.cleanup) {
+        Weather.cleanup();
+      }
+      if (Weather && Weather.init) {
+        Weather.init();
+      }
+
+      console.log("Weather section updated dynamically without page reload");
+    }
+  } catch (error) {
+    console.error("Error updating weather section:", error);
+    showConnectionError();
+  }
+}
+
+// Function to dynamically update only the daily view section
+async function updateDailyViewSection() {
+  try {
+    const response = await fetch(window.location.href);
+    if (!response.ok) {
+      console.error("Failed to fetch updated daily view HTML");
+      return;
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const newDoc = parser.parseFromString(html, "text/html");
+
+    const currentDailyViewSection = document.querySelector(".daily-view-container");
+    const newDailyViewSection = newDoc.querySelector(".daily-view-container");
+
+    if (currentDailyViewSection && newDailyViewSection) {
+      currentDailyViewSection.innerHTML = newDailyViewSection.innerHTML;
+
+      if (DailyView && DailyView.cleanup) {
+        DailyView.cleanup();
+      }
+      if (DailyView && DailyView.init) {
+        DailyView.init();
+      }
+
+      console.log("Daily view section updated dynamically without page reload");
+    }
+  } catch (error) {
+    console.error("Error updating daily view section:", error);
+    showConnectionError();
+  }
+}
+
+// Simple connection status management
+function showConnectionError() {
+  const statusIcon = document.getElementById("connection-status");
+  if (statusIcon) {
+    statusIcon.style.display = "block";
+    // Auto-hide after 10 seconds
+    setTimeout(() => {
+      statusIcon.style.display = "none";
+    }, 10000);
+  }
+}
+
+function hideConnectionError() {
+  const statusIcon = document.getElementById("connection-status");
+  if (statusIcon) {
+    statusIcon.style.display = "none";
+  }
+}
+
+// Export all update functions
+window.updateCalendarSection = updateCalendarSection;
+window.updateWeatherSection = updateWeatherSection;
+window.updateDailyViewSection = updateDailyViewSection;
+window.showConnectionError = showConnectionError;
+window.hideConnectionError = hideConnectionError;
+
 async function triggerChoresRefresh() {
   if (isCheckingChoreUpdates) {
     return;
@@ -666,14 +839,13 @@ async function checkChoresUpdatesLoop() {
     } else if (data.chores_status === "complete") {
       isCheckingChoreUpdates = false;
       if (data.chores_changed) {
-        // Chores changed, reloading page
-        window.location.reload();
-      } else {
-        if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-          clearTimeout(chorePollingTimeout);
-        }
-        chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
+        // Chores changed, update only the chores section dynamically
+        await updateChoresSection();
       }
+      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
+        clearTimeout(chorePollingTimeout);
+      }
+      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
     } else if (data.chores_status === "error") {
       console.error("Chores: Refresh completed with an error.");
       isCheckingChoreUpdates = false;

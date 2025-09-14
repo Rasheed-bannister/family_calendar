@@ -98,6 +98,7 @@ const Calendar = (function () {
   }
 
   function checkForGoogleUpdates() {
+    // Respect UI active state - don't poll when inactive
     if (!updateCheckEnabled) return;
 
     // Show loading indicator for initial sync operations
@@ -114,28 +115,50 @@ const Calendar = (function () {
       LoadingIndicator.show("google-refresh", "Refreshing calendar data...", false);
       lastForceRefreshTime = now;
 
-      // Trigger manual refresh
+      // Trigger manual refresh with timeout
+      const refreshTimeoutController = new AbortController();
+      const refreshTimeoutId = setTimeout(() => refreshTimeoutController.abort(), 5000);
+
       fetch(`/google/refresh-calendar/${currentDisplayedYear}/${currentDisplayedMonth}`, {
         method: "GET",
+        signal: refreshTimeoutController.signal,
       })
-        .then((response) => response.json())
+        .then((response) => {
+          clearTimeout(refreshTimeoutId);
+          return response.json();
+        })
         .then(() => {
           // Manual refresh triggered
           LoadingIndicator.hide("google-refresh");
           LoadingIndicator.showToast("Calendar refreshed", "success", 2000);
           // Continue with normal update check after triggering refresh
-          setTimeout(checkForGoogleUpdates, 2000); // Check again in 2 seconds
+          setTimeout(() => {
+            if (updateCheckEnabled) {
+              checkForGoogleUpdates();
+            }
+          }, 2000);
         })
         .catch((err) => {
+          clearTimeout(refreshTimeoutId);
           console.error("Error triggering manual refresh:", err);
           LoadingIndicator.hide("google-refresh");
           LoadingIndicator.showToast("Refresh failed - using cached data", "error", 3000);
+          if (window.showConnectionError) {
+            window.showConnectionError();
+          }
         });
       return;
     }
 
-    fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`)
+    // Create fetch request with 5-second timeout
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 5000);
+
+    fetch(`/calendar/check-updates/${currentDisplayedYear}/${currentDisplayedMonth}`, {
+      signal: timeoutController.signal,
+    })
       .then((response) => {
+        clearTimeout(timeoutId);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -143,6 +166,10 @@ const Calendar = (function () {
       })
       .then((data) => {
         // Update check response received
+        // Hide connection error icon on successful response
+        if (window.hideConnectionError) {
+          window.hideConnectionError();
+        }
 
         // Handle first load differently from regular checks
         if (!initialLoadComplete) {
@@ -166,35 +193,60 @@ const Calendar = (function () {
             initialLoadComplete = true;
 
             // If updates were found or the page has no events yet but the fetch is complete,
-            // refresh the page to show the newly loaded events
+            // update the calendar section to show the newly loaded events
             if (
               data.events_changed ||
               (!hasCalendarEvents && data.calendar_status === "complete")
             ) {
               LoadingIndicator.showToast("Updates found! Refreshing...", "info", 2000);
-              refreshPage();
+              if (window.updateCalendarSection) {
+                window.updateCalendarSection();
+              } else {
+                refreshPage(); // Fallback
+              }
             }
           }
         } else {
           // Handle regular update checks
           if (data.refresh_triggered) {
             // Background refresh was triggered, checking again soon
-            // Check again in 3 seconds to see if the refresh found new data
-            setTimeout(checkForGoogleUpdates, 3000);
+            // Only continue polling if UI is still active
+            setTimeout(() => {
+              if (updateCheckEnabled) {
+                checkForGoogleUpdates();
+              }
+            }, 3000);
           } else if (data.updates_available && !inDebounce) {
             // Only refresh during regular checks if updates are available AND we're not in a debounce period
-            refreshPage();
+            if (window.updateCalendarSection) {
+              window.updateCalendarSection();
+            } else {
+              refreshPage(); // Fallback
+            }
           } else if (data.calendar_status === "complete" && data.events_changed) {
             // Handle case where events changed but updates_available wasn't set
-            refreshPage();
+            if (window.updateCalendarSection) {
+              window.updateCalendarSection();
+            } else {
+              refreshPage(); // Fallback
+            }
           }
         }
       })
       .catch((err) => {
+        clearTimeout(timeoutId);
+
+        // Show connection error icon for any network/API issues
+        if (window.showConnectionError) {
+          window.showConnectionError();
+        }
+
         // Log different messages based on the error type
-        if (err instanceof TypeError && err.message === "Failed to fetch") {
+        if (err.name === "AbortError") {
+          console.error("Calendar API request timed out after 5 seconds");
+        } else if (err instanceof TypeError && err.message === "Failed to fetch") {
           console.error(
-            "Error checking for Google Calendar updates: Could not connect to the server. Is the Flask server running?"
+            "Error checking for Google Calendar updates: Could not connect to the server"
           );
         } else {
           console.error("Error checking for Google Calendar updates:", err);
@@ -205,7 +257,6 @@ const Calendar = (function () {
           LoadingIndicator.hide("google-sync");
           LoadingIndicator.showToast("Sync error - using cached data", "error", 3000);
           clearInterval(googleUpdateTimer);
-          // Stopping rapid initial update checks due to error
           initialLoadComplete = true; // Mark initial phase as done (even if failed)
         }
       });
@@ -242,7 +293,11 @@ const Calendar = (function () {
     initialLoadTimeout = setTimeout(() => {
       // Initial load timeout reached, forcing refresh
       if (!initialLoadComplete) {
-        refreshPage();
+        if (window.updateCalendarSection) {
+          window.updateCalendarSection();
+        } else {
+          refreshPage(); // Fallback
+        }
       }
     }, INITIAL_LOAD_TIMEOUT);
 

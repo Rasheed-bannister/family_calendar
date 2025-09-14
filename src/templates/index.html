@@ -19,7 +19,7 @@
             {% block weather %}
                 {% include 'components/weather.html' %}
             {% endblock %}
-            
+
             {% block calendar %}
                 {% include 'components/calendar.html' %}
             {% endblock %}
@@ -28,7 +28,7 @@
             {% block daily_view %}
                 {% include 'components/daily_view.html' %}
             {% endblock %}
-            
+
             {% block chores %}
                 {% include 'components/chores.html' %}
             {% endblock %}
@@ -55,7 +55,7 @@
         </div>
     </div>
     {% endblock %}
-    
+
     {% if debug_enabled %}
     <!-- Debug Panel for PIR Sensor (hidden by default) -->
     <div id="debug-panel" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 5px; display: none; z-index: 2000;">
@@ -66,12 +66,17 @@
         <button id="pir-toggle-debug">Toggle Debug</button>
         <div id="pir-status" style="margin-top: 5px; font-size: 12px;"></div>
     </div>
-    
+
     <!-- Debug toggle button -->
     <div id="debug-toggle" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 3px; cursor: pointer; z-index: 1999; font-size: 12px;">
         Debug
     </div>
     {% endif %}
+
+    <!-- Connection status indicator (hidden by default) -->
+    <div id="connection-status" style="display: none; position: fixed; top: 10px; right: 10px; background: rgba(255, 0, 0, 0.8); color: white; padding: 4px 8px; border-radius: 3px; font-size: 11px; z-index: 2000;">
+        <i class="fas fa-wifi" style="transform: scaleX(-1);"></i> No Connection
+    </div>
 
     <!-- Load the new modular JavaScript instead of the old script.js -->
     <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
