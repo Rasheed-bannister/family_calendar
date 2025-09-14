@@ -32,6 +32,7 @@ const Calendar = (function () {
   let inDebounce = false; // Debounce flag
   let initialLoadTimeout = null; // Timeout to force refresh if initial load takes too long
   let INITIAL_LOAD_TIMEOUT = 15000; // Default: Force refresh after 15 seconds - will be loaded from config
+  let isDynamicUpdate = false; // Flag to prevent infinite loops during dynamic updates
   let lastForceRefreshTime = Date.now(); // Track when we last forced a refresh
 
   // Private methods
@@ -299,7 +300,7 @@ const Calendar = (function () {
 
     initialLoadTimeout = setTimeout(() => {
       // Initial load timeout reached, forcing refresh
-      if (!initialLoadComplete) {
+      if (!initialLoadComplete && !isDynamicUpdate) {
         if (window.updateCalendarSection) {
           window.updateCalendarSection();
         } else {
@@ -478,8 +479,8 @@ const Calendar = (function () {
       // Update timeout values from config
       INACTIVITY_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 60) * 1000;
       MONTH_INACTIVITY_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 60) * 5 * 1000; // 5x modal timeout
-      INITIAL_CHECK_INTERVAL = (config.polling?.chores_check_interval_seconds || 10) * 500; // Half of chores check interval
-      INITIAL_LOAD_TIMEOUT = config.timeouts?.modal_auto_close_seconds || 15;
+      INITIAL_CHECK_INTERVAL = 5000; // Keep fixed at 5 seconds for initial load
+      INITIAL_LOAD_TIMEOUT = (config.timeouts?.modal_auto_close_seconds || 15) * 1000; // Convert to milliseconds
 
       // Update swipe gesture settings
       MIN_SWIPE_DISTANCE = 50; // Keep fixed for touch usability
@@ -754,6 +755,10 @@ const Calendar = (function () {
       };
     },
 
+    setDynamicUpdateFlag: function (flag) {
+      isDynamicUpdate = flag;
+    },
+
     cleanup: function () {
       // Clear all timers and intervals
       if (googleUpdateTimer) {
@@ -780,6 +785,7 @@ const Calendar = (function () {
       updateCheckEnabled = false;
       initialLoadComplete = false;
       inDebounce = false;
+      isDynamicUpdate = false;
 
       // Clear references
       calendar = null;

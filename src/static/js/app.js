@@ -688,7 +688,10 @@ async function updateCalendarSection() {
         Calendar.cleanup();
       }
       if (Calendar && Calendar.init) {
+        // Set flag to prevent infinite loops during dynamic updates
+        Calendar.setDynamicUpdateFlag(true);
         Calendar.init();
+        Calendar.setDynamicUpdateFlag(false);
       }
 
       console.log("Calendar section updated dynamically without page reload");
