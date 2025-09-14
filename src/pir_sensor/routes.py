@@ -6,6 +6,7 @@ Provides endpoints for PIR sensor status and activity reporting
 import json
 import logging
 import time
+from collections.abc import Generator
 from queue import Empty, Queue
 
 from flask import Blueprint, Response, jsonify, request
@@ -19,11 +20,14 @@ from .sensor import (
 
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 
+# Module-specific logger
+logger = logging.getLogger(__name__)
+
 # Global queue for SSE events
 _sse_queue: Queue = Queue()
 
 
-def motion_detected_sse():
+def motion_detected_sse() -> None:
     """Callback function for SSE events when motion is detected"""
     event_data = {
         "type": "motion_detected",
@@ -38,7 +42,7 @@ add_motion_callback(motion_detected_sse)
 
 
 @pir_bp.route("/status", methods=["GET"])
-def get_pir_status():
+def get_pir_status() -> Response:
     """Get PIR sensor monitoring status"""
     sensor = get_pir_sensor()
     if not sensor:
@@ -57,7 +61,7 @@ def get_pir_status():
 
 
 @pir_bp.route("/start", methods=["POST"])
-def start_monitoring():
+def start_monitoring() -> Response | tuple[Response, int]:
     """Start PIR sensor monitoring"""
     try:
         success = start_pir_monitoring()
@@ -69,24 +73,24 @@ def start_monitoring():
             ),
             500,
         )
-    except Exception as e:
-        logging.exception(f"Error starting PIR monitoring: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+    except Exception:
+        logger.exception("Error starting PIR monitoring")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
 @pir_bp.route("/stop", methods=["POST"])
-def stop_monitoring():
+def stop_monitoring() -> Response | tuple[Response, int]:
     """Stop PIR sensor monitoring"""
     try:
         stop_pir_monitoring()
         return jsonify({"success": True, "message": "PIR monitoring stopped"})
-    except Exception as e:
-        logging.exception(f"Error stopping PIR monitoring: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+    except Exception:
+        logger.exception("Error stopping PIR monitoring")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
 @pir_bp.route("/activity", methods=["POST"])
-def report_activity():
+def report_activity() -> Response | tuple[Response, int]:
     """Endpoint for external PIR sensor activity reporting"""
     try:
         data = request.get_json() or {}
@@ -95,7 +99,7 @@ def report_activity():
         # This endpoint can be used by external PIR sensor systems
         # to report activity to the calendar application
 
-        logging.info(f"PIR activity reported: {activity_type}")
+        logger.info("PIR activity reported: %s", activity_type)
 
         # The actual activity handling will be done via WebSocket or polling
         # This endpoint just confirms receipt
@@ -107,16 +111,16 @@ def report_activity():
                 "activity_type": activity_type,
             },
         )
-    except Exception as e:
-        logging.exception(f"Error reporting PIR activity: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+    except Exception:
+        logger.exception("Error reporting PIR activity")
+        return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
 @pir_bp.route("/events")
-def pir_events():
+def pir_events() -> Response:
     """Server-Sent Events endpoint for real-time PIR sensor events"""
 
-    def event_stream():
+    def event_stream() -> Generator[str, None, None]:
         while True:
             try:
                 # Wait for an event with timeout
@@ -129,8 +133,8 @@ def pir_events():
                     + str(time.time())
                     + "}\n\n"
                 )
-            except Exception as e:
-                logging.exception(f"Error in PIR SSE stream: {e}")
+            except Exception:
+                logger.exception("Error in PIR SSE stream")
                 break
 
     return Response(
@@ -141,12 +145,12 @@ def pir_events():
 
 
 @pir_bp.route("/trigger_test", methods=["POST"])
-def trigger_test_motion():
+def trigger_test_motion() -> Response | tuple[Response, int]:
     """Test endpoint to simulate motion detection"""
     try:
         # Manually trigger the SSE callback for testing
         motion_detected_sse()
         return jsonify({"success": True, "message": "Test motion triggered"})
-    except Exception as e:
-        logging.exception(f"Error triggering test motion: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+    except Exception:
+        logger.exception("Error triggering test motion")
+        return jsonify({"success": False, "message": "Internal server error"}), 500

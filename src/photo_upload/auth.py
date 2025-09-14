@@ -262,7 +262,9 @@ def require_upload_token(
     """
 
     @wraps(f)
-    def decorated_function(*args: Any, **kwargs: Any) -> FlaskRouteReturn:  # noqa: ANN401
+    def decorated_function(
+        *args: Any, **kwargs: Any
+    ) -> FlaskRouteReturn:  # noqa: ANN401
         # Get token from various sources
         token_from_args = request.args.get("token")
         token_from_headers = request.headers.get("X-Upload-Token")
@@ -361,7 +363,9 @@ def rate_limit_upload(
     """Apply rate limiting to upload endpoints."""
 
     @wraps(f)
-    def decorated_function(*args: Any, **kwargs: Any) -> FlaskRouteReturn:  # noqa: ANN401
+    def decorated_function(
+        *args: Any, **kwargs: Any
+    ) -> FlaskRouteReturn:  # noqa: ANN401
         # Use token or IP as identifier
         identifier = (
             request.args.get("token")

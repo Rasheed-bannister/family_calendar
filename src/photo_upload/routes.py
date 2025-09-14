@@ -22,8 +22,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from src.slideshow import database as slideshow_db
 from src.config import get_config
+from src.slideshow import database as slideshow_db
 
 from .auth import (
     generate_upload_url,
@@ -320,7 +320,11 @@ def upload_photos() -> Response | tuple[Response, int]:  # noqa: C901, PLR0915
 @upload_bp.route("/api/photos", methods=["GET"])
 def list_photos() -> Response | tuple[Response, int]:
     """List all photos with pagination support."""
-    logger.info("Photos API called from %s with params: %s", request.remote_addr, dict(request.args))
+    logger.info(
+        "Photos API called from %s with params: %s",
+        request.remote_addr,
+        dict(request.args),
+    )
     try:
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 20))
@@ -407,7 +411,7 @@ def manage_photos() -> str:
     """Render the photo management page."""
     logger.info("Photo management page accessed from %s", request.remote_addr)
     logger.info("Query parameters: %s", dict(request.args))
-    token = request.args.get('token')
+    token = request.args.get("token")
     if token:
         logger.info("Token received on manage page: %s...", token[:20])
     else:
@@ -463,14 +467,25 @@ def generate_qrcode() -> Response | tuple[Response, int]:
         # Get the local IP address
         host = get_local_ip()
         # Get port from request URL or default to 5000
-        port = request.environ.get("SERVER_PORT") or request.host.split(":")[-1] if ":" in request.host else "5000"
+        port = (
+            request.environ.get("SERVER_PORT") or request.host.split(":")[-1]
+            if ":" in request.host
+            else "5000"
+        )
         client_ip = request.remote_addr
 
-        logger.info("QR Code generation - Host: %s, Port: %s, Client IP: %s", host, port, client_ip)
+        logger.info(
+            "QR Code generation - Host: %s, Port: %s, Client IP: %s",
+            host,
+            port,
+            client_ip,
+        )
 
         # For QR codes, bind token to the server's network IP instead of localhost
         # This allows mobile devices on the same network to access with the token
-        token_bind_ip = host if client_ip in ["127.0.0.1", "::1", "localhost"] else client_ip
+        token_bind_ip = (
+            host if client_ip in ["127.0.0.1", "::1", "localhost"] else client_ip
+        )
         logger.info("Token will be bound to IP: %s", token_bind_ip)
 
         # Build the full URL
