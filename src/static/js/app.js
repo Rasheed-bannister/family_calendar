@@ -806,8 +806,10 @@ async function triggerChoresRefresh() {
   isCheckingChoreUpdates = true;
 
   try {
+    console.log("Triggering chores refresh...");
     const response = await fetch("/chores/refresh", { method: "POST" });
     if (response.ok) {
+      console.log("Chores refresh triggered successfully");
       // Clear any existing timeout before setting new one
       if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
         clearTimeout(choreCheckTimeout);
@@ -874,8 +876,13 @@ async function checkChoresUpdatesLoop() {
       }, CHORE_CHECK_UPDATE_INTERVAL);
     } else if (data.chores_status === "complete") {
       isCheckingChoreUpdates = false;
+      console.log("Chores check complete:", {
+        chores_changed: data.chores_changed,
+        refresh_triggered: data.refresh_triggered,
+      });
       if (data.chores_changed) {
         // Chores changed, update only the chores section dynamically
+        console.log("Chores changed detected, updating UI");
         await updateChoresSection();
       }
       if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
