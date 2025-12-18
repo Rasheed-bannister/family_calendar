@@ -16,7 +16,7 @@ jobs:
     name: Dead Code & Complexity Analysis
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -78,7 +78,7 @@ jobs:
     name: Code Duplication Detection
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -109,7 +109,7 @@ jobs:
     name: JavaScript Dead Code & Complexity
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -144,7 +144,7 @@ jobs:
     name: CSS Dead Code Detection
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -176,7 +176,7 @@ jobs:
     if: github.repository_owner != 'dependabot' && github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0  # Shallow clones should be disabled for better analysis
 
