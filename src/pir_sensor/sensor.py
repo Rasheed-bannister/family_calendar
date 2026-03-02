@@ -12,7 +12,7 @@ try:
     import RPi.GPIO as GPIO
 
     HAS_GPIO = True
-except ImportError:
+except (ImportError, RuntimeError):
     HAS_GPIO = False
 
 # Global list to store callbacks for motion detection

@@ -9,14 +9,12 @@ def init_db():
     """Initializes the slideshow database and creates the table if it doesn't exist."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS background_photos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT UNIQUE NOT NULL
         )
-    """
-    )
+    """)
     conn.commit()
     conn.close()
     print("Slideshow database initialized.")

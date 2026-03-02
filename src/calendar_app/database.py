@@ -53,31 +53,26 @@ def create_all():
     cursor = conn.cursor()
 
     # Create Calendar table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS Calendar (
             calendar_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             display_name TEXT,
             color TEXT
         )
-    """
-    )
+    """)
 
     # Create CalendarMonth table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS CalendarMonth (
             id TEXT PRIMARY KEY,
             year INTEGER NOT NULL,
             month INTEGER NOT NULL
         )
-    """
-    )
+    """)
 
     # Create CalendarEvent table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS CalendarEvent (
             id TEXT PRIMARY KEY,
             calendar_id TEXT NOT NULL,
@@ -91,28 +86,23 @@ def create_all():
             FOREIGN KEY (calendar_id) REFERENCES Calendar(calendar_id),
             FOREIGN KEY (month_id) REFERENCES CalendarMonth(id)
         )
-    """
-    )
+    """)
 
     # Create DefaultColors table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS DefaultColors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             hex_code TEXT NOT NULL UNIQUE
         )
-    """
-    )
+    """)
 
     # Create ColorIndex table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS ColorIndex (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             current_index INTEGER NOT NULL DEFAULT 0
         )
-    """
-    )
+    """)
 
     # Populate DefaultColors if empty
     cursor.execute("SELECT COUNT(*) FROM DefaultColors")
