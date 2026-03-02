@@ -20,8 +20,7 @@ def create_all():
     cursor = conn.cursor()
 
     # Create Chores table
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS Chores (
             id TEXT PRIMARY KEY,
             assigned_to TEXT NOT NULL,
@@ -29,8 +28,7 @@ def create_all():
             status TEXT,
             due TEXT
         )
-    """
-    )
+    """)
 
     conn.commit()
     conn.close()
