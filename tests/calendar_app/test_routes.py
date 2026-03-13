@@ -175,13 +175,13 @@ def test_filter_events_naive_datetime():
 
 @patch("src.calendar_app.routes.db")
 @patch("src.weather_integration.api.get_weather_data")  # Corrected patch target
-@patch("src.calendar_app.routes.threading.Thread")
+@patch("src.main.sync_executor")
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_default(
     mock_tasks,
     mock_lock,
-    mock_thread,
+    mock_executor,
     mock_get_weather,
     mock_db,
     client,
@@ -212,7 +212,6 @@ def test_view_route_default(
             # Add more days if needed for other assertions
         ],
     }
-    # Chores are now handled differently in the refactored code
 
     # Mock datetime.now() to control the date
     with patch("src.calendar_app.routes.datetime") as mock_dt:
@@ -231,21 +230,21 @@ def test_view_route_default(
     # Check for something rendered from the weather mock, e.g., current temp
     assert b"70\xc2\xb0" in response.data  # Check for 70° (UTF-8 encoded degree symbol)
     mock_db.add_month.assert_called_once()
-    # Check if background task was potentially started (thread initiated)
-    mock_thread.assert_called_once()
-    call_args, call_kwargs = mock_thread.call_args
-    assert call_kwargs["args"] == (5, 2025)  # Check args passed to background task
+    # Check if background task was submitted to the thread pool
+    mock_executor.submit.assert_called_once()
+    call_args = mock_executor.submit.call_args[0]
+    assert call_args[1:] == (5, 2025)  # Check args passed to background task
 
 
 @patch("src.calendar_app.routes.db")
 @patch("src.weather_integration.api.get_weather_data")  # Corrected patch target
-@patch("src.calendar_app.routes.threading.Thread")
+@patch("src.main.sync_executor")
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_specific_month(
     mock_tasks,
     mock_lock,
-    mock_thread,
+    mock_executor,
     mock_get_weather,
     mock_db,
     client,
@@ -309,10 +308,10 @@ def test_view_route_specific_month(
     # e.g., check for the mocked current temperature
     assert b"65\xc2\xb0" in response.data  # Check for 65°
     mock_db.add_month.assert_called_once()
-    # Check if background task was potentially started for Nov 2024
-    mock_thread.assert_called_once()
-    call_args, call_kwargs = mock_thread.call_args
-    assert call_kwargs["args"] == (11, 2024)
+    # Check if background task was submitted to the thread pool for Nov 2024
+    mock_executor.submit.assert_called_once()
+    call_args = mock_executor.submit.call_args[0]
+    assert call_args[1:] == (11, 2024)
 
 
 def test_view_route_invalid_month(client):
