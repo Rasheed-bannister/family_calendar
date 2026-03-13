@@ -1,7 +1,6 @@
 """Tests for src/photo_upload/auth.py."""
 
 import time
-from unittest.mock import patch
 
 import pytest
 

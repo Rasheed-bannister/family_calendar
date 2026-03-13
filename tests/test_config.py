@@ -2,13 +2,11 @@
 
 import json
 import os
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from src.config import Config, get_config, reload_config
+from src.config import Config
 
 
 @pytest.fixture

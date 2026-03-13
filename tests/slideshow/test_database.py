@@ -1,6 +1,5 @@
 """Tests for src/slideshow/database.py."""
 
-import os
 import sqlite3
 from unittest.mock import patch
 

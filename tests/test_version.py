@@ -1,7 +1,6 @@
 """Tests for src/version.py - Version management and upgrade functionality."""
 
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

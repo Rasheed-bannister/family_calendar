@@ -1,7 +1,6 @@
 """Tests for src/google_integration/api.py."""
 
 import datetime
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
