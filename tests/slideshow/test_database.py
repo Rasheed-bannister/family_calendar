@@ -27,9 +27,7 @@ class TestInitDb:
             slideshow_db.init_db()
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cursor.fetchall()}
             conn.close()
             assert "background_photos" in tables

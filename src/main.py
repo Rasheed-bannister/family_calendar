@@ -7,6 +7,7 @@ from flask import Flask, redirect, request, url_for
 
 # Import configuration
 from src.config import get_config
+
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 

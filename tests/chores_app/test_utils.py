@@ -3,10 +3,7 @@
 from unittest.mock import patch
 
 from src.chores_app.models import Chore
-from src.chores_app.utils import (
-    create_chores_from_google_data,
-    make_chores_comparable,
-)
+from src.chores_app.utils import create_chores_from_google_data, make_chores_comparable
 
 
 class TestMakeChoresComparable:
@@ -33,7 +30,9 @@ class TestMakeChoresComparable:
 
     def test_chore_objects(self):
         chores = [
-            Chore(id="1", title="Alice", notes="Dishes", status="needsAction", due=None),
+            Chore(
+                id="1", title="Alice", notes="Dishes", status="needsAction", due=None
+            ),
             Chore(id="2", title="Bob", notes="Vacuum", status="completed", due=None),
         ]
         result = make_chores_comparable(chores)
@@ -93,16 +92,12 @@ class TestCreateChoresFromGoogleData:
         assert chores[0].status == "needsAction"
 
     def test_missing_title_defaults(self):
-        google_data = [
-            {"id": "g-2", "status": "needsAction"}
-        ]
+        google_data = [{"id": "g-2", "status": "needsAction"}]
         chores = create_chores_from_google_data(google_data)
         assert chores[0].assigned_to == "Unassigned"
 
     def test_missing_notes_defaults(self):
-        google_data = [
-            {"id": "g-3", "title": "Bob", "status": "completed"}
-        ]
+        google_data = [{"id": "g-3", "title": "Bob", "status": "completed"}]
         chores = create_chores_from_google_data(google_data)
         assert chores[0].description == ""
 

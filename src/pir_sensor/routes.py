@@ -11,8 +11,12 @@ from queue import Empty, Full, Queue
 
 from flask import Blueprint, Response, jsonify, request
 
-from .sensor import (add_motion_callback, get_pir_sensor, start_pir_monitoring,
-                     stop_pir_monitoring)
+from .sensor import (
+    add_motion_callback,
+    get_pir_sensor,
+    start_pir_monitoring,
+    stop_pir_monitoring,
+)
 
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 

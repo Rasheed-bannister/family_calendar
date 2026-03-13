@@ -158,9 +158,7 @@ class TestConfigValidation:
 
         # Clear env overrides that could mask the invalid value
         env_clear = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith("CALENDAR_")
+            k: v for k, v in os.environ.items() if not k.startswith("CALENDAR_")
         }
         with patch.dict(os.environ, env_clear, clear=True):
             with pytest.raises(ValueError, match="latitude"):

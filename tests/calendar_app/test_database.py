@@ -163,9 +163,7 @@ class TestAddAndGetEvents:
     def test_add_and_get_events(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
             # Setup
-            cal = Calendar(
-                calendar_id="cal-1", name="Test Cal", color_hex="#FF0000"
-            )
+            cal = Calendar(calendar_id="cal-1", name="Test Cal", color_hex="#FF0000")
             db.add_calendar(cal)
             month = CalendarMonth(year=2025, month=5)
             db.add_month(month)
@@ -195,9 +193,7 @@ class TestAddAndGetEvents:
 
     def test_get_events_for_month_range(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
-            cal = Calendar(
-                calendar_id="cal-1", name="Test Cal", color_hex="#FF0000"
-            )
+            cal = Calendar(calendar_id="cal-1", name="Test Cal", color_hex="#FF0000")
             db.add_calendar(cal)
             month = CalendarMonth(year=2025, month=5)
             db.add_month(month)

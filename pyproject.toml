@@ -49,6 +49,11 @@ dev = [
     "pre-commit>=4.5.1",
 ]
 
+[tool.black]
+# Target Python 3.11+ to avoid 3.14-only syntax (e.g. unparenthesized
+# multi-exception except clauses) since the deploy script supports 3.11+.
+target-version = ["py311"]
+
 [tool.ruff.lint]
 # RSE102 removes parentheses from multi-exception except clauses,
 # turning valid `except (A, B):` into invalid `except A, B:` syntax.

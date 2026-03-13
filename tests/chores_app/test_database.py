@@ -27,9 +27,7 @@ class TestCreateAll:
             db.create_all()
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cursor.fetchall()}
             conn.close()
             assert "Chores" in tables
@@ -41,8 +39,16 @@ class TestAddChores:
     def test_add_new_chores(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
             chores = [
-                Chore(id="1", title="Alice", notes="Dishes", status="needsAction", due=None),
-                Chore(id="2", title="Bob", notes="Vacuum", status="completed", due=None),
+                Chore(
+                    id="1",
+                    title="Alice",
+                    notes="Dishes",
+                    status="needsAction",
+                    due=None,
+                ),
+                Chore(
+                    id="2", title="Bob", notes="Vacuum", status="completed", due=None
+                ),
             ]
             db.add_chores(chores)
             result = db.get_chores()
@@ -52,12 +58,20 @@ class TestAddChores:
         """Chores marked invisible should not be overwritten by Google sync."""
         with patch.object(db, "DATABASE_FILE", temp_db):
             # Add a chore and mark it invisible
-            chore = Chore(id="1", title="Alice", notes="Dishes", status="invisible", due=None)
+            chore = Chore(
+                id="1", title="Alice", notes="Dishes", status="invisible", due=None
+            )
             conn = sqlite3.connect(temp_db)
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO Chores (id, assigned_to, description, status, due) VALUES (?, ?, ?, ?, ?)",
-                (chore.id, chore.assigned_to, chore.description, chore.status, chore.due),
+                (
+                    chore.id,
+                    chore.assigned_to,
+                    chore.description,
+                    chore.status,
+                    chore.due,
+                ),
             )
             conn.commit()
             conn.close()
@@ -160,9 +174,7 @@ class TestGetChores:
 
     def test_returns_dict_format(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
-            db.add_chore(
-                assigned_to="Alice", description="Dishes", google_id="fmt-1"
-            )
+            db.add_chore(assigned_to="Alice", description="Dishes", google_id="fmt-1")
             chores = db.get_chores()
             assert len(chores) == 1
             chore = chores[0]
@@ -179,9 +191,7 @@ class TestUpdateChoreGoogleId:
     def test_updates_id(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
             # Create a chore with local UUID
-            local_chore = db.add_chore(
-                assigned_to="Alice", description="Task"
-            )
+            local_chore = db.add_chore(assigned_to="Alice", description="Task")
             local_id = local_chore.id
 
             # Update to Google ID
@@ -195,9 +205,7 @@ class TestUpdateChoreGoogleId:
 
     def test_same_id_no_op(self, temp_db):
         with patch.object(db, "DATABASE_FILE", temp_db):
-            db.add_chore(
-                assigned_to="Alice", description="Task", google_id="same-id"
-            )
+            db.add_chore(assigned_to="Alice", description="Task", google_id="same-id")
             # This should be a no-op
             db.update_chore_google_id("same-id", "same-id")
             chores = db.get_chores()

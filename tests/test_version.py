@@ -6,9 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.version import (_is_newer, _set_status, check_for_update,
-                         get_current_version, get_upgrade_status,
-                         start_upgrade)
+from src.version import (
+    _is_newer,
+    _set_status,
+    check_for_update,
+    get_current_version,
+    get_upgrade_status,
+    start_upgrade,
+)
 
 # --- get_current_version ---
 

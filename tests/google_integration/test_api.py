@@ -22,9 +22,7 @@ class TestParseGoogleDatetime:
         assert dt.tzinfo == datetime.timezone.utc
 
     def test_datetime_with_z_suffix(self):
-        dt, is_all_day = parse_google_datetime(
-            {"dateTime": "2025-05-15T10:30:00Z"}
-        )
+        dt, is_all_day = parse_google_datetime({"dateTime": "2025-05-15T10:30:00Z"})
         assert is_all_day is False
         assert dt.hour == 10
         assert dt.minute == 30
@@ -45,9 +43,7 @@ class TestParseGoogleDatetime:
         assert dt.hour == 10
 
     def test_invalid_datetime_fallback(self):
-        dt, is_all_day = parse_google_datetime(
-            {"dateTime": "not-a-date"}
-        )
+        dt, is_all_day = parse_google_datetime({"dateTime": "not-a-date"})
         assert is_all_day is False
         assert dt == datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
