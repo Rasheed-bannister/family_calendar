@@ -89,6 +89,10 @@ const Slideshow = (function () {
             photosAvailable = true;
             if (isRunning) {
               cyclePhoto();
+              // Start the cycling interval (it was never started for empty libraries)
+              if (!slideshowInterval) {
+                slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
+              }
             }
             return;
           }

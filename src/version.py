@@ -114,7 +114,7 @@ def _run_upgrade(target_tag: str) -> None:
         # Use a short delay so the status response can be sent first
         try:
             subprocess.Popen(  # noqa: S603
-                ["bash", "-c", "sleep 2 && sudo systemctl restart family-calendar"],
+                ["bash", "-c", "sleep 2 && sudo -n systemctl restart family-calendar"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

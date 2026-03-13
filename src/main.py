@@ -141,14 +141,41 @@ def create_app():
     @app.route("/api/upgrade", methods=["POST"])
     def upgrade_api():
         """Trigger an application upgrade to the specified tag."""
+        import re
+
         from flask import jsonify
 
         from src.version import start_upgrade
+
+        # Restrict to localhost only — upgrades should not be triggered remotely
+        if request.remote_addr not in ("127.0.0.1", "::1"):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Upgrades allowed from localhost only",
+                    }
+                ),
+                403,
+            )
 
         data = request.get_json(silent=True) or {}
         tag = data.get("tag")
         if not tag:
             return jsonify({"success": False, "message": "Missing 'tag' field"}), 400
+
+        # Validate tag format (must look like a semver release tag)
+        if not re.match(r"^v\d+\.\d+\.\d+$", tag):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Invalid tag format (expected vX.Y.Z)",
+                    }
+                ),
+                400,
+            )
+
         return jsonify(start_upgrade(tag))
 
     @app.route("/api/upgrade/status")

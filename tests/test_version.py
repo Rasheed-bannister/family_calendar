@@ -23,27 +23,24 @@ class TestGetCurrentVersion:
         version_file.write_text("1.2.3\n")
         with patch("src.version.Path") as mock_path:
             mock_path.return_value.parent.parent.__truediv__ = lambda s, n: version_file
-            # Use the real function but patch the path resolution
-            pass
-        # Direct test: read the actual VERSION file
-        version = get_current_version()
-        assert version != ""
-        assert "." in version  # Should be semver-like
+            result = get_current_version()
+        assert result == "1.2.3"
 
     def test_returns_unknown_when_file_missing(self, tmp_path):
-        with patch(
-            "src.version.Path.__new__",
-            side_effect=lambda cls, *a: tmp_path / "nonexistent",
-        ):
-            # Patch at the level of the path resolution
-            pass
-        # Integration-style: the real VERSION file should exist
-        assert get_current_version() == "0.1.0"
+        missing_file = tmp_path / "nonexistent"
+        with patch("src.version.Path") as mock_path:
+            mock_path.return_value.parent.parent.__truediv__ = lambda s, n: missing_file
+            result = get_current_version()
+        assert result == "unknown"
 
-    def test_strips_whitespace(self):
+    def test_strips_whitespace(self, tmp_path):
         """VERSION file content should be stripped of whitespace."""
-        version = get_current_version()
-        assert version == version.strip()
+        version_file = tmp_path / "VERSION"
+        version_file.write_text("  2.0.0  \n")
+        with patch("src.version.Path") as mock_path:
+            mock_path.return_value.parent.parent.__truediv__ = lambda s, n: version_file
+            result = get_current_version()
+        assert result == "2.0.0"
 
 
 # --- _is_newer ---
@@ -300,6 +297,17 @@ class TestVersionAPI:
         assert response.status_code == 400
         data = response.get_json()
         assert data["success"] is False
+
+    def test_upgrade_rejects_invalid_tag_format(self, client):
+        response = client.post(
+            "/api/upgrade",
+            json={"tag": "not-a-tag"},
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["success"] is False
+        assert "Invalid tag format" in data["message"]
 
     def test_upgrade_status_endpoint(self, client):
         _set_status("idle", "")

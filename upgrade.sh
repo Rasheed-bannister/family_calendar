@@ -83,14 +83,14 @@ backup_user_data() {
     # Databases
     for db in src/calendar_app/calendar.db src/chores_app/chores.db src/slideshow/slideshow.db; do
         if [ -f "$APP_DIR/$db" ]; then
-            mkdir -p "$BACKUP_DIR/$TIMESTAMP/$(dirname $db)"
+            mkdir -p "$BACKUP_DIR/$TIMESTAMP/$(dirname "$db")"
             cp "$APP_DIR/$db" "$BACKUP_DIR/$TIMESTAMP/$db"
         fi
     done
 
     # Photo manifest (not the photos themselves — too large)
     if [ -d "$APP_DIR/src/static/photos" ]; then
-        find "$APP_DIR/src/static/photos" -type f -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.gif" | \
+        find "$APP_DIR/src/static/photos" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.gif" \) | \
             sed "s|$APP_DIR/||" > "$BACKUP_DIR/$TIMESTAMP/photo_manifest.txt" 2>/dev/null || true
         PHOTO_COUNT=$(wc -l < "$BACKUP_DIR/$TIMESTAMP/photo_manifest.txt" 2>/dev/null || echo "0")
         status "Photo manifest saved ($PHOTO_COUNT photos tracked, files untouched)"

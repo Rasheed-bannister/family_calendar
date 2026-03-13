@@ -30,6 +30,7 @@ def sync_photos(static_folder_path):
         logger.warning("Photos directory not found: %s", photos_dir)
         return
 
+    conn = None
     try:
         # Get current files in the directory
         valid_extensions = (".png", ".jpg", ".jpeg", ".gif", ".webp")
@@ -66,11 +67,11 @@ def sync_photos(static_folder_path):
             )
 
         conn.commit()
-        conn.close()
         logger.info("Photo database sync complete.")
 
     except Exception as e:
         logger.error("Error syncing photos: %s", e)
+    finally:
         if conn:
             conn.close()
 

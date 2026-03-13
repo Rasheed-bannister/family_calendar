@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-
 from src.weather_integration.api import (
     _deserialize_from_cache,
     _serialize_for_cache,
