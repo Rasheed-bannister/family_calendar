@@ -1,6 +1,6 @@
 import calendar
 import datetime
-import threading
+import logging
 
 from flask import Blueprint, current_app, jsonify, render_template
 
@@ -10,8 +10,7 @@ from src.main import background_tasks, google_fetch_lock
 from . import database as db
 from .models import CalendarMonth
 
-# Now only importing the calendar API
-
+logger = logging.getLogger(__name__)
 
 calendar_bp = Blueprint("calendar", __name__, url_prefix="/calendar")
 
@@ -36,10 +35,18 @@ def _calculate_navigation_dates(
 
 
 def _should_start_calendar_background_task(task_id: str) -> bool:
-    """Check if calendar background task should be started or refreshed."""
+    """Check if calendar background task should be started or refreshed.
+
+    Atomically checks and marks task as pending to prevent race conditions (#5).
+    """
     with google_fetch_lock:
         task_info = background_tasks.get(task_id)
-        if not task_info or task_info["status"] not in ["running", "complete"]:
+        if not task_info or task_info["status"] not in [
+            "running",
+            "complete",
+            "pending",
+        ]:
+            background_tasks[task_id] = {"status": "pending", "updated": False}
             return True
         elif task_info["status"] == "complete":
             import time
@@ -58,25 +65,31 @@ def _should_start_calendar_background_task(task_id: str) -> bool:
 
 
 def _start_calendar_background_sync(current_month: int, current_year: int) -> None:
-    """Start calendar background sync thread."""
+    """Start calendar background sync using the shared thread pool."""
     from src.google_integration.routes import fetch_google_events_background
+    from src.main import sync_executor
 
-    google_thread = threading.Thread(
-        target=fetch_google_events_background, args=(current_month, current_year)
-    )
-    google_thread.daemon = True
-    google_thread.start()
+    sync_executor.submit(fetch_google_events_background, current_month, current_year)
 
 
 def _should_start_chores_background_task() -> bool:
-    """Check if chores background task should be started."""
+    """Check if chores background task should be started.
+
+    Atomically checks and marks task as pending to prevent race conditions (#5).
+    """
     chores_task_id = "tasks"
     with google_fetch_lock:
         chores_task_info = background_tasks.get(chores_task_id)
         if not chores_task_info or chores_task_info["status"] not in [
             "running",
             "complete",
+            "pending",
         ]:
+            background_tasks[chores_task_id] = {
+                "status": "pending",
+                "updated": False,
+                "chores_changed": False,
+            }
             return True
     return False
 
@@ -89,7 +102,7 @@ def _start_chores_background_sync() -> None:
 
         fetch_google_tasks_background()
     except Exception as e:
-        print(f"Error during automatic chores refresh: {e}")
+        logger.error("Error during automatic chores refresh: %s", e)
         with google_fetch_lock:
             if chores_task_id in background_tasks:
                 background_tasks[chores_task_id]["status"] = "error"
@@ -375,17 +388,14 @@ def _trigger_calendar_refresh_if_needed(
     if not should_trigger_refresh:
         return
 
-    import threading
-
     from src.google_integration.routes import fetch_google_events_background
+    from src.main import sync_executor
 
-    google_thread = threading.Thread(
-        target=fetch_google_events_background, args=(month, year)
-    )
-    google_thread.daemon = True
-    google_thread.start()
-    print(
-        f"Triggered background refresh for {month}/{year} due to time elapsed or missing task"
+    sync_executor.submit(fetch_google_events_background, month, year)
+    logger.info(
+        "Triggered background refresh for %s/%s due to time elapsed or missing task",
+        month,
+        year,
     )
 
 

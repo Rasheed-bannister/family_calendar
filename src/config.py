@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+logger = logging.getLogger(__name__)
+
 
 class Config:
     """Configuration manager for the Family Calendar application."""
@@ -63,11 +65,20 @@ class Config:
     }
 
     def __init__(self, config_file: Optional[str] = None):
-        """Initialize configuration from file or defaults."""
+        """Initialize configuration from file or defaults.
+
+        Note: print() is used for early messages before logging is configured.
+        After _setup_logging(), all messages use the logger.
+        """
+        self._early_messages: list[str] = []
         self.config_file = config_file or self._find_config_file()
         self.config = self._load_config()
         self._validate_config()
         self._setup_logging()
+        # Flush early messages through the now-configured logger
+        for msg in self._early_messages:
+            logger.info(msg)
+        self._early_messages.clear()
 
     def _find_config_file(self) -> Path:
         """Find the configuration file in standard locations."""
@@ -81,13 +92,14 @@ class Config:
 
         for location in locations:
             if location.exists():
-                # Use print here since logging isn't configured yet
-                print(f"Found config file at: {location}")
+                self._early_messages.append(f"Found config file at: {location}")
                 return location
 
         # If no config file exists, create a default one
         default_location = Path.cwd() / "config.json"
-        print(f"No config file found. Creating default at: {default_location}")
+        self._early_messages.append(
+            f"No config file found. Creating default at: {default_location}"
+        )
         self._create_default_config(default_location)
         return default_location
 
@@ -105,10 +117,10 @@ class Config:
             with open(path, "w") as f:
                 json.dump(default_config, f, indent=2)
         except (IOError, ValueError) as e:
-            print(f"Error creating default config file: {e}")
+            self._early_messages.append(f"Error creating default config file: {e}")
             return
 
-        print(f"Created default configuration file at: {path}")
+        self._early_messages.append(f"Created default configuration file at: {path}")
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file with defaults as fallback."""
@@ -120,10 +132,12 @@ class Config:
                     file_config = json.load(f)
                     # Deep merge with defaults
                     config = self._deep_merge(config, file_config)
-                    print(f"Loaded configuration from: {self.config_file}")
+                    self._early_messages.append(
+                        f"Loaded configuration from: {self.config_file}"
+                    )
             except (ValueError, IOError) as e:
-                print(f"Error loading config file: {e}")
-                print("Using default configuration")
+                self._early_messages.append(f"Error loading config file: {e}")
+                self._early_messages.append("Using default configuration")
 
         # Override with environment variables if present (for backwards compatibility)
         self._apply_env_overrides(config)
@@ -159,9 +173,11 @@ class Config:
             if env_var in os.environ:
                 try:
                     config[section][key] = converter(os.environ[env_var])  # type: ignore[operator]
-                    print(f"Override from environment: {env_var}")
+                    self._early_messages.append(f"Override from environment: {env_var}")
                 except (ValueError, KeyError) as e:
-                    print(f"Error applying environment override {env_var}: {e}")
+                    self._early_messages.append(
+                        f"Error applying environment override {env_var}: {e}"
+                    )
 
     def _ensure_secret_key(self) -> None:
         """Ensure secret key exists or generate one."""
@@ -169,7 +185,9 @@ class Config:
             import secrets
 
             self.config["app"]["secret_key"] = secrets.token_hex(32)
-            print("No secret key configured. Generated a random one.")
+            self._early_messages.append(
+                "No secret key configured. Generated a random one."
+            )
 
     def _validate_numeric_ranges(self) -> list[str]:
         """Validate numeric configuration ranges.
@@ -226,10 +244,10 @@ class Config:
         # Report errors if any
         if errors:
             for error in errors:
-                print(f"Configuration error: {error}")
+                self._early_messages.append(f"Configuration error: {error}")
             raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
 
-        print("Configuration validation successful")
+        self._early_messages.append("Configuration validation successful")
 
     def _setup_logging(self):
         """Configure logging based on settings."""

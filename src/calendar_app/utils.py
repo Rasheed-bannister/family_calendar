@@ -1,9 +1,12 @@
+import logging
 import pathlib
 import sqlite3  # Import sqlite3 for error handling
 
 from . import database as db
 from .database import db_connection, get_next_color
 from .models import Calendar, CalendarEvent, CalendarMonth
+
+logger = logging.getLogger(__name__)
 
 
 @db_connection
@@ -56,7 +59,7 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
             processed_ids.add(event.id)
 
         except sqlite3.Error as e:
-            print(f"Database error processing event {event.id}: {e}")
+            logger.error("Database error processing event %s: %s", event.id, e)
             continue  # Continue with the next event
 
     return changes_made
@@ -115,8 +118,8 @@ def create_calendar_events_from_google_data(
             # Re-fetch the calendar object in case a color was assigned by add_calendar
             calendar_obj = db.get_calendar(google_cal_id)
             if not calendar_obj:
-                print(
-                    f"Error: Failed to get calendar {google_cal_id} after adding/updating."
+                logger.error(
+                    "Failed to get calendar %s after adding/updating", google_cal_id
                 )
                 continue  # Skip this event if calendar handling failed
 
@@ -183,7 +186,9 @@ def cleanup_deleted_events(
         events_to_delete = db_event_ids - current_google_event_ids
 
         if events_to_delete:
-            print(f"Cleaning up {len(events_to_delete)} deleted events from database")
+            logger.info(
+                "Cleaning up %d deleted events from database", len(events_to_delete)
+            )
 
             # Delete the orphaned events using safe parameterized query
             # Use executemany for completely safe deletion
@@ -197,7 +202,7 @@ def cleanup_deleted_events(
         return False
 
     except sqlite3.Error as e:
-        print(f"Error during event cleanup: {e}")
+        logger.error("Error during event cleanup: %s", e)
         return False
 
 
@@ -220,7 +225,7 @@ def load_calendar_aliases():
                             calendar_id, display_name = line.split("=", 1)
                             aliases[calendar_id.strip()] = display_name.strip()
         except Exception as e:
-            print(f"Warning: Could not load calendar aliases: {e}")
+            logger.warning("Could not load calendar aliases: %s", e)
 
     return aliases
 

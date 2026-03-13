@@ -1,8 +1,11 @@
+import logging
 import sqlite3
-import uuid  # Add this import for generating UUIDs
+import uuid
 from pathlib import Path
 
 from .models import Chore
+
+logger = logging.getLogger(__name__)
 
 DATABASE_FILE = Path(__file__).parent / "chores.db"
 
@@ -133,13 +136,18 @@ def add_chore(
             ),
         )
         conn.commit()
-        print(
-            f"Chore '{new_chore.description}' for '{new_chore.assigned_to}' added to local DB with ID: {new_chore.id}"
+        logger.info(
+            "Chore '%s' for '%s' added to local DB with ID: %s",
+            new_chore.description,
+            new_chore.assigned_to,
+            new_chore.id,
         )
         return new_chore
     except sqlite3.IntegrityError as e:
-        print(
-            f"Error adding chore to DB (ID: {new_chore.id}): {e}. Chore might already exist."
+        logger.error(
+            "Error adding chore to DB (ID: %s): %s. Chore might already exist.",
+            new_chore.id,
+            e,
         )
         conn.rollback()
         # Depending on desired behavior, could try to fetch existing chore or raise error
@@ -158,8 +166,11 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
         existing_with_google_id = cursor.fetchone()
 
         if existing_with_google_id and existing_with_google_id[0] != local_chore_id:
-            print(
-                f"Error: Google Task ID {google_task_id} is already associated with a different local chore ({existing_with_google_id[0]}). Cannot update chore {local_chore_id}."
+            logger.error(
+                "Google Task ID %s is already associated with a different local chore (%s). Cannot update chore %s.",
+                google_task_id,
+                existing_with_google_id[0],
+                local_chore_id,
             )
             return
 
@@ -170,8 +181,9 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
         chore_data = cursor.fetchone()
 
         if not chore_data:
-            print(
-                f"Error: Local chore with ID {local_chore_id} not found. Cannot update with Google ID."
+            logger.error(
+                "Local chore with ID %s not found. Cannot update with Google ID.",
+                local_chore_id,
             )
             return
 
@@ -190,17 +202,21 @@ def update_chore_google_id(local_chore_id: str, google_task_id: str):
                 ),
             )
             cursor.execute("DELETE FROM Chores WHERE id = ?", (local_chore_id,))
-            print(
-                f"Chore ID updated from local {local_chore_id} to Google ID {google_task_id}"
+            logger.info(
+                "Chore ID updated from local %s to Google ID %s",
+                local_chore_id,
+                google_task_id,
             )
         else:
-            print(
-                f"Chore {local_chore_id} already uses Google ID {google_task_id} or is being re-confirmed."
+            logger.debug(
+                "Chore %s already uses Google ID %s",
+                local_chore_id,
+                google_task_id,
             )
 
         conn.commit()
     except sqlite3.Error as e:
-        print(f"Database error when updating chore with Google ID: {e}")
+        logger.error("Database error when updating chore with Google ID: %s", e)
         conn.rollback()
     finally:
         conn.close()

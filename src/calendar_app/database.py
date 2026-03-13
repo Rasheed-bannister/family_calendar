@@ -1,8 +1,11 @@
 import datetime
+import logging
 import sqlite3
 from pathlib import Path
 
 from .models import Calendar, CalendarEvent, CalendarMonth
+
+logger = logging.getLogger(__name__)
 
 DATABASE_FILE = Path(__file__).parent / "calendar.db"
 
@@ -31,8 +34,8 @@ def db_connection(func):
             conn.commit()
             return result
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
-            # Return an empty list in case of error for functions expecting lists
+            logger.error("Database error in %s: %s", func.__name__, e, exc_info=True)
+            conn.rollback()
             return []
         finally:
             conn.close()
@@ -131,10 +134,10 @@ def run_migrations():
     columns = [column[1] for column in cursor.fetchall()]
 
     if "display_name" not in columns:
-        print("Adding display_name column to Calendar table...")
+        logger.info("Adding display_name column to Calendar table...")
         cursor.execute("ALTER TABLE Calendar ADD COLUMN display_name TEXT")
         conn.commit()
-        print("Migration complete: display_name column added")
+        logger.info("Migration complete: display_name column added")
 
     conn.close()
 

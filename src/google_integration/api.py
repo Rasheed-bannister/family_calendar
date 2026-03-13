@@ -1,6 +1,9 @@
 import calendar as pycalendar
 import datetime
+import logging
 import os
+import threading
+import time
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -8,8 +11,53 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+logger = logging.getLogger(__name__)
+
 # Calendar API now only uses read-only scope
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+
+# Thread-local storage for cached service objects (#7)
+_thread_local = threading.local()
+
+# Retry configuration (#4)
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1  # seconds
+
+
+def _retry_on_error(func, *args, retries=MAX_RETRIES, **kwargs):
+    """Execute a function with exponential backoff retry on transient errors."""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return func(*args, **kwargs)
+        except HttpError as e:
+            # Don't retry client errors (4xx) except 429 (rate limit)
+            if e.resp.status < 500 and e.resp.status != 429:
+                raise
+            last_error = e
+            if attempt < retries - 1:
+                sleep_time = RETRY_BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "API call failed (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1,
+                    retries,
+                    sleep_time,
+                    e,
+                )
+                time.sleep(sleep_time)
+        except (ConnectionError, TimeoutError, OSError) as e:
+            last_error = e
+            if attempt < retries - 1:
+                sleep_time = RETRY_BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "Network error (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1,
+                    retries,
+                    sleep_time,
+                    e,
+                )
+                time.sleep(sleep_time)
+    raise last_error
 
 
 def parse_google_datetime(google_date_obj):
@@ -35,7 +83,7 @@ def parse_google_datetime(google_date_obj):
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=datetime.timezone.utc)
         except ValueError:
-            print(f"Warning: Could not parse datetime string '{dt_str}'. Using epoch.")
+            logger.warning("Could not parse datetime string '%s'. Using epoch.", dt_str)
             # Use min datetime with UTC timezone as a fallback
             dt = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
@@ -58,27 +106,20 @@ def authenticate_calendar():
     token_path = os.path.join(script_dir, "calendar_token.json")
     creds_path = os.path.join(script_dir, "credentials.json")
 
-    # The file calendar_token.json stores the user's access and refresh tokens
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, CALENDAR_SCOPES)
 
-    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
             except Exception as e:
-                print(f"Error refreshing calendar token: {e}")
-                # Attempt re-authentication if refresh fails
-                creds = None  # Reset creds to trigger the flow below
+                logger.error("Error refreshing calendar token: %s", e)
+                creds = None
 
-        # Only run the flow if creds are still None (initial run or refresh failed)
         if not creds:
             if not os.path.exists(creds_path):
-                print(f"Error: Credentials file not found at {creds_path}")
-                print(
-                    "Please download your credentials file from Google Cloud Console and place it there."
-                )
+                logger.error("Credentials file not found at %s", creds_path)
                 return None
             try:
                 flow = InstalledAppFlow.from_client_secrets_file(
@@ -86,34 +127,44 @@ def authenticate_calendar():
                 )
                 creds = flow.run_local_server(port=0)
             except Exception as e:
-                print(f"Error during calendar authentication flow: {e}")
+                logger.error("Error during calendar authentication flow: %s", e)
                 return None
 
-        # Save the credentials for the next run if successfully obtained/refreshed
         if creds:
             try:
                 with open(token_path, "w") as token:
                     token.write(creds.to_json())
             except IOError as e:
-                print(f"Error saving calendar token file: {e}")
+                logger.error("Error saving calendar token file: %s", e)
 
     return creds
 
 
 def get_calendar_service():
-    """Authenticates and builds the Google Calendar API service."""
+    """Authenticates and builds the Google Calendar API service.
+
+    Caches the service per-thread to avoid rebuilding on every call (#7).
+    """
+    # Check for cached service with valid credentials
+    cached = getattr(_thread_local, "calendar_service", None)
+    cached_creds = getattr(_thread_local, "calendar_creds", None)
+    if cached and cached_creds and cached_creds.valid:
+        return cached
+
     creds = authenticate_calendar()
     if not creds:
-        print("Google Calendar authentication failed or skipped.")
+        logger.warning("Google Calendar authentication failed or skipped.")
         return None
     try:
         service = build("calendar", "v3", credentials=creds)
+        _thread_local.calendar_service = service
+        _thread_local.calendar_creds = creds
         return service
     except HttpError as error:
-        print(f"An API error occurred building Calendar service: {error}")
+        logger.error("API error building Calendar service: %s", error)
         return None
     except Exception as e:
-        print(f"An unexpected error occurred building Calendar service: {e}")
+        logger.error("Unexpected error building Calendar service: %s", e)
         return None
 
 
@@ -133,7 +184,7 @@ def get_events_current_month(service, month: int, year: int):
     """
     calendars = get_calendar_list(service)
     if not calendars:
-        print("No calendars found or error fetching calendar list.")
+        logger.warning("No calendars found or error fetching calendar list.")
         return []
 
     # Calculate the time range for the given month and year
@@ -157,19 +208,16 @@ def get_events_current_month(service, month: int, year: int):
         while True:
             page_count += 1
             try:
-                events_result = (
-                    service.events()
-                    .list(
-                        calendarId=calendar_id,
-                        timeMin=time_min,
-                        timeMax=time_max,
-                        singleEvents=True,
-                        orderBy="startTime",
-                        pageToken=page_token,
-                        maxResults=250,
-                    )
-                    .execute()
+                request_obj = service.events().list(
+                    calendarId=calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    pageToken=page_token,
+                    maxResults=250,
                 )
+                events_result = _retry_on_error(request_obj.execute)
                 events = events_result.get("items", [])
                 all_events.extend(events)
 
@@ -178,14 +226,19 @@ def get_events_current_month(service, month: int, year: int):
                     break
 
             except HttpError as error:
-                # Handle cases like 404 if a calendar is listed but not accessible
-                print(
-                    f"    Could not fetch events for calendar {calendar_id} (Page {page_count}): {error}"
+                logger.warning(
+                    "Could not fetch events for calendar %s (Page %d): %s",
+                    calendar_id,
+                    page_count,
+                    error,
                 )
                 break
             except Exception as e:
-                print(
-                    f"    An unexpected error occurred fetching events for {calendar_id} (Page {page_count}): {e}"
+                logger.error(
+                    "Unexpected error fetching events for %s (Page %d): %s",
+                    calendar_id,
+                    page_count,
+                    e,
                 )
                 break
 
@@ -214,8 +267,10 @@ def get_events_current_month(service, month: int, year: int):
                 return dt
         except ValueError:
             # Fallback for unexpected formats - treat as minimum possible time?
-            print(
-                f"Warning: Could not parse start time '{start}' for event '{event.get('summary', 'N/A')}'. Using epoch."
+            logger.warning(
+                "Could not parse start time '%s' for event '%s'. Using epoch.",
+                start,
+                event.get("summary", "N/A"),
             )
             return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
@@ -235,16 +290,17 @@ def get_calendar_list(service):
               or an error occurs.
     """
     try:
-        calendar_list_result = service.calendarList().list().execute()
+        request_obj = service.calendarList().list()
+        calendar_list_result = _retry_on_error(request_obj.execute)
         calendars = calendar_list_result.get("items", [])
         if not calendars:
             return []
         return calendars
     except HttpError as error:
-        print(f"An error occurred fetching calendar list: {error}")
+        logger.error("Error fetching calendar list: %s", error)
         return []
     except Exception as e:
-        print(f"An unexpected error occurred fetching calendar list: {e}")
+        logger.error("Unexpected error fetching calendar list: %s", e)
         return []
 
 
@@ -293,12 +349,10 @@ def fetch_and_process_google_events(month: int, year: int) -> list[dict]:
             processed_events.append(processed_event)
 
     except HttpError as error:
-        print(f"An API error occurred: {error}")
-        return []  # Return empty list on API error
+        logger.error("API error fetching/processing events: %s", error)
+        return []
     except Exception as e:
-        print(
-            f"An unexpected error occurred during Google API interaction: {e}"
-        )  # Keep error prints
-        return []  # Return empty list on other errors
+        logger.error("Unexpected error during Google API interaction: %s", e)
+        return []
 
     return processed_events

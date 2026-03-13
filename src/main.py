@@ -1,6 +1,7 @@
 import datetime
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, redirect, url_for
 
@@ -10,58 +11,16 @@ from src.config import get_config
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 
+logger = logging.getLogger(__name__)
+
 # Shared resources across components
 google_fetch_lock = threading.Lock()  # Global lock for Google API fetching
 background_tasks: dict[str, dict] = (
     {}
 )  # Dict to track background task status by month/year
 
-
-def _make_chores_comparable(chores_list):
-    """Creates a simplified, comparable representation of the chores list."""
-    if not chores_list:
-        return set()  # Return empty set if there are no chores
-
-    if not isinstance(chores_list, list):
-        return None
-
-    comparable_set = set()
-    for item in chores_list:
-        if isinstance(item, dict):
-            # Dictionary representation (from database)
-            comparable_set.add(
-                (
-                    item.get("id"),
-                    item.get("title"),
-                    item.get("notes"),
-                    item.get("status"),
-                )
-            )
-        else:
-            # Likely a Chore object (from Google)
-            try:
-                # Try to access attributes that would be present on a Chore object
-                if (
-                    hasattr(item, "id")
-                    and hasattr(item, "title")
-                    and hasattr(item, "notes")
-                    and hasattr(item, "status")
-                ):
-                    comparable_set.add(
-                        (
-                            getattr(item, "id"),
-                            getattr(item, "title"),
-                            getattr(item, "notes"),
-                            getattr(item, "status"),
-                        )
-                    )
-                else:
-                    # Fallback to string representation
-                    comparable_set.add(str(item))
-            except Exception as e:
-                print(f"Error making chore comparable: {e}")
-                # Just ignore items we can't process
-    return comparable_set
+# Thread pool for background sync tasks (caps concurrency, reuses threads)
+sync_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sync")
 
 
 def clear_stale_background_tasks():
@@ -70,7 +29,7 @@ def clear_stale_background_tasks():
     with google_fetch_lock:
         # Clear all background tasks on startup to prevent stuck states
         background_tasks.clear()
-        print("Cleared stale background tasks")
+        logger.info("Cleared stale background tasks")
 
 
 def create_app():
@@ -110,7 +69,7 @@ def create_app():
             logging.critical(
                 "Application restart threshold reached due to critical errors"
             )
-            # In a production environment, this could trigger a restart mechanism
+            health_monitor.trigger_restart()
 
         return "Internal Server Error", 500
 
@@ -227,4 +186,4 @@ if __name__ == "__main__":
             exclude_patterns=["**/*.db"],
         )
     else:
-        print("Setup completed. Exiting without starting server.")
+        logger.info("Setup completed. Exiting without starting server.")

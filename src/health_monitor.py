@@ -5,6 +5,8 @@ Provides system health checks, resource monitoring, and critical error detection
 
 import logging
 import os
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta
@@ -12,6 +14,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 import psutil
+
+logger = logging.getLogger(__name__)
 
 
 class HealthMonitor:
@@ -31,8 +35,8 @@ class HealthMonitor:
     def get_system_info(self) -> Dict[str, Any]:
         """Get current system information."""
         try:
-            # CPU information
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # CPU information (non-blocking: returns value since last call)
+            cpu_percent = psutil.cpu_percent(interval=None)
             cpu_count = psutil.cpu_count()
 
             # Memory information
@@ -218,6 +222,31 @@ class HealthMonitor:
                 }
 
         return db_status
+
+    def trigger_restart(self):
+        """Trigger application restart via systemd or direct process restart."""
+        logger.critical("Triggering application restart due to critical errors")
+
+        # Try systemd restart first (production Raspberry Pi deployment)
+        try:
+            result = subprocess.run(  # noqa: S603
+                ["systemctl", "restart", "family-calendar.service"],  # noqa: S607
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                logger.info("Systemd restart initiated successfully")
+                return
+            logger.warning(
+                "Systemd restart failed (rc=%d): %s", result.returncode, result.stderr
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.warning("Systemd not available for restart: %s", e)
+
+        # Fallback: restart the Python process directly
+        logger.info("Falling back to direct process restart")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def enable_monitoring(self):
         """Enable health monitoring."""
