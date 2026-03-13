@@ -3,11 +3,10 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, request, url_for
 
 # Import configuration
 from src.config import get_config
-
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 
@@ -125,6 +124,40 @@ def create_app():
 
         config = get_config()
         return jsonify(config.config)
+
+    @app.route("/api/version")
+    def version_api():
+        """API endpoint to get current version and check for updates."""
+        from flask import jsonify
+
+        from src.version import check_for_update, get_current_version
+
+        check = request.args.get("check_update", "").lower() == "true"
+        if check:
+            return jsonify(check_for_update())
+        return jsonify({"current_version": get_current_version()})
+
+    @app.route("/api/upgrade", methods=["POST"])
+    def upgrade_api():
+        """Trigger an application upgrade to the specified tag."""
+        from flask import jsonify
+
+        from src.version import start_upgrade
+
+        data = request.get_json(silent=True) or {}
+        tag = data.get("tag")
+        if not tag:
+            return jsonify({"success": False, "message": "Missing 'tag' field"}), 400
+        return jsonify(start_upgrade(tag))
+
+    @app.route("/api/upgrade/status")
+    def upgrade_status_api():
+        """Check the status of a running upgrade."""
+        from flask import jsonify
+
+        from src.version import get_upgrade_status
+
+        return jsonify(get_upgrade_status())
 
     return app
 

@@ -11,6 +11,7 @@ import Modal from "./components/modal.js";
 import VirtualKeyboard from "./components/virtualKeyboard.js";
 import PIRSensor from "./components/pirSensor.js";
 import LoadingIndicator from "./components/loadingIndicator.js";
+import UpdateNotifier from "./components/updateNotifier.js";
 
 // Global variables for cleanup tracking
 let chorePollingTimeout = null;
@@ -108,6 +109,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     weather: await safeInit("weather", () => Weather.init()),
     slideshow: await safeInit("slideshow", () => Slideshow.init()),
     chores: await safeInit("chores", () => Chores.init()),
+    updateNotifier: await safeInit("updateNotifier", () => UpdateNotifier.init()),
   };
 
   // Initialize async components without blocking
@@ -531,6 +533,10 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     if (VirtualKeyboard && typeof VirtualKeyboard.cleanup === "function") {
       VirtualKeyboard.cleanup();
+    }
+
+    if (UpdateNotifier && typeof UpdateNotifier.cleanup === "function") {
+      UpdateNotifier.cleanup();
     }
 
     // Clear all intervals and timeouts
