@@ -431,13 +431,13 @@ const Chores = (function () {
       // Chores component resumed
     },
     cleanup: function () {
-      // Clear references
-      choresTable = null;
-      modalElement = null;
-      modalTitle = null;
-      modalNotes = null;
-      modalDueDate = null;
-      selectedChoreElement = null;
+      // Remove document-level event listener
+      document.removeEventListener("click", handleDocumentClick);
+
+      // Reset state
+      choresContainer = null;
+      activeChoreItem = null;
+      activeSwipedChore = null;
       isPaused = false;
     },
   };

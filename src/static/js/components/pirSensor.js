@@ -76,12 +76,21 @@ const PIRSensor = (function () {
     }
   }
 
+  let activeRipple = null; // Track current ripple element to prevent leaks
+
   function showMotionFeedback() {
     if (!visualIndicator || !config?.show_pir_feedback) return;
 
-    // Clear any existing timeout
+    // Clear any existing timeout and clean up previous ripple
     if (motionFeedbackTimeout) {
       clearTimeout(motionFeedbackTimeout);
+      motionFeedbackTimeout = null;
+    }
+
+    // Remove previous ripple before creating a new one
+    if (activeRipple && activeRipple.parentNode) {
+      activeRipple.parentNode.removeChild(activeRipple);
+      activeRipple = null;
     }
 
     // Show motion indicator with animation
@@ -89,18 +98,20 @@ const PIRSensor = (function () {
     visualIndicator.classList.add("motion-detected");
 
     // Create ripple effect
-    const ripple = document.createElement("div");
-    ripple.className = "motion-ripple";
-    document.body.appendChild(ripple);
+    activeRipple = document.createElement("div");
+    activeRipple.className = "motion-ripple";
+    document.body.appendChild(activeRipple);
 
     // Position ripple at center of screen
     const rect = document.body.getBoundingClientRect();
-    ripple.style.left = rect.width / 2 + "px";
-    ripple.style.top = rect.height / 2 + "px";
+    activeRipple.style.left = rect.width / 2 + "px";
+    activeRipple.style.top = rect.height / 2 + "px";
 
     // Trigger ripple animation
     setTimeout(() => {
-      ripple.classList.add("ripple-animate");
+      if (activeRipple) {
+        activeRipple.classList.add("ripple-animate");
+      }
     }, 10);
 
     // Hide after delay
@@ -111,11 +122,11 @@ const PIRSensor = (function () {
       }
 
       // Remove ripple
-      if (ripple && document.body.contains(ripple)) {
-        document.body.removeChild(ripple);
-        ripple = null; // Clear reference
+      if (activeRipple && activeRipple.parentNode) {
+        activeRipple.parentNode.removeChild(activeRipple);
+        activeRipple = null;
       }
-      motionFeedbackTimeout = null; // Clear timeout reference
+      motionFeedbackTimeout = null;
     }, 2000);
   }
 
@@ -465,7 +476,13 @@ const PIRSensor = (function () {
         statusIndicator = null;
       }
 
-      // Remove any remaining ripple elements
+      // Remove tracked ripple element
+      if (activeRipple && activeRipple.parentNode) {
+        activeRipple.parentNode.removeChild(activeRipple);
+        activeRipple = null;
+      }
+
+      // Remove any remaining ripple elements (safety net)
       const ripples = document.querySelectorAll(".motion-ripple");
       ripples.forEach((ripple) => {
         if (ripple.parentNode) {
