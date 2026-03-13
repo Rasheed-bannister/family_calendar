@@ -149,7 +149,7 @@ setup_application() {
   # Update pyproject.toml to be compatible with available Python version
   if [ -f "pyproject.toml" ]; then
     status "Updating Python version requirement in pyproject.toml..."
-    sed -i 's/requires-python = ">=3.13"/requires-python = ">=3.11"/' pyproject.toml || status "Could not update Python version in pyproject.toml, continuing anyway"
+    sed -i 's/requires-python = ">=3.14"/requires-python = ">=3.11"/' pyproject.toml || status "Could not update Python version in pyproject.toml, continuing anyway"
   fi
   
   status "Installing Python dependencies..."
