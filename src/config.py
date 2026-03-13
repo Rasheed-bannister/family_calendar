@@ -33,7 +33,12 @@ class Config:
             "cache_duration": 600,  # seconds
             "offline_fallback": True,
         },
-        "pir_sensor": {"enabled": True, "gpio_pin": 18, "debounce_time": 2.0},
+        "pir_sensor": {
+            "enabled": True,
+            "gpio_pin": 18,
+            "debounce_time": 2.0,
+            "simulation_mode": False,
+        },
         "inactivity": {
             "day_timeout_minutes": 60,
             "night_timeout_seconds": 5,

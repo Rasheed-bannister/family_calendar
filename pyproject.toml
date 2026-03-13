@@ -49,6 +49,11 @@ dev = [
     "pre-commit>=4.5.1",
 ]
 
+[tool.ruff.lint]
+# RSE102 removes parentheses from multi-exception except clauses,
+# turning valid `except (A, B):` into invalid `except A, B:` syntax.
+ignore = ["RSE102"]
+
 [tool.pytest.ini_options]
 pythonpath = [
   "."
