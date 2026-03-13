@@ -1,4 +1,4 @@
-import threading
+import logging
 
 from flask import jsonify
 
@@ -7,12 +7,15 @@ from src.calendar_app import utils as calendar_utils
 from src.calendar_app.models import CalendarMonth
 from src.chores_app import database as chores_db
 from src.chores_app import utils as chores_utils
+from src.chores_app.utils import make_chores_comparable
 
 # Shared resources
-from src.main import _make_chores_comparable, background_tasks, google_fetch_lock
+from src.main import background_tasks, google_fetch_lock
 
 from . import api as calendar_api
 from . import tasks_api
+
+logger = logging.getLogger(__name__)
 
 
 # Get the blueprint reference - this will be available after __init__.py runs
@@ -77,7 +80,7 @@ def fetch_google_events_background(month, year):
             ] = time.time()  # Record when this sync completed
 
     except Exception as e:
-        print(f"Error in calendar fetch background task {task_id}: {e}")
+        logger.error("Error in calendar fetch background task %s: %s", task_id, e)
         with google_fetch_lock:
             background_tasks[task_id]["status"] = "error"
             background_tasks[task_id]["updated"] = False
@@ -134,9 +137,9 @@ def fetch_google_tasks_background():
                 continue  # Don't revert 'invisible' status based on Google API
 
             # Otherwise, compare Google data with DB data (if it exists)
-            if not existing_chore or _make_chores_comparable(
+            if not existing_chore or make_chores_comparable(
                 [chore_google]
-            ) != _make_chores_comparable([existing_chore]):
+            ) != make_chores_comparable([existing_chore]):
                 chores_to_add_or_update_in_db.append(chore_google)
                 chores_changed = (
                     True  # Mark as changed if we add/update non-invisible chore
@@ -153,10 +156,9 @@ def fetch_google_tasks_background():
             background_tasks[task_id]["chores_changed"] = chores_changed
 
     except Exception as e:
-        print(f"ERROR in tasks fetch background task {task_id}: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(
+            "Error in tasks fetch background task %s: %s", task_id, e, exc_info=True
+        )
         with google_fetch_lock:
             # Ensure the task entry exists before updating
             if task_id not in background_tasks:
@@ -188,25 +190,20 @@ def fetch_google_tasks_background():
 @get_google_bp().route("/refresh-calendar/<int:year>/<int:month>")
 def refresh_calendar(year, month):
     """Manually trigger a refresh of calendar events for a specific month"""
-
-    from src.main import background_tasks, google_fetch_lock
+    from src.main import sync_executor
 
     task_id = f"calendar.{month}.{year}"
 
-    # Check if already running
+    # Check if already running and atomically mark as pending (#5: race condition fix)
     with google_fetch_lock:
         if (
             task_id in background_tasks
             and background_tasks[task_id]["status"] == "running"
         ):
             return jsonify({"message": "Calendar refresh already in progress"}), 202
+        background_tasks[task_id] = {"status": "pending", "updated": False}
 
-    # Start a background thread to fetch calendar events
-    google_thread = threading.Thread(
-        target=fetch_google_events_background, args=(month, year)
-    )
-    google_thread.daemon = True
-    google_thread.start()
+    sync_executor.submit(fetch_google_events_background, month, year)
 
     return (
         jsonify(

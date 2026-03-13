@@ -6,26 +6,45 @@ const Slideshow = (function () {
   // Private variables
   let slideshowInterval = null;
   const SLIDESHOW_INTERVAL_MS = 30000; // Change photo every 30 seconds
+  const EMPTY_RECHECK_INTERVAL_MS = 5 * 60 * 1000; // Recheck for photos every 5 minutes when none exist
   let nextPhotoUrl = null;
   let currentPhotoUrl = null;
   let isPreloading = false;
   let isRunning = false;
+  let photosAvailable = true; // Assume available until proven otherwise
+  let emptyRecheckTimer = null;
   let backgroundElement = null;
   let nextBackgroundElement = null;
   let preloadTimer = null;
+  let transitionTimer = null; // Track the post-transition cleanup timeout
+  let prepareNextTimer = null; // Track the prepareNextImage timeout
+  let activeImage = null; // Track current Image object for cleanup
   const PRELOAD_DELAY_MS = 20000; // Start preloading 10 seconds before transition
 
   // Private methods
-  async function fetchNextPhotoUrl(maxAttempts = 5) {
-    // Fetching next background photo URL with duplicate prevention
+  async function fetchNextPhotoUrl(maxAttempts = 3) {
+    // If we know there are no photos, don't bother fetching
+    if (!photosAvailable) {
+      return null;
+    }
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const response = await fetch("/api/random-photo");
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          console.error("Error fetching photo URL: HTTP", response.status);
+          return null;
         }
 
         const data = await response.json();
+
+        // Server told us the photo library is empty — this is not an error
+        if (data.empty) {
+          photosAvailable = false;
+          scheduleEmptyRecheck();
+          return null;
+        }
+
         if (data.url) {
           // Check if this URL is different from the current one
           if (data.url !== currentPhotoUrl) {
@@ -43,9 +62,6 @@ const Slideshow = (function () {
             );
             return data.url;
           }
-        } else if (data.error) {
-          console.error("Error fetching photo URL:", data.error);
-          return null;
         }
         return null;
       } catch (error) {
@@ -56,6 +72,39 @@ const Slideshow = (function () {
       }
     }
     return null;
+  }
+
+  function scheduleEmptyRecheck() {
+    // Don't stack multiple recheck timers
+    if (emptyRecheckTimer) return;
+
+    emptyRecheckTimer = setTimeout(async () => {
+      emptyRecheckTimer = null;
+      try {
+        const response = await fetch("/api/random-photo");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.url) {
+            // Photos are now available — resume the slideshow
+            photosAvailable = true;
+            if (isRunning) {
+              cyclePhoto();
+              // Start the cycling interval (it was never started for empty libraries)
+              if (!slideshowInterval) {
+                slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
+              }
+            }
+            return;
+          }
+        }
+      } catch (error) {
+        // Ignore — we'll retry later
+      }
+      // Still no photos, schedule another recheck
+      if (isRunning || backgroundElement) {
+        scheduleEmptyRecheck();
+      }
+    }, EMPTY_RECHECK_INTERVAL_MS);
   }
 
   function createBackgroundElements() {
@@ -136,58 +185,68 @@ const Slideshow = (function () {
     // Update current photo URL tracking
     currentPhotoUrl = url;
 
+    // Clean up any previous in-flight Image object
+    if (activeImage) {
+      activeImage.onload = null;
+      activeImage.onerror = null;
+      activeImage.src = "";
+      activeImage = null;
+    }
+
+    // Cancel any pending transition cleanup from a previous cycle
+    if (transitionTimer) {
+      clearTimeout(transitionTimer);
+      transitionTimer = null;
+    }
+
     // Critical: Wait for image to be fully decoded before starting transition
     const testImg = new Image();
+    activeImage = testImg;
+
+    function applyTransition() {
+      if (!isRunning) return;
+
+      // Set the new image on the front element AFTER it's decoded
+      nextBackgroundElement.style.backgroundImage = `url(${url})`;
+      nextBackgroundElement.style.opacity = "0";
+
+      // Single-step crossfade: fade out current, then fade in new
+      requestAnimationFrame(() => {
+        backgroundElement.style.opacity = "0";
+        setTimeout(() => {
+          if (!isRunning) return;
+          nextBackgroundElement.style.opacity = "1";
+        }, 50);
+      });
+    }
+
     testImg.onload = () => {
+      // Clear the reference since loading is complete
+      if (activeImage === testImg) activeImage = null;
+      testImg.onload = null;
+      testImg.onerror = null;
+
       if (!isRunning) return;
 
       // Force browser to decode the image completely
       testImg
         .decode()
-        .then(() => {
-          if (!isRunning) return;
-
-          // Set the new image on the front element AFTER it's decoded
-          nextBackgroundElement.style.backgroundImage = `url(${url})`;
-          nextBackgroundElement.style.opacity = "0";
-
-          // Single-step crossfade: fade out current, then fade in new
-          // This eliminates compositor conflicts from simultaneous transitions
-          requestAnimationFrame(() => {
-            // First: fade out the current image completely
-            backgroundElement.style.opacity = "0";
-
-            // Then: after a brief moment, start fading in the new image
-            setTimeout(() => {
-              if (!isRunning) return;
-              nextBackgroundElement.style.opacity = "1";
-            }, 50); // Very brief delay to ensure clean transition
-          });
-        })
-        .catch(() => {
-          // Fallback if decode() not supported
-          if (!isRunning) return;
-          nextBackgroundElement.style.backgroundImage = `url(${url})`;
-          nextBackgroundElement.style.opacity = "0";
-
-          requestAnimationFrame(() => {
-            backgroundElement.style.opacity = "0";
-            setTimeout(() => {
-              if (!isRunning) return;
-              nextBackgroundElement.style.opacity = "1";
-            }, 50);
-          });
-        });
+        .then(() => applyTransition())
+        .catch(() => applyTransition()); // Fallback if decode() not supported
     };
 
     testImg.onerror = () => {
+      if (activeImage === testImg) activeImage = null;
+      testImg.onload = null;
+      testImg.onerror = null;
       console.error("Failed to load image for transition:", url);
     };
 
     testImg.src = url;
 
     // After transition completes, clean up and swap references
-    setTimeout(() => {
+    transitionTimer = setTimeout(() => {
+      transitionTimer = null;
       if (!isRunning) return;
 
       // Clear the old background image and reset its opacity
@@ -202,7 +261,7 @@ const Slideshow = (function () {
   }
 
   async function cyclePhoto() {
-    if (!isRunning || isPreloading) return;
+    if (!isRunning || isPreloading || !photosAvailable) return;
 
     isPreloading = true;
 
@@ -239,9 +298,16 @@ const Slideshow = (function () {
   }
 
   async function prepareNextImage() {
+    // Cancel any pending prepare timer
+    if (prepareNextTimer) {
+      clearTimeout(prepareNextTimer);
+      prepareNextTimer = null;
+    }
+
     // Non-blocking preparation of next image
-    setTimeout(async () => {
-      if (!isRunning || nextPhotoUrl) return; // Already have one prepared
+    prepareNextTimer = setTimeout(async () => {
+      prepareNextTimer = null;
+      if (!isRunning || nextPhotoUrl || !photosAvailable) return;
 
       try {
         const url = await fetchNextPhotoUrl();
@@ -259,6 +325,19 @@ const Slideshow = (function () {
     }, PRELOAD_DELAY_MS);
   }
 
+  function applyDefaultBackground() {
+    // Show a simple dark background when no photos are available
+    if (backgroundElement) {
+      backgroundElement.style.backgroundImage = "none";
+      backgroundElement.style.backgroundColor = "#1a1a2e";
+      backgroundElement.style.opacity = "1";
+    }
+    if (nextBackgroundElement) {
+      nextBackgroundElement.style.backgroundImage = "none";
+      nextBackgroundElement.style.opacity = "0";
+    }
+  }
+
   function cleanup() {
     // Clean up resources to prevent memory leaks
     if (slideshowInterval) {
@@ -269,6 +348,29 @@ const Slideshow = (function () {
     if (preloadTimer) {
       clearTimeout(preloadTimer);
       preloadTimer = null;
+    }
+
+    if (transitionTimer) {
+      clearTimeout(transitionTimer);
+      transitionTimer = null;
+    }
+
+    if (prepareNextTimer) {
+      clearTimeout(prepareNextTimer);
+      prepareNextTimer = null;
+    }
+
+    if (emptyRecheckTimer) {
+      clearTimeout(emptyRecheckTimer);
+      emptyRecheckTimer = null;
+    }
+
+    // Clean up any in-flight Image object
+    if (activeImage) {
+      activeImage.onload = null;
+      activeImage.onerror = null;
+      activeImage.src = "";
+      activeImage = null;
     }
 
     if (backgroundElement && backgroundElement.parentNode) {
@@ -292,6 +394,7 @@ const Slideshow = (function () {
     isPreloading = false;
     nextPhotoUrl = null;
     currentPhotoUrl = null;
+    photosAvailable = true;
   }
 
   // Public methods
@@ -322,6 +425,9 @@ const Slideshow = (function () {
 
           // Start preparing the second image using the coordinated function
           prepareNextImage();
+        } else if (!photosAvailable) {
+          // No photos exist — show default background and wait for photos to appear
+          applyDefaultBackground();
         } else {
           console.error("Failed to fetch initial photo for slideshow.");
         }
@@ -342,8 +448,10 @@ const Slideshow = (function () {
         clearInterval(slideshowInterval);
       }
 
-      slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
-      // Started background slideshow interval
+      // Only start the cycling interval if photos are available
+      if (photosAvailable) {
+        slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
+      }
     },
 
     stop: function () {

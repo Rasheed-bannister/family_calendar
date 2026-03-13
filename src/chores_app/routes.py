@@ -1,9 +1,13 @@
+import logging
+
 from flask import Blueprint, jsonify, request
 
 from src.google_integration import tasks_api
 from src.main import background_tasks, google_fetch_lock
 
 from . import database as db
+
+logger = logging.getLogger(__name__)
 
 chores_bp = Blueprint("chores", __name__, url_prefix="/chores")
 
@@ -34,7 +38,7 @@ def update_status(chore_id):
             }
         )
     except Exception as e:
-        print(f"Error updating chore status: {e}")
+        logger.error("Error updating chore status: %s", e)
         return jsonify({"error": "Failed to update chore status"}), 500
 
 
@@ -61,7 +65,7 @@ def refresh_chores():
         fetch_google_tasks_background()  # Call directly without threading
         return jsonify({"message": "Chores refresh completed"}), 200
     except Exception as e:
-        print(f"Error during chores refresh: {e}")
+        logger.error("Error during chores refresh: %s", e)
         with google_fetch_lock:
             if chores_task_id in background_tasks:
                 background_tasks[chores_task_id]["status"] = "error"
@@ -129,7 +133,7 @@ def add_chore_route():
     except Exception as e:
         # This will catch errors from db.add_chore (if it raises an exception not handled by returning None),
         # tasks_api.create_chore, or db.update_chore_google_id.
-        print(f"Error in add_chore_route: {e}")
+        logger.error("Error in add_chore_route: %s", e)
         # Attempt to be more specific if possible, otherwise a general error.
         # If new_chore_local was created but a subsequent step failed, it remains in the local DB with its initial ID.
         return (

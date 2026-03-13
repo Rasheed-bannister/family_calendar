@@ -1,13 +1,59 @@
+import logging
+
 from . import database as db  # Import the database module
 from .models import Chore
+
+logger = logging.getLogger(__name__)
 
 
 def initialize_db():
     """Checks if the chores database exists and creates it if not."""
     if not db.DATABASE_FILE.exists():
-        print("Chores database not found. Creating...")
+        logger.info("Chores database not found. Creating...")
         db.create_all()
-        print("Chores database created.")
+        logger.info("Chores database created.")
+
+
+def make_chores_comparable(chores_list):
+    """Creates a simplified, comparable representation of the chores list."""
+    if not chores_list:
+        return set()
+
+    if not isinstance(chores_list, list):
+        return None
+
+    comparable_set = set()
+    for item in chores_list:
+        if isinstance(item, dict):
+            comparable_set.add(
+                (
+                    item.get("id"),
+                    item.get("title"),
+                    item.get("notes"),
+                    item.get("status"),
+                )
+            )
+        else:
+            try:
+                if (
+                    hasattr(item, "id")
+                    and hasattr(item, "title")
+                    and hasattr(item, "notes")
+                    and hasattr(item, "status")
+                ):
+                    comparable_set.add(
+                        (
+                            getattr(item, "id"),
+                            getattr(item, "title"),
+                            getattr(item, "notes"),
+                            getattr(item, "status"),
+                        )
+                    )
+                else:
+                    comparable_set.add(str(item))
+            except Exception as e:
+                logger.warning("Error making chore comparable: %s", e)
+    return comparable_set
 
 
 def create_chores_from_google_data(google_tasks_data: list[dict]) -> list[Chore]:

@@ -75,7 +75,9 @@ const Weather = (function () {
         const currentWeatherContainer = document.querySelector(".weather-container");
         if (currentWeatherContainer) {
           currentWeatherContainer.outerHTML = html;
-          // Weather data updated successfully
+
+          // Re-query to update our reference (outerHTML replaces the element)
+          weatherContainer = document.querySelector(".weather-container");
 
           // Apply the weather gradient to the new container
           applyWeatherGradient();

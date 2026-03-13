@@ -3,51 +3,61 @@ name = "calendar"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "flask>=3.1.3",
-    "google-api-core>=2.24.2",
-    "google-api-python-client>=2.169.0",
-    "google-auth-httplib2>=0.2.0",
-    "google-auth-oauthlib>=1.2.2",
-    "numpy>=2.2.5",
-    "openmeteo-requests>=1.4.0",
-    "pandas>=2.2.3",
-    "requests-cache>=1.2.1",
+    "google-api-core>=2.30.0",
+    "google-api-python-client>=2.192.0",
+    "google-auth-httplib2>=0.3.0",
+    "google-auth-oauthlib>=1.3.0",
+    "numpy>=2.4.3",
+    "openmeteo-requests>=1.7.5",
+    "pandas>=3.0.1",
+    "requests-cache>=1.3.1",
     "retry-requests>=2.0.0",
     "RPi.GPIO>=0.7.1; sys_platform == 'linux'",
-    "psutil>=5.9.0",
+    "psutil>=7.2.2",
     "Pillow>=12.1.1",
-    "qrcode[pil]>=7.4.0",
-    "pillow-heif>=1.1.0",
+    "qrcode[pil]>=8.2",
+    "pillow-heif>=1.3.0",
 ]
 
 [dependency-groups]
 dev = [
     # Testing
-    "pytest>=8.3.5",
+    "pytest>=9.0.2",
 
     # Code formatting
-    "black>=24.0.0",
-    "isort>=5.12.0",
+    "black>=26.3.1",
+    "isort>=8.0.1",
 
     # Linting and static analysis
-    "ruff>=0.8.0",
-    "mypy>=1.5.0",
-    "bandit>=1.7.0",
+    "ruff>=0.15.6",
+    "mypy>=1.19.1",
+    "bandit>=1.9.4",
 
     # Code quality and complexity analysis
-    "radon>=6.0.0",
-    "vulture>=2.14.0",
-    "autoflake>=2.3.0",
+    "radon>=6.0.1",
+    "vulture>=2.15",
+    "autoflake>=2.3.3",
 
     # Security scanning
-    "safety>=3.0.0",
-    "pip-audit>=2.6.0",
+    "safety>=3.7.0",
+    "pip-audit>=2.10.0",
 
     # Pre-commit hooks
-    "pre-commit>=3.0.0",
+    "pre-commit>=4.5.1",
 ]
+
+[tool.black]
+# Target Python 3.11+ to avoid 3.14-only syntax (e.g. unparenthesized
+# multi-exception except clauses) since the deploy script supports 3.11+.
+target-version = ["py311"]
+
+[tool.ruff.lint]
+# RSE102 removes parentheses from multi-exception except clauses,
+# turning valid `except (A, B):` into invalid `except A, B:` syntax.
+ignore = ["RSE102"]
 
 [tool.pytest.ini_options]
 pythonpath = [

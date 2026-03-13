@@ -5,8 +5,9 @@ Provides endpoints for PIR sensor status and activity reporting
 
 import json
 import logging
+import threading
 import time
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -19,18 +20,47 @@ from .sensor import (
 
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 
-# Global queue for SSE events
-_sse_queue: Queue = Queue()
+# Per-client SSE queues with bounded size
+_sse_clients: list[Queue] = []
+_sse_clients_lock = threading.Lock()
+_MAX_QUEUE_SIZE = 50
+
+
+def _add_sse_client() -> Queue:
+    """Register a new SSE client and return its event queue."""
+    q: Queue = Queue(maxsize=_MAX_QUEUE_SIZE)
+    with _sse_clients_lock:
+        _sse_clients.append(q)
+    return q
+
+
+def _remove_sse_client(q: Queue) -> None:
+    """Unregister an SSE client."""
+    with _sse_clients_lock:
+        try:
+            _sse_clients.remove(q)
+        except ValueError:
+            pass
 
 
 def motion_detected_sse():
-    """Callback function for SSE events when motion is detected"""
+    """Callback function: broadcast motion event to all connected SSE clients."""
     event_data = {
         "type": "motion_detected",
         "timestamp": time.time(),
         "data": "Motion detected by PIR sensor",
     }
-    _sse_queue.put(event_data)
+    with _sse_clients_lock:
+        for q in _sse_clients:
+            try:
+                q.put_nowait(event_data)
+            except Full:
+                # Client is too slow — drop oldest event and enqueue new one
+                try:
+                    q.get_nowait()
+                    q.put_nowait(event_data)
+                except (Empty, Full):
+                    pass
 
 
 # Register the SSE callback
@@ -93,13 +123,7 @@ def report_activity():
         data = request.get_json() or {}
         activity_type = data.get("type", "motion")
 
-        # This endpoint can be used by external PIR sensor systems
-        # to report activity to the calendar application
-
         logging.info(f"PIR activity reported: {activity_type}")
-
-        # The actual activity handling will be done via WebSocket or polling
-        # This endpoint just confirms receipt
 
         return jsonify(
             {
@@ -116,23 +140,23 @@ def report_activity():
 @pir_bp.route("/events")
 def pir_events():
     """Server-Sent Events endpoint for real-time PIR sensor events"""
+    client_queue = _add_sse_client()
 
     def event_stream():
-        while True:
-            try:
-                # Wait for an event with timeout
-                event = _sse_queue.get(timeout=30)
-                yield f"data: {json.dumps(event)}\n\n"
-            except Empty:
-                # Send heartbeat to keep connection alive
-                yield (
-                    'data: {"type": "heartbeat", "timestamp": '
-                    + str(time.time())
-                    + "}\n\n"
-                )
-            except Exception as e:
-                logging.error(f"Error in PIR SSE stream: {e}")
-                break
+        try:
+            while True:
+                try:
+                    event = client_queue.get(timeout=30)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except Empty:
+                    # Send heartbeat to keep connection alive
+                    heartbeat = {"type": "heartbeat", "timestamp": time.time()}
+                    yield f"data: {json.dumps(heartbeat)}\n\n"
+                except Exception as e:
+                    logging.error(f"Error in PIR SSE stream: {e}")
+                    break
+        finally:
+            _remove_sse_client(client_queue)
 
     return Response(
         event_stream(),
@@ -145,7 +169,6 @@ def pir_events():
 def trigger_test_motion():
     """Test endpoint to simulate motion detection"""
     try:
-        # Manually trigger the SSE callback for testing
         motion_detected_sse()
         return jsonify({"success": True, "message": "Test motion triggered"})
     except Exception as e:

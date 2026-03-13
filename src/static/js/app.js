@@ -11,6 +11,7 @@ import Modal from "./components/modal.js";
 import VirtualKeyboard from "./components/virtualKeyboard.js";
 import PIRSensor from "./components/pirSensor.js";
 import LoadingIndicator from "./components/loadingIndicator.js";
+import UpdateNotifier from "./components/updateNotifier.js";
 
 // Global variables for cleanup tracking
 let chorePollingTimeout = null;
@@ -87,38 +88,42 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Run the detection immediately
   const isTouchDevice = detectTouchDevice();
 
-  // Initialize core components first
+  // Initialize core components with error boundaries (#8)
+  async function safeInit(name, initFn) {
+    try {
+      return await initFn();
+    } catch (err) {
+      console.error(`Component "${name}" failed to initialize:`, err);
+      return false;
+    }
+  }
+
   const componentsStatus = {
-    loadingIndicator: await LoadingIndicator.init(),
-    modal: Modal.init(), // This initializes the event modal
-    addChoreModal: Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
-    calendar: await Calendar.init(),
-    dailyView: await DailyView.init(),
-    weather: Weather.init(),
-    slideshow: await Slideshow.init(),
-    chores: Chores.init(),
+    loadingIndicator: await safeInit("loadingIndicator", () => LoadingIndicator.init()),
+    modal: await safeInit("modal", () => Modal.init()),
+    addChoreModal: await safeInit("addChoreModal", () =>
+      Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
+    ),
+    calendar: await safeInit("calendar", () => Calendar.init()),
+    dailyView: await safeInit("dailyView", () => DailyView.init()),
+    weather: await safeInit("weather", () => Weather.init()),
+    slideshow: await safeInit("slideshow", () => Slideshow.init()),
+    chores: await safeInit("chores", () => Chores.init()),
+    updateNotifier: await safeInit("updateNotifier", () => UpdateNotifier.init()),
   };
 
   // Initialize async components without blocking
-  VirtualKeyboard.init()
-    .then((result) => {
-      componentsStatus.virtualKeyboard = result;
-    })
-    .catch((err) => {
-      console.error("Virtual keyboard initialization failed:", err);
-      componentsStatus.virtualKeyboard = false;
-    });
+  safeInit("virtualKeyboard", () => VirtualKeyboard.init()).then((result) => {
+    componentsStatus.virtualKeyboard = result;
+  });
 
-  PIRSensor.init((activityType) => {
-    registerActivity(`pir-${activityType}`);
-  })
-    .then((result) => {
-      componentsStatus.pirSensor = result;
-    })
-    .catch((err) => {
-      console.error("PIR sensor initialization failed:", err);
-      componentsStatus.pirSensor = false;
-    });
+  safeInit("pirSensor", () =>
+    PIRSensor.init((activityType) => {
+      registerActivity(`pir-${activityType}`);
+    }),
+  ).then((result) => {
+    componentsStatus.pirSensor = result;
+  });
 
   // Check if all components initialized successfully
   const failedComponents = Object.entries(componentsStatus)
@@ -528,6 +533,10 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     if (VirtualKeyboard && typeof VirtualKeyboard.cleanup === "function") {
       VirtualKeyboard.cleanup();
+    }
+
+    if (UpdateNotifier && typeof UpdateNotifier.cleanup === "function") {
+      UpdateNotifier.cleanup();
     }
 
     // Clear all intervals and timeouts

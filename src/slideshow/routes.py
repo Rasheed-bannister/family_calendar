@@ -18,4 +18,8 @@ def random_photo():
         except Exception:
             return jsonify({"error": "Could not generate photo URL"}), 500
     else:
-        return jsonify({"error": "No photos found in database"}), 404
+        # Distinguish between "no photos uploaded" vs an actual error.
+        # Return 200 with empty: true so the frontend knows this is a normal state,
+        # not a transient error worth retrying aggressively.
+        count = slideshow_db.get_photo_count()
+        return jsonify({"url": None, "empty": count == 0}), 200

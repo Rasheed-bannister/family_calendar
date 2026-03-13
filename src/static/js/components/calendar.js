@@ -146,10 +146,7 @@ const Calendar = (function () {
 
         // Handle first load differently from regular checks
         if (!initialLoadComplete) {
-          // If there are no calendar cells with events, we need to wait for data
-          const hasCalendarEvents = document.querySelectorAll(".calendar .event").length > 0;
-
-          if (data.calendar_status === "complete") {
+          if (data.calendar_status === "complete" || data.calendar_status === "error") {
             // Clear any pending initial load timeout
             if (initialLoadTimeout) {
               clearTimeout(initialLoadTimeout);
@@ -158,19 +155,17 @@ const Calendar = (function () {
 
             // Hide loading indicator and show success
             LoadingIndicator.hide("google-sync");
-            LoadingIndicator.showToast("Calendar sync complete", "success", 2000);
+            if (data.calendar_status === "complete") {
+              LoadingIndicator.showToast("Calendar sync complete", "success", 2000);
+            }
 
             // Switch to regular interval - we're done with initial loading
             clearInterval(googleUpdateTimer);
             googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
             initialLoadComplete = true;
 
-            // If updates were found or the page has no events yet but the fetch is complete,
-            // refresh the page to show the newly loaded events
-            if (
-              data.events_changed ||
-              (!hasCalendarEvents && data.calendar_status === "complete")
-            ) {
+            // Only refresh if the sync actually found new/changed events
+            if (data.events_changed) {
               LoadingIndicator.showToast("Updates found! Refreshing...", "info", 2000);
               refreshPage();
             }
@@ -240,9 +235,13 @@ const Calendar = (function () {
     }
 
     initialLoadTimeout = setTimeout(() => {
-      // Initial load timeout reached, forcing refresh
+      // Initial load timeout reached — stop rapid polling, switch to regular interval
       if (!initialLoadComplete) {
-        refreshPage();
+        initialLoadComplete = true;
+        clearInterval(googleUpdateTimer);
+        googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+        LoadingIndicator.hide("google-sync");
+        LoadingIndicator.showToast("Sync timed out - using cached data", "info", 3000);
       }
     }, INITIAL_LOAD_TIMEOUT);
 
@@ -391,10 +390,12 @@ const Calendar = (function () {
       } else {
         // Page is visible again, resume update checks
         updateCheckEnabled = true;
-        // Reset initial load status to check immediately
-        initialLoadComplete = false;
-        startGoogleUpdateTimer();
-        // Page visible, resumed calendar update checks
+        // Resume with regular interval — don't reset initialLoadComplete
+        // to avoid restarting rapid 5-second polling on every screen wake
+        if (!googleUpdateTimer) {
+          googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+          checkForGoogleUpdates(); // Do one immediate check
+        }
       }
     });
   }
