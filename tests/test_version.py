@@ -203,22 +203,23 @@ class TestRunUpgrade:
     def setup_method(self):
         _set_status("idle", "")
 
+    @patch("shutil.which", return_value="/usr/bin/uv")
     @patch("src.version.subprocess.Popen")
     @patch("src.version.subprocess.run")
-    def test_successful_upgrade_flow(self, mock_run, mock_popen):
-        """Test that _run_upgrade calls git fetch, checkout, pip install, and restart."""
+    def test_successful_upgrade_flow(self, mock_run, mock_popen, mock_which):
+        """Test that _run_upgrade calls git fetch, checkout, uv sync, and restart."""
         from src.version import _run_upgrade
 
         mock_run.return_value = MagicMock(stdout="ok", returncode=0)
 
         _run_upgrade("v2.0.0")
 
-        # Should have called: git fetch, git checkout, pip install
-        assert mock_run.call_count == 3
+        # Should have called: git fetch, git checkout --, git checkout tag, uv sync
+        assert mock_run.call_count == 4
         calls = [str(c) for c in mock_run.call_args_list]
         assert any("fetch" in c for c in calls)
         assert any("checkout" in c for c in calls)
-        assert any("install" in c for c in calls)
+        assert any("uv" in c for c in calls)
 
         # Should attempt systemd restart
         mock_popen.assert_called_once()
@@ -240,9 +241,10 @@ class TestRunUpgrade:
         assert status["state"] == "error"
         assert "failed" in status["message"].lower()
 
+    @patch("shutil.which", return_value="/usr/bin/uv")
     @patch("src.version.subprocess.Popen", side_effect=FileNotFoundError("no systemd"))
     @patch("src.version.subprocess.run")
-    def test_upgrade_without_systemd(self, mock_run, mock_popen):
+    def test_upgrade_without_systemd(self, mock_run, mock_popen, mock_which):
         """When systemd isn't available, upgrade completes with manual restart message."""
         from src.version import _run_upgrade
 

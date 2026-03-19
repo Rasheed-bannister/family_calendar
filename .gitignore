@@ -10,6 +10,9 @@ wheels/
 .venv
 .python-version
 
+# User config (config.default.json is the tracked template)
+config.json
+
 # secrets
 credentials.json
 *token.json

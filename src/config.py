@@ -100,12 +100,23 @@ class Config:
                 self._early_messages.append(f"Found config file at: {location}")
                 return location
 
-        # If no config file exists, create a default one
+        # If no config file exists, copy from config.default.json or generate one
         default_location = Path.cwd() / "config.json"
-        self._early_messages.append(
-            f"No config file found. Creating default at: {default_location}"
-        )
-        self._create_default_config(default_location)
+        default_template = Path(__file__).parent.parent / "config.default.json"
+
+        if default_template.exists():
+            import shutil
+
+            shutil.copy2(default_template, default_location)
+            self._early_messages.append(
+                f"No config file found. Copied from {default_template}"
+            )
+        else:
+            self._early_messages.append(
+                f"No config file found. Creating default at: {default_location}"
+            )
+            self._create_default_config(default_location)
+
         return default_location
 
     def _create_default_config(self, path: Path):

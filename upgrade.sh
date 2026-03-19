@@ -132,10 +132,7 @@ install_dependencies() {
     cd "$APP_DIR"
 
     if command -v uv >/dev/null; then
-        if [ ! -d ".venv" ]; then
-            uv venv
-        fi
-        uv pip install -e .
+        uv sync
     elif [ -f ".venv/bin/pip" ]; then
         source .venv/bin/activate
         pip install -e .

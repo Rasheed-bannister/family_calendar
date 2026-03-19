@@ -96,17 +96,28 @@ def _run_upgrade(target_tag: str) -> None:
         _set_status("running", "Fetching latest releases...")
         _run_cmd(["git", "fetch", "--tags"], cwd=project_root)
 
-        # Step 2: Checkout the target tag
+        # Step 2: Discard any local changes to tracked files so checkout succeeds.
+        # User data (config.json, credentials, databases, photos) is gitignored
+        # and unaffected. Tracked files should always match the release.
+        _run_cmd(["git", "checkout", "--", "."], cwd=project_root)
+
+        # Step 3: Checkout the target tag
         _set_status("running", f"Checking out {target_tag}...")
         _run_cmd(["git", "checkout", target_tag], cwd=project_root)
 
-        # Step 3: Install dependencies
+        # Step 5: Install dependencies
         _set_status("running", "Installing dependencies...")
+        import shutil
+
         venv_pip = project_root / ".venv" / "bin" / "pip"
-        if venv_pip.exists():
+        if shutil.which("uv"):
+            _run_cmd(["uv", "sync"], cwd=project_root)
+        elif venv_pip.exists():
             _run_cmd([str(venv_pip), "install", "-e", "."], cwd=project_root)
         else:
-            _run_cmd(["pip", "install", "-e", "."], cwd=project_root)
+            raise RuntimeError(
+                "No package manager found. Install uv or create a virtualenv."
+            )
 
         _set_status("restarting", "Upgrade complete. Restarting service...")
 
