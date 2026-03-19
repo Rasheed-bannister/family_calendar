@@ -105,15 +105,22 @@ def _run_upgrade(target_tag: str) -> None:
         _set_status("running", f"Checking out {target_tag}...")
         _run_cmd(["git", "checkout", target_tag], cwd=project_root)
 
-        # Step 5: Install dependencies
+        # Step 5: Install dependencies into the project's venv
         _set_status("running", "Installing dependencies...")
         import shutil
 
-        venv_pip = project_root / ".venv" / "bin" / "pip"
+        venv_python = project_root / ".venv" / "bin" / "python"
         if shutil.which("uv"):
-            _run_cmd(["uv", "sync"], cwd=project_root)
-        elif venv_pip.exists():
-            _run_cmd([str(venv_pip), "install", "-e", "."], cwd=project_root)
+            # Point uv at the project's venv Python so it doesn't use system Python
+            _run_cmd(
+                ["uv", "sync", "--python", str(venv_python)],
+                cwd=project_root,
+            )
+        elif venv_python.exists():
+            _run_cmd(
+                [str(venv_python), "-m", "pip", "install", "-e", "."],
+                cwd=project_root,
+            )
         else:
             raise RuntimeError(
                 "No package manager found. Install uv or create a virtualenv."
