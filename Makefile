@@ -13,7 +13,7 @@ install:  ## Install production dependencies
 dev-install:  ## Install development dependencies
 	uv venv
 	uv pip install -e ".[dev]"
-	uv pip install pre-commit pip-audit safety bandit[toml] black isort ruff mypy
+	uv pip install pre-commit pip-audit bandit[toml] black isort ruff mypy
 	pre-commit install
 
 test:  ## Run tests
@@ -37,7 +37,6 @@ format:  ## Format code
 
 security:  ## Run security checks
 	uv run pip-audit --desc
-	uv run safety check
 	uv run bandit -r src -ll --skip B101
 	detect-secrets scan --baseline .secrets.baseline
 

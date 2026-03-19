@@ -1,6 +1,7 @@
 """
 PIR Sensor Integration for Calendar Application
-Handles motion detection using a PIR sensor connected to GPIO pin
+Handles motion detection using a PIR sensor connected to GPIO pin.
+Uses gpiozero for broad Raspberry Pi support (Pi 3, 4, and 5).
 """
 
 import atexit
@@ -10,12 +11,13 @@ import threading
 import time
 from typing import Callable, Optional
 
-# Try to import RPi.GPIO, but handle cases where it's not available
+# Try to import gpiozero, but handle cases where it's not available
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import MotionSensor
+    from gpiozero.exc import BadPinFactory, GPIOZeroError
 
     HAS_GPIO = True
-except (ImportError, RuntimeError):
+except ImportError:
     HAS_GPIO = False
 
 # Valid BCM GPIO pin range on Raspberry Pi
@@ -65,7 +67,7 @@ class PIRSensor:
         self.simulation_mode = config.get("pir_sensor.simulation_mode", False)
         self.last_detection_time = 0
         self.is_monitoring = False
-        self.monitor_thread = None
+        self._sensor: Optional[MotionSensor] = None if HAS_GPIO else None
         self.gpio_available = HAS_GPIO and not self.simulation_mode
 
         # Validate GPIO pin
@@ -83,30 +85,38 @@ class PIRSensor:
                 )
             else:
                 logging.warning(
-                    "RPi.GPIO not available — PIR sensor running in simulation mode"
+                    "gpiozero not available — PIR sensor running in simulation mode"
                 )
 
     def setup(self) -> bool:
-        """Setup GPIO pin for PIR sensor."""
+        """Setup GPIO pin for PIR sensor using gpiozero MotionSensor."""
         if not self.gpio_available:
             return True
 
         try:
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            self._sensor = MotionSensor(
+                self.pin,
+                queue_len=1,
+                sample_rate=10,
+                threshold=0.5,
+            )
             logging.info(f"PIR sensor initialized on GPIO pin {self.pin}")
             return True
+        except (GPIOZeroError, BadPinFactory) as e:
+            logging.error(f"Failed to setup PIR sensor on pin {self.pin}: {e}")
+            self.gpio_available = False
+            return False
         except Exception as e:
             logging.error(f"Failed to setup PIR sensor on pin {self.pin}: {e}")
+            self.gpio_available = False
             return False
 
     def set_callback(self, callback: Callable):
         """Set the callback function for motion detection"""
         self.callback = callback
 
-    def _motion_detected(self, channel=None):  # noqa: ARG002
+    def _motion_detected(self):
         """Internal method called when motion is detected"""
-        _ = channel  # Required by GPIO callback interface
         current_time = time.time()
 
         # Debounce detection
@@ -136,15 +146,10 @@ class PIRSensor:
 
         self.is_monitoring = True
 
-        if self.gpio_available:
+        if self.gpio_available and self._sensor:
             try:
-                GPIO.add_event_detect(
-                    self.pin,
-                    GPIO.RISING,
-                    callback=self._motion_detected,
-                    bouncetime=int(self.debounce_time * 1000),
-                )
-                logging.info("PIR sensor monitoring started (GPIO)")
+                self._sensor.when_motion = self._motion_detected
+                logging.info("PIR sensor monitoring started (gpiozero)")
                 return True
             except Exception as e:
                 logging.error(f"Failed to start PIR sensor monitoring: {e}")
@@ -169,9 +174,9 @@ class PIRSensor:
 
         self.is_monitoring = False
 
-        if self.gpio_available:
+        if self.gpio_available and self._sensor:
             try:
-                GPIO.remove_event_detect(self.pin)
+                self._sensor.when_motion = None
                 logging.info("PIR sensor monitoring stopped")
             except Exception as e:
                 logging.error(f"Error stopping PIR sensor monitoring: {e}")
@@ -179,9 +184,10 @@ class PIRSensor:
     def cleanup(self):
         """Clean up GPIO resources"""
         self.stop_monitoring()
-        if self.gpio_available:
+        if self._sensor:
             try:
-                GPIO.cleanup(self.pin)
+                self._sensor.close()
+                self._sensor = None
                 logging.info("PIR sensor GPIO cleaned up")
             except Exception as e:
                 logging.error(f"Error cleaning up PIR sensor GPIO: {e}")
