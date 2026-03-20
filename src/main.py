@@ -200,18 +200,12 @@ if __name__ == "__main__":
 
     app = create_app()
 
-    # Initialize PIR sensor with activity callback
+    # Initialize PIR sensor (motion events reach the frontend via SSE)
     from src.pir_sensor.sensor import initialize_pir_sensor
-
-    def on_motion_detected():
-        """Callback function when PIR sensor detects motion"""
-        logging.info("Motion detected - activity registered")
-        # The frontend will handle the actual activity registration
-        # This is just for backend logging
 
     config = get_config()
     pir_pin = config.get("pir_sensor.gpio_pin", 18)
-    pir_sensor = initialize_pir_sensor(pin=pir_pin, callback=on_motion_detected)
+    pir_sensor = initialize_pir_sensor(pin=pir_pin)
 
     if not setup_only:
         # Start PIR monitoring if enabled

@@ -9,7 +9,7 @@ import threading
 import time
 from queue import Empty, Full, Queue
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify
 
 from .sensor import (
     add_motion_callback,
@@ -113,27 +113,6 @@ def stop_monitoring():
         return jsonify({"success": True, "message": "PIR monitoring stopped"})
     except Exception as e:
         logging.error(f"Error stopping PIR monitoring: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@pir_bp.route("/activity", methods=["POST"])
-def report_activity():
-    """Endpoint for external PIR sensor activity reporting"""
-    try:
-        data = request.get_json() or {}
-        activity_type = data.get("type", "motion")
-
-        logging.info(f"PIR activity reported: {activity_type}")
-
-        return jsonify(
-            {
-                "success": True,
-                "message": "Activity reported",
-                "activity_type": activity_type,
-            }
-        )
-    except Exception as e:
-        logging.error(f"Error reporting PIR activity: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 

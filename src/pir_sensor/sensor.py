@@ -33,11 +33,6 @@ def add_motion_callback(callback: Callable):
         _motion_callbacks.append(callback)
 
 
-def remove_motion_callback(callback: Callable):
-    """Remove a callback function"""
-    if callback in _motion_callbacks:
-        _motion_callbacks.remove(callback)
-
 
 def trigger_motion_callbacks():
     """Trigger all registered motion callbacks"""
@@ -111,10 +106,6 @@ class PIRSensor:
             self.gpio_available = False
             return False
 
-    def set_callback(self, callback: Callable):
-        """Set the callback function for motion detection"""
-        self.callback = callback
-
     def _motion_detected(self):
         """Internal method called when motion is detected"""
         current_time = time.time()
@@ -159,13 +150,6 @@ class PIRSensor:
             # Simulation mode — no hardware to poll, status endpoints still work
             logging.info("PIR sensor monitoring started (simulation mode)")
             return True
-
-    def _simulate_motion(self):
-        """Simulate motion detection for development/testing"""
-        while self.is_monitoring:
-            time.sleep(30)
-            if self.is_monitoring:
-                self._motion_detected()
 
     def stop_monitoring(self):
         """Stop monitoring for motion"""
@@ -243,7 +227,3 @@ def stop_pir_monitoring():
         _pir_sensor.stop_monitoring()
 
 
-def cleanup_pir_sensor():
-    """Clean up PIR sensor resources"""
-    if _pir_sensor:
-        _pir_sensor.cleanup()

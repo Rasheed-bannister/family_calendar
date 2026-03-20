@@ -18,7 +18,6 @@ const PIRSensor = (function () {
   const MAX_RECONNECT_ATTEMPTS = 10;
 
   const STATUS_CHECK_INTERVAL = 5000; // Check status every 5 seconds
-  const ACTIVITY_ENDPOINT = "/pir/activity";
   const STATUS_ENDPOINT = "/pir/status";
   const START_ENDPOINT = "/pir/start";
   const STOP_ENDPOINT = "/pir/stop";
@@ -384,35 +383,6 @@ const PIRSensor = (function () {
 
     setActivityCallback: function (callback) {
       activityCallback = callback;
-    },
-
-    reportActivity: async function (activityType = "motion") {
-      if (!isInitialized) {
-        // PIR sensor not initialized, cannot report activity
-        return false;
-      }
-
-      try {
-        // Report activity to backend
-        await fetch(ACTIVITY_ENDPOINT, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ type: activityType }),
-        });
-
-        // Trigger local activity callback
-        if (activityCallback && typeof activityCallback === "function") {
-          activityCallback(activityType);
-        }
-
-        // PIR activity reported
-        return true;
-      } catch (error) {
-        console.error("Error reporting PIR activity:", error);
-        return false;
-      }
     },
 
     getStatus: function () {
