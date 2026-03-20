@@ -94,7 +94,7 @@ def _run_upgrade(target_tag: str) -> None:
     try:
         # Step 1: Fetch latest tags
         _set_status("running", "Fetching latest releases...")
-        _run_cmd(["git", "fetch", "--tags"], cwd=project_root)
+        _run_cmd(["git", "fetch", "--tags", "--force"], cwd=project_root)
 
         # Step 2: Discard any local changes to tracked files so checkout succeeds.
         # User data (config.json, credentials, databases, photos) is gitignored

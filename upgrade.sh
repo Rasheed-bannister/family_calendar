@@ -44,7 +44,7 @@ show_versions() {
     status "Current version: $CURRENT_VERSION"
 
     # Fetch latest tags from remote
-    git fetch --tags --quiet 2>/dev/null || error "Could not reach GitHub. Check your internet connection."
+    git fetch --tags --force --quiet 2>/dev/null || error "Could not reach GitHub. Check your internet connection."
 
     LATEST_TAG=$(git tag --sort=-version:refname | head -1)
     if [ -z "$LATEST_TAG" ]; then
