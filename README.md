@@ -194,7 +194,13 @@ If you prefer to install manually, follow these steps:
    cd family-calendar
    ```
 
-3. **Install dependencies**:
+3. **Install system dependencies** (Raspberry Pi):
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y git python3-venv swig liblgpio-dev
+   ```
+
+4. **Install Python dependencies**:
    ```bash
    # Install UV package manager
    curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -205,7 +211,7 @@ If you prefer to install manually, follow these steps:
    uv sync
    ```
 
-4. **Set up Google API credentials**:
+5. **Set up Google API credentials**:
    1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
    2. Create a new project
    3. Enable the Google Calendar API and Google Tasks API
@@ -213,7 +219,7 @@ If you prefer to install manually, follow these steps:
    5. Download the credentials.json file
    6. Place the file in the `src/google_integration/` directory
 
-5. **Initialize the application**:
+6. **Initialize the application**:
    ```bash
    # Run the application once to initialize databases and authenticate with Google
    # This will prompt you to authorize the application with your Google account
