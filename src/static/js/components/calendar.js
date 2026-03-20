@@ -664,8 +664,12 @@ const Calendar = (function () {
 
     resume: function () {
       updateCheckEnabled = true;
-      initialLoadComplete = false;
-      startGoogleUpdateTimer();
+      // Keep initialLoadComplete = true so we resume with the normal
+      // 5-minute interval instead of restarting rapid 5-second polling.
+      if (!googleUpdateTimer) {
+        googleUpdateTimer = setInterval(checkForGoogleUpdates, UPDATE_CHECK_INTERVAL);
+        checkForGoogleUpdates();
+      }
     },
 
     getTodayCell: function () {

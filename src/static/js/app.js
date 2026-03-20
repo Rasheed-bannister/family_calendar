@@ -20,8 +20,10 @@ let pirDebugInterval = null;
 let cleanupHandlers = [];
 
 document.addEventListener("DOMContentLoaded", async function () {
-  // Activity tracking variables
-  let lastActivityTimestamp = Date.now();
+  // Activity tracking variables — restore from sessionStorage so that
+  // automatic page reloads (calendar/chore refresh) don't reset the timer.
+  let lastActivityTimestamp =
+    parseInt(sessionStorage.getItem("lastActivityTimestamp"), 10) || Date.now();
   let motionFeedbackTimeout = null; // Declare missing variable
 
   // Inactivity settings (loaded from config)
@@ -167,8 +169,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   function registerActivity(type = "generic") {
     const now = Date.now();
     lastActivityTimestamp = now;
-
-    // Activity detected
+    sessionStorage.setItem("lastActivityTimestamp", now);
 
     // If we were in any inactivity mode, exit it now
     if (currentInactivityMode !== "none") {
@@ -221,8 +222,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Apply the brightness reduction
     applyBrightnessReduction(brightness);
 
-    // If we're entering long inactivity mode (after a long period)
-    if (isNight && Date.now() - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
+    // If we've been inactive long enough, enter long inactivity mode
+    if (Date.now() - lastActivityTimestamp > DAY_INACTIVITY_TIMEOUT) {
       enterLongInactivityMode();
     }
 
