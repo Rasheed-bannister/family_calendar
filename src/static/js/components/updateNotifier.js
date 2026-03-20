@@ -349,6 +349,14 @@ const UpdateNotifier = (function () {
     rows.push(diagRow("Sensor", s.status || "unknown", s.status === "initialized"));
     rows.push(diagRow("Monitoring", s.monitoring ? "active" : "inactive", s.monitoring));
 
+    // GPIO probe
+    const gp = data.gpio_probe || {};
+    if (gp.error) {
+      rows.push(diagRow("GPIO probe", gp.error, false));
+    } else if (gp.success) {
+      rows.push(diagRow("GPIO probe", `pin ${gp.pin} OK (value: ${gp.value})`, true));
+    }
+
     // Power
     const pw = data.power || {};
     if (pw.available) {

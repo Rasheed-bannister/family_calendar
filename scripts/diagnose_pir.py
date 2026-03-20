@@ -63,16 +63,26 @@ def print_results(data: dict) -> None:
     header("GPIO Devices & Permissions")
     g = data["gpio_devices"]
     for chip in g["chips"]:
-        row(chip["path"], chip["accessible"], chip.get("error", f"group={chip.get('group')} mode={chip.get('mode')}"))
+        row(
+            chip["path"],
+            chip["accessible"],
+            chip.get("error", f"group={chip.get('group')} mode={chip.get('mode')}"),
+        )
     if not g["chips"]:
         warn("No /dev/gpiochip* devices found")
     if g["gpiomem"]:
         row("/dev/gpiomem", g["gpiomem_accessible"])
     else:
         info("/dev/gpiomem", "not present (normal on Pi 5)")
-    row(f"User '{g['username']}' in gpio group", g["gpio_group"], ", ".join(g["user_groups"]))
+    row(
+        f"User '{g['username']}' in gpio group",
+        g["gpio_group"],
+        ", ".join(g["user_groups"]),
+    )
     if not g["gpio_group"]:
-        print(f"    {YELLOW}Fix: sudo usermod -aG gpio {g['username']} && logout/login{NC}")
+        print(
+            f"    {YELLOW}Fix: sudo usermod -aG gpio {g['username']} && logout/login{NC}"
+        )
 
     header("Power Supply")
     pw = data["power"]
@@ -82,21 +92,35 @@ def print_results(data: dict) -> None:
         for flag in pw.get("flags", []):
             warn("Throttle flag", flag)
         if not power_ok:
-            print(f"    {YELLOW}Under-voltage detected! Use a proper 5V/5A power supply.{NC}")
+            print(
+                f"    {YELLOW}Under-voltage detected! Use a proper 5V/5A power supply.{NC}"
+            )
     else:
         info("vcgencmd", "not available (not on Pi or not in video group)")
 
     header("Python Libraries")
     lib = data["libraries"]
-    row("gpiozero", bool(lib["gpiozero"]), f"v{lib['gpiozero']}" if lib["gpiozero"] else "missing")
+    row(
+        "gpiozero",
+        bool(lib["gpiozero"]),
+        f"v{lib['gpiozero']}" if lib["gpiozero"] else "missing",
+    )
     row("lgpio", bool(lib["lgpio"]), f"v{lib['lgpio']}" if lib["lgpio"] else "missing")
     if not lib["lgpio"]:
         print(f"    {YELLOW}Fix: sudo apt-get install -y swig liblgpio-dev{NC}")
         print(f"    {YELLOW}     uv sync --reinstall-package lgpio{NC}")
     if lib["pin_factory"]:
         row("Pin factory", True, lib["pin_factory"])
-    row("swig", lib["swig_installed"], "installed" if lib["swig_installed"] else "missing")
-    row("liblgpio-dev", lib["liblgpio_installed"], "installed" if lib["liblgpio_installed"] else "missing")
+    row(
+        "swig",
+        lib["swig_installed"],
+        "installed" if lib["swig_installed"] else "missing",
+    )
+    row(
+        "liblgpio-dev",
+        lib["liblgpio_installed"],
+        "installed" if lib["liblgpio_installed"] else "missing",
+    )
 
     header("Application Config")
     cfg = data["config"]
@@ -113,6 +137,15 @@ def print_results(data: dict) -> None:
     row("Initialized", s["status"] == "initialized", s["status"])
     row("Monitoring", s.get("monitoring", False))
 
+    header("GPIO Probe")
+    gp = data.get("gpio_probe", {})
+    if gp.get("error"):
+        row(f"MotionSensor(pin={gp.get('pin', '?')})", False, gp["error"])
+    elif gp.get("success"):
+        row(f"MotionSensor(pin={gp['pin']})", True, f"value={gp['value']}")
+    else:
+        info("GPIO probe", "skipped")
+
     # Issues
     header("Summary")
     issues = data["issues"]
@@ -122,7 +155,9 @@ def print_results(data: dict) -> None:
             print(f"    - {issue}")
     else:
         print(f"  {GREEN}All checks passed.{NC} If motion still isn't detected,")
-        print("  check wiring and sensor hardware (potentiometer settings, warmup time).")
+        print(
+            "  check wiring and sensor hardware (potentiometer settings, warmup time)."
+        )
 
 
 def test_sensor_live(pin: int) -> None:
@@ -151,7 +186,9 @@ def test_sensor_live(pin: int) -> None:
         warn("Read sensor value", str(e))
 
     duration = 15
-    print(f"\n  Waiting {duration} seconds for motion (wave your hand over the sensor)...\n")
+    print(
+        f"\n  Waiting {duration} seconds for motion (wave your hand over the sensor)...\n"
+    )
 
     detected = False
     start = time.time()
@@ -170,9 +207,13 @@ def test_sensor_live(pin: int) -> None:
         if not detected:
             row("Motion detected", False, f"no motion in {duration}s")
             print(f"\n  {YELLOW}Troubleshooting tips:{NC}")
-            print(f"  - Verify wiring: VCC->5V (pin 2/4), GND->GND (pin 6), OUT->GPIO {pin} (pin 12)")
+            print(
+                f"  - Verify wiring: VCC->5V (pin 2/4), GND->GND (pin 6), OUT->GPIO {pin} (pin 12)"
+            )
             print("  - Check the sensor's potentiometers (sensitivity and delay)")
-            print("  - Try adjusting the sensitivity pot clockwise for higher sensitivity")
+            print(
+                "  - Try adjusting the sensitivity pot clockwise for higher sensitivity"
+            )
             print("  - Some PIR sensors need 30-60s warmup after power-on")
             print("  - Try a different GPIO pin to rule out a dead pin")
     except KeyboardInterrupt:
@@ -184,7 +225,7 @@ def test_sensor_live(pin: int) -> None:
 
 def main() -> None:
     print(f"\n{BLUE}{'=' * 50}")
-    print("  Family Calendar — PIR Sensor Diagnostics")
+    print("  Family Calendar - PIR Sensor Diagnostics")
     print(f"{'=' * 50}{NC}")
 
     data = run_all_checks()

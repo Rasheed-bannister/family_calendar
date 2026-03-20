@@ -1,4 +1,4 @@
-"""PIR Sensor Diagnostics — checks that can run from the web UI or CLI."""
+"""PIR Sensor Diagnostics - checks that can run from the web UI or CLI."""
 
 import glob
 import grp
@@ -14,12 +14,14 @@ logger = logging.getLogger(__name__)
 
 def run_all_checks() -> dict:
     """Run every diagnostic check and return a structured result dict."""
+    config = _check_config()
     results: dict = {
         "platform": _check_platform(),
         "libraries": _check_libraries(),
         "gpio_devices": _check_gpio_devices(),
-        "config": _check_config(),
+        "config": config,
         "sensor": _check_sensor_state(),
+        "gpio_probe": _probe_gpio(config.get("pin", 18)),
         "power": _check_power(),
         "issues": [],
     }
@@ -52,10 +54,14 @@ def run_all_checks() -> dict:
     elif not sensor.get("monitoring"):
         issues.append("PIR sensor is initialized but not monitoring")
     if not sensor.get("gpio_available") and not cfg.get("simulation_mode"):
-        issues.append("GPIO is not available to the sensor")
+        probe = results["gpio_probe"]
+        if probe.get("error"):
+            issues.append(f"GPIO sensor probe failed: {probe['error']}")
+        else:
+            issues.append("GPIO is not available to the sensor")
     pwr = results["power"]
     if pwr.get("under_voltage_now") or pwr.get("under_voltage_occurred"):
-        issues.append("Under-voltage detected — use a 5V/5A power supply")
+        issues.append("Under-voltage detected - use a 5V/5A power supply")
 
     return results
 
@@ -218,6 +224,53 @@ def _check_sensor_state() -> dict:
         "simulation_mode": sensor.simulation_mode,
         "last_detection_time": sensor.last_detection_time,
     }
+
+
+def _probe_gpio(pin: int) -> dict:
+    """Try to create a MotionSensor on the configured pin.
+
+    If the app's sensor already holds the pin with real GPIO, we read its
+    value directly instead of fighting over the pin. When GPIO init has
+    failed (gpio_available=False), we attempt an independent probe to
+    capture the actual error message.
+    """
+    result: dict = {"success": False, "pin": pin, "error": None, "value": None}
+
+    # If the running sensor already owns the pin on real GPIO, just read it.
+    from src.pir_sensor.sensor import get_pir_sensor
+
+    live = get_pir_sensor()
+    if live and live.gpio_available and live._sensor:
+        try:
+            result["success"] = True
+            result["value"] = live._sensor.value
+            return result
+        except Exception as e:
+            result["error"] = f"Could not read live sensor: {e}"
+            return result
+
+    # Otherwise, try an independent probe to surface the real error.
+    try:
+        from gpiozero import MotionSensor
+    except ImportError:
+        result["error"] = "gpiozero not installed"
+        return result
+
+    sensor = None
+    try:
+        sensor = MotionSensor(pin, queue_len=1, sample_rate=10, threshold=0.5)
+        result["success"] = True
+        result["value"] = sensor.value
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        if sensor:
+            try:
+                sensor.close()
+            except Exception:
+                pass
+
+    return result
 
 
 def _check_power() -> dict:
