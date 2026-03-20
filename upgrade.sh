@@ -20,11 +20,22 @@ status() { echo -e "${YELLOW}-->${NC} $1"; }
 success() { echo -e "${GREEN}-->${NC} $1"; }
 error() { echo -e "${RED}ERROR:${NC} $1"; exit 1; }
 
-# Check we're in a git repo
+# Check we're in a git repo and have required system dependencies
 check_prerequisites() {
     cd "$APP_DIR"
     [ -d ".git" ] || error "Not a git repository. Upgrade requires the app to be installed via git clone."
     command -v git >/dev/null || error "git is not installed."
+
+    # Check for system dependencies needed to build lgpio (PIR sensor support)
+    local missing=""
+    command -v swig >/dev/null || missing="swig $missing"
+    [ -f /usr/include/lgpio.h ] || dpkg -s liblgpio-dev >/dev/null 2>&1 || missing="liblgpio-dev $missing"
+
+    if [ -n "$missing" ]; then
+        status "Missing system packages: $missing"
+        status "Installing (requires sudo)..."
+        sudo apt-get install -y $missing || error "Failed to install system dependencies: $missing"
+    fi
 }
 
 # Show current and available versions

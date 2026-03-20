@@ -105,9 +105,19 @@ def _run_upgrade(target_tag: str) -> None:
         _set_status("running", f"Checking out {target_tag}...")
         _run_cmd(["git", "checkout", target_tag], cwd=project_root)
 
+        # Step 4: Ensure system build dependencies are available (Pi only)
+        import platform
+        import shutil
+
+        if platform.machine() == "aarch64" and not shutil.which("swig"):
+            _set_status("running", "Installing system build dependencies...")
+            _run_cmd(
+                ["sudo", "-n", "apt-get", "install", "-y", "swig", "liblgpio-dev"],
+                cwd=project_root,
+            )
+
         # Step 5: Install dependencies into the project's venv
         _set_status("running", "Installing dependencies...")
-        import shutil
 
         venv_python = project_root / ".venv" / "bin" / "python"
         if shutil.which("uv"):

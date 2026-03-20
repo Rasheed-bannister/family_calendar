@@ -96,7 +96,9 @@ install_system_dependencies() {
     xscreensaver \
     xinput-calibrator \
     chromium-browser \
-    python3-rpi.gpio \
+    swig \
+    liblgpio-dev \
+    python3-lgpio \
     openssl \
     || error "Failed to install required packages"
     
