@@ -455,57 +455,7 @@ Both methods back up your user data, pull the latest release, install dependenci
 
 ## Contributing
 
-We welcome contributions from the community! Here's how you can help:
-
-### Setting Up Development Environment
-
-1. **Fork the repository**:
-   - Click the Fork button at the top right of this page
-
-2. **Clone your fork**:
-   ```bash
-   git clone https://github.com/Rasheed-bannister/family_calendar.git
-   cd family-calendar
-   ```
-
-3. **Set up development environment**:
-   ```bash
-   uv sync --group dev
-   source .venv/bin/activate
-   ```
-
-### Development Workflow
-
-1. **Create a branch**:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes**
-
-3. **Test your changes locally**:
-   ```bash
-   python src/main.py
-   ```
-
-4. **Format code**:
-   ```bash
-   black src tests
-   isort src tests
-   ```
-
-5. **Submit a Pull Request**:
-   - Push to your fork
-   - Create a Pull Request from the GitHub interface
-
-### Coding Standards
-
-- Follow PEP 8 guidelines for Python code
-- Use ES6 modules for JavaScript
-- Implement the component pattern for frontend features
-- Include docstrings for all functions and classes
-- Keep the UI simple and touch-friendly
-- Ensure background tasks are properly threaded and use locks appropriately
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, workflow, and coding standards.
 
 ## License
 
