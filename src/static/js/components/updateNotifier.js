@@ -46,6 +46,18 @@ const UpdateNotifier = (function () {
         <div class="settings-upgrade-progress" id="settings-upgrade-progress" style="display:none">
           <span id="settings-upgrade-message"></span>
         </div>
+        <div class="settings-section-divider"></div>
+        <div class="settings-pir-section">
+          <div class="settings-section-label">PIR Sensor</div>
+          <div class="settings-pir-status" id="settings-pir-status">
+            <span class="settings-pir-indicator" id="settings-pir-indicator"></span>
+            <span id="settings-pir-status-text">Unknown</span>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-btn" id="settings-diag-btn">Run diagnostics</button>
+          </div>
+          <div class="settings-diag-results" id="settings-diag-results" style="display:none"></div>
+        </div>
       </div>
     `;
     document.body.appendChild(panel);
@@ -54,6 +66,7 @@ const UpdateNotifier = (function () {
     panel.querySelector(".settings-panel-close").addEventListener("click", closePanel);
     panel.querySelector("#settings-check-btn").addEventListener("click", handleCheckClick);
     panel.querySelector("#settings-apply-btn").addEventListener("click", handleApplyClick);
+    panel.querySelector("#settings-diag-btn").addEventListener("click", handleDiagClick);
   }
 
   // --- Event Handlers ---
@@ -70,6 +83,7 @@ const UpdateNotifier = (function () {
   function openPanel() {
     panel.style.display = "block";
     refreshPanelContent();
+    refreshPirStatus();
   }
 
   function closePanel() {
@@ -240,6 +254,131 @@ const UpdateNotifier = (function () {
       statusEl.className = "settings-update-status";
       applyBtn.style.display = "none";
     }
+  }
+
+  // --- PIR Diagnostics ---
+
+  async function refreshPirStatus() {
+    if (!panel) return;
+    const indicator = panel.querySelector("#settings-pir-indicator");
+    const statusText = panel.querySelector("#settings-pir-status-text");
+    try {
+      const resp = await fetch("/pir/status");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.monitoring && data.gpio_available) {
+        indicator.className = "settings-pir-indicator pir-ok";
+        statusText.textContent = `Monitoring GPIO ${data.pin}`;
+      } else if (data.status === "initialized" && !data.monitoring) {
+        indicator.className = "settings-pir-indicator pir-warn";
+        statusText.textContent = "Initialized, not monitoring";
+      } else if (data.status === "initialized" && !data.gpio_available) {
+        indicator.className = "settings-pir-indicator pir-warn";
+        statusText.textContent = "Simulation mode";
+      } else {
+        indicator.className = "settings-pir-indicator pir-error";
+        statusText.textContent = "Not initialized";
+      }
+    } catch (e) {
+      indicator.className = "settings-pir-indicator pir-error";
+      statusText.textContent = "Unable to reach server";
+    }
+  }
+
+  async function handleDiagClick() {
+    const btn = panel.querySelector("#settings-diag-btn");
+    const resultsEl = panel.querySelector("#settings-diag-results");
+    btn.disabled = true;
+    btn.textContent = "Running...";
+    resultsEl.style.display = "block";
+    resultsEl.innerHTML = '<span class="diag-loading">Running checks...</span>';
+
+    try {
+      const resp = await fetch("/pir/diagnostics");
+      if (!resp.ok) {
+        resultsEl.innerHTML = '<span class="diag-error">Failed to run diagnostics</span>';
+        return;
+      }
+      const data = await resp.json();
+      resultsEl.innerHTML = renderDiagResults(data);
+    } catch (e) {
+      resultsEl.innerHTML = '<span class="diag-error">Connection error</span>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run diagnostics";
+    }
+  }
+
+  function renderDiagResults(data) {
+    const rows = [];
+
+    // Platform
+    const p = data.platform || {};
+    rows.push(diagRow("Platform", p.model !== "unknown" ? p.model : p.machine, p.is_arm));
+    rows.push(diagRow("Python", p.python, true));
+
+    // Libraries
+    const l = data.libraries || {};
+    rows.push(diagRow("gpiozero", l.gpiozero ? `v${l.gpiozero}` : "missing", !!l.gpiozero));
+    rows.push(diagRow("lgpio", l.lgpio ? `v${l.lgpio}` : "missing", !!l.lgpio));
+    if (l.pin_factory) {
+      rows.push(diagRow("Pin factory", l.pin_factory, true));
+    }
+    rows.push(diagRow("swig", l.swig_installed ? "installed" : "missing", l.swig_installed));
+    rows.push(diagRow("liblgpio-dev", l.liblgpio_installed ? "installed" : "missing", l.liblgpio_installed));
+
+    // GPIO devices
+    const g = data.gpio_devices || {};
+    rows.push(diagRow("GPIO group", g.gpio_group ? "yes" : "no", g.gpio_group));
+    if (g.chips && g.chips.length > 0) {
+      for (const chip of g.chips) {
+        rows.push(diagRow(chip.path, chip.accessible ? `OK (${chip.group})` : "no access", chip.accessible));
+      }
+    }
+
+    // Config
+    const c = data.config || {};
+    if (!c.error) {
+      rows.push(diagRow("PIR enabled", c.enabled ? "yes" : "no", c.enabled));
+      rows.push(diagRow("GPIO pin", String(c.pin), true));
+      rows.push(diagRow("Simulation", c.simulation_mode ? "ON" : "off", !c.simulation_mode));
+    }
+
+    // Sensor state
+    const s = data.sensor || {};
+    rows.push(diagRow("Sensor", s.status || "unknown", s.status === "initialized"));
+    rows.push(diagRow("Monitoring", s.monitoring ? "active" : "inactive", s.monitoring));
+
+    // Power
+    const pw = data.power || {};
+    if (pw.available) {
+      const powerOk = !pw.under_voltage_now && !pw.under_voltage_occurred;
+      rows.push(diagRow("Power", powerOk ? "OK" : pw.flags.join(", "), powerOk));
+    }
+
+    // Issues summary
+    const issues = data.issues || [];
+    let issuesHtml = "";
+    if (issues.length > 0) {
+      issuesHtml = '<div class="diag-issues">' +
+        issues.map(i => `<div class="diag-issue-item">${escapeHtml(i)}</div>`).join("") +
+        "</div>";
+    } else {
+      issuesHtml = '<div class="diag-all-clear">All checks passed</div>';
+    }
+
+    return '<div class="diag-table">' + rows.join("") + "</div>" + issuesHtml;
+  }
+
+  function diagRow(label, value, ok) {
+    const dot = ok ? "diag-dot-ok" : "diag-dot-fail";
+    return `<div class="diag-row"><span class="diag-dot ${dot}"></span><span class="diag-label">${escapeHtml(label)}</span><span class="diag-value">${escapeHtml(value)}</span></div>`;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   // --- Public API ---

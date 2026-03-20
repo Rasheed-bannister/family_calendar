@@ -169,6 +169,148 @@
   line-height: 1.4;
 }
 
+/* Section Divider */
+.settings-section-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+
+.settings-section-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* PIR Status Indicator */
+.settings-pir-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.settings-pir-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.settings-pir-indicator.pir-ok {
+  background: #81c784;
+  box-shadow: 0 0 6px rgba(129, 199, 132, 0.5);
+}
+
+.settings-pir-indicator.pir-warn {
+  background: #ffb74d;
+  box-shadow: 0 0 6px rgba(255, 183, 77, 0.5);
+}
+
+.settings-pir-indicator.pir-error {
+  background: #e57373;
+  box-shadow: 0 0 6px rgba(229, 115, 115, 0.5);
+}
+
+/* Diagnostics Results */
+.settings-diag-results {
+  margin-top: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.diag-loading,
+.diag-error {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.diag-error {
+  color: #e57373;
+}
+
+.diag-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.diag-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.diag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.diag-dot-ok {
+  background: #81c784;
+}
+
+.diag-dot-fail {
+  background: #e57373;
+}
+
+.diag-label {
+  color: rgba(255, 255, 255, 0.5);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.diag-value {
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diag-issues {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(229, 115, 115, 0.1);
+  border: 1px solid rgba(229, 115, 115, 0.2);
+  border-radius: 6px;
+}
+
+.diag-issue-item {
+  font-size: 11px;
+  color: #ef9a9a;
+  padding: 2px 0;
+}
+
+.diag-issue-item::before {
+  content: "\2022  ";
+}
+
+.diag-all-clear {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(129, 199, 132, 0.1);
+  border: 1px solid rgba(129, 199, 132, 0.2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #81c784;
+}
+
 /* Hide gear in long inactivity mode */
 body.long-inactivity-mode .settings-gear-button,
 body.long-inactivity-mode .settings-panel {

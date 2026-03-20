@@ -174,3 +174,16 @@ def trigger_test_motion():
     except Exception as e:
         logging.error(f"Error triggering test motion: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@pir_bp.route("/diagnostics", methods=["GET"])
+def run_diagnostics():
+    """Run PIR sensor diagnostics and return structured results."""
+    from src.pir_sensor.diagnostics import run_all_checks
+
+    try:
+        results = run_all_checks()
+        return jsonify(results)
+    except Exception as e:
+        logging.error(f"Error running PIR diagnostics: {e}")
+        return jsonify({"error": str(e)}), 500
