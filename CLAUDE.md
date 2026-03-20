@@ -132,12 +132,12 @@ The application is a Flask-based family calendar system with touchscreen support
 - **Inactivity Modes**: UI overlays hide/show based on user activity, slideshow remains constant
 - Central `app.js` coordinates inactivity detection and mode switching
 - Virtual keyboard for touchscreen text input
-- Server-Sent Events (SSE) for real-time PIR sensor updates at `/pir/stream`
+- Server-Sent Events (SSE) for real-time PIR sensor updates at `/pir/events`
 
 **Activity Detection & Mode Management**
 - **User Activity**: Screen touches, PIR motion detection, keyboard/mouse events
 - **Day/Night Inactivity Timeouts**: Configurable timeouts with different behavior for day vs night
-- **Short Inactivity**: UI dims with brightness reduction overlay (z-index -10, below slideshow)
+- **Short Inactivity**: UI dims with brightness reduction overlay (z-index 100, above everything)
 - **Long Inactivity**: All UI elements hide (`display: none`), showing only the background slideshow
 - **Wake Behavior**: Any activity instantly restores UI overlays over the continuing slideshow
 
@@ -177,7 +177,7 @@ The application is a Flask-based family calendar system with touchscreen support
 ### PIR Sensor Integration
 - Uses GPIO pin 18 by default (configurable in config.json)
 - Falls back to simulation mode if GPIO unavailable (for development)
-- Real-time communication via Server-Sent Events at `/pir/stream`
+- Real-time communication via Server-Sent Events at `/pir/events`
 - Debounce protection with 2-second default delay
 
 ### Deployment Specifics

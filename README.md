@@ -109,7 +109,7 @@ This open source project provides families with an interactive digital calendar 
 The application is built using the following technologies:
 
 - **Backend**:
-  - Python 3.13+
+  - Python 3.11+
   - Flask web framework
   - SQLite databases
   - Threading for background operations
@@ -197,12 +197,12 @@ If you prefer to install manually, follow these steps:
 3. **Install dependencies**:
    ```bash
    # Install UV package manager
-   curl -sSf https://install.python-poetry.org | python3 -
-   
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+
    # Install project dependencies
    uv venv
    source .venv/bin/activate
-   uv pip install -e .
+   uv sync
    ```
 
 4. **Set up Google API credentials**:
@@ -222,82 +222,37 @@ If you prefer to install manually, follow these steps:
 
 ### Deploying on Raspberry Pi
 
+The automated deployment script (`deploy_raspberry_pi.sh`) handles GPIO permissions, systemd service setup, kiosk mode, and screen configuration. If you installed manually, the key steps are:
+
 1. **Configure GPIO permissions**:
    ```bash
-   # Add user to gpio group for PIR sensor access
    sudo usermod -a -G gpio $USER
-   
-   # Set up GPIO permissions
-   sudo chmod 666 /dev/gpiomem
+   # Log out and back in for the group change to take effect
    ```
 
 2. **Test PIR sensor**:
    ```bash
-   # Test PIR sensor connectivity
-   cd family-calendar
-   source .venv/bin/activate
-   python -c "from src.pir_sensor.sensor import PIRSensor; sensor = PIRSensor(); print('GPIO available:', sensor.gpio_available)"
+   # Run the built-in diagnostic script
+   .venv/bin/python scripts/diagnose_pir.py
+   ```
+   You can also run diagnostics from the app itself via the settings gear button (bottom-left corner).
+
+3. **Set up the systemd service** (auto-start on boot):
+   ```bash
+   # Copy and edit the service file
+   sudo cp startup/family-calendar.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable family-calendar
+   sudo systemctl start family-calendar
    ```
 
-3. **Enable auto-start on boot**:
+4. **Configure kiosk mode** (optional, for dedicated display):
    ```bash
-   mkdir -p ~/.config/autostart
-   cat > ~/.config/autostart/calendar.desktop << EOF
-   [Desktop Entry]
-   Type=Application
-   Name=Family Calendar
-   Exec=/bin/bash -c "cd /path/to/family-calendar && source .venv/bin/activate && python src/main.py"
-   X-GNOME-Autostart-enabled=true
-   EOF
+   # Launch Chromium in kiosk mode pointing at the app
+   chromium-browser --kiosk --incognito --disable-pinch \
+     --overscroll-history-navigation=0 http://localhost:5000
    ```
-
-2. **Configure screen settings**:
-   ```bash
-   # Prevent screen from sleeping
-   sudo apt-get install xscreensaver
-   xscreensaver-command -exit
-   ```
-
-3. **Setup touchscreen calibration**:
-   ```bash
-   sudo apt-get install xinput-calibrator
-   xinput_calibrator
-   # Follow on-screen instructions
-   ```
-
-4. **Configure browser in kiosk mode**:
-   ```bash
-   # Install Chromium browser if not already installed
-   sudo apt-get install chromium-browser
-   
-   # Create a script to launch in kiosk mode
-   cat > ~/launch-calendar.sh << EOF
-   #!/bin/bash
-   # Start the Flask server in the background
-   cd /path/to/family-calendar
-   source .venv/bin/activate
-   python src/main.py &
-   
-   # Wait for server to start
-   sleep 5
-   
-   # Launch Chromium in kiosk mode
-   chromium-browser --kiosk --incognito --disable-pinch --overscroll-history-navigation=0 http://localhost:5000
-   EOF
-   
-   chmod +x ~/launch-calendar.sh
-   ```
-
-5. **Add the script to autostart**:
-   ```bash
-   cat > ~/.config/autostart/calendar-kiosk.desktop << EOF
-   [Desktop Entry]
-   Type=Application
-   Name=Calendar Kiosk
-   Exec=/bin/bash /home/pi/launch-calendar.sh
-   X-GNOME-Autostart-enabled=true
-   EOF
-   ```
+   The deployment script sets this up automatically via `startup/launch-browser.sh`.
 
 ## Configuration
 
@@ -401,29 +356,15 @@ Add new photos to the `src/static/photos/` directory. The application will autom
 - **Secure Tokens**: HMAC-SHA256 signed tokens prevent unauthorized access
 - **Input Validation**: File types, sizes, and content are validated before processing
 
-## Recent Improvements (Latest Version)
+## Upgrading
 
-### New Mobile Photo Upload System
-- **Secure QR Code Access**: Generate time-limited QR codes for safe mobile access
-- **Token-Based Authentication**: HMAC-SHA256 signed tokens with automatic expiration
-- **iPhone Compatibility**: Automatic HEIC to JPEG conversion for seamless iPhone photo uploads
-- **Mobile-Optimized Interface**: Touch-friendly upload interface with drag-and-drop support
-- **Real-Time Processing**: Instant image optimization and thumbnail generation
-- **Rate Limiting & Security**: Built-in protection against abuse with comprehensive input validation
+The app supports in-app upgrades via the settings gear button (bottom-left corner), or you can upgrade manually:
 
-### Enhanced User Experience
-- **Advanced Virtual Keyboard**: Multi-layout support (letters, symbols), haptic feedback, long-press for rapid deletion
-- **Smart Loading Indicators**: Toast notifications, progress indicators, and real-time sync status
-- **PIR Visual Feedback**: Motion ripple effects, status indicators, and seamless activity detection
-- **Offline Mode**: Intelligent weather caching, graceful degradation, automatic recovery
-- **Mobile Photo Management**: Browse, manage, and delete uploaded photos from mobile devices
+```bash
+./upgrade.sh
+```
 
-### Technical Improvements
-- **Configuration System**: JSON-based config with environment variable override support
-- **Better Error Handling**: Graceful recovery from network issues and API failures
-- **Production Readiness**: Debug mode control, path detection, and deployment optimizations
-- **Enhanced Components**: Improved touch responsiveness, animation system, and visual feedback
-- **Security Framework**: Comprehensive token management, rate limiting, and input validation system
+Both methods back up your user data, pull the latest release, install dependencies, and restart the service.
 
 ## Usage
 
@@ -466,35 +407,36 @@ Add new photos to the `src/static/photos/` directory. The application will autom
 
 ### Project Structure
 ```
-src/
-├── calendar_app/       # Core calendar functionality
-│   ├── database.py     # Calendar database operations
-│   ├── models.py       # Data models for calendar
-│   └── utils.py        # Calendar utility functions
-├── google_integration/ # Google API integration
-│   ├── api.py          # Calendar API handling
-│   └── tasks_api.py    # Tasks API for chores
-├── pir_sensor/         # PIR motion sensor integration
-│   ├── sensor.py       # GPIO sensor control and monitoring
-│   └── routes.py       # Flask routes for sensor API
-├── slideshow/          # Slideshow functionality
-│   └── database.py     # Photo database management
-├── static/             # Frontend assets
-│   ├── css/            # CSS stylesheets
-│   │   └── components/ # Component-specific styles (loading, PIR feedback, etc.)
-│   ├── js/             # JavaScript modules
-│   │   └── components/ # Modular JS components (enhanced virtual keyboard, loading indicators, etc.)
-│   └── photos/         # Photo storage
-├── photo_upload/       # Mobile photo upload system
-│   ├── auth.py         # Token-based authentication and security
-│   └── routes.py       # Upload endpoints and QR code generation
-├── templates/          # HTML templates
-├── weather_integration/# Weather functionality with offline caching
-├── config.py           # Centralized configuration management
-└── main.py             # Application entry point
-├── config.json         # Application configuration file
-├── CLAUDE.md           # Development documentation for Claude Code
-└── startup/            # Launch scripts with dynamic path detection
+├── config.default.json     # Default config template (tracked in git)
+├── config.json             # Your local config (gitignored)
+├── VERSION                 # Current version number
+├── upgrade.sh              # Manual upgrade script
+├── deploy_raspberry_pi.sh  # Full Raspberry Pi deployment
+├── scripts/
+│   └── diagnose_pir.py     # CLI PIR sensor diagnostics
+├── startup/                # Systemd service, launch scripts
+├── src/
+│   ├── main.py             # Application entry point & API routes
+│   ├── config.py           # Centralized configuration management
+│   ├── version.py          # Version checking & in-app upgrade
+│   ├── health_monitor.py   # Error tracking & auto-recovery
+│   ├── health_routes.py    # Health check endpoints
+│   ├── calendar_app/       # Calendar functionality & SQLite DB
+│   ├── chores_app/         # Chore/task management (Google Tasks)
+│   ├── google_integration/ # Google Calendar & Tasks API (OAuth2)
+│   ├── weather_integration/# Open-Meteo weather API with caching
+│   ├── slideshow/          # Photo slideshow & database
+│   ├── pir_sensor/         # PIR motion sensor (gpiozero)
+│   │   ├── sensor.py       # GPIO sensor control
+│   │   ├── routes.py       # REST & SSE endpoints
+│   │   └── diagnostics.py  # Diagnostic checks (used by UI & CLI)
+│   ├── photo_upload/       # Secure mobile photo upload (QR/token)
+│   ├── static/
+│   │   ├── css/components/ # Component stylesheets
+│   │   ├── js/components/  # ES6 JS modules
+│   │   └── photos/         # Photo storage
+│   └── templates/          # HTML templates
+└── tests/                  # Pytest test suite
 ```
 
 ### Local Development
@@ -509,7 +451,7 @@ src/
    Open a browser and navigate to `http://localhost:5000`
 
 3. **Debug mode**:
-   The Flask application runs in debug mode by default, allowing for hot reloading.
+   Set `"debug": true` in `config.json` to enable hot reloading during development. Debug mode is automatically disabled in production.
 
 ## Contributing
 
@@ -528,9 +470,8 @@ We welcome contributions from the community! Here's how you can help:
 
 3. **Set up development environment**:
    ```bash
-   uv venv
+   uv sync --group dev
    source .venv/bin/activate
-   uv pip install -e ".[dev]"
    ```
 
 ### Development Workflow
