@@ -45,9 +45,7 @@ def run_all_checks() -> dict:
         issues.append("PIR sensor is disabled in config.json")
     gpio = results["gpio_devices"]
     if not gpio.get("gpio_group"):
-        issues.append(
-            f"User '{gpio.get('username', '?')}' is not in the gpio group"
-        )
+        issues.append(f"User '{gpio.get('username', '?')}' is not in the gpio group")
     sensor = results["sensor"]
     if sensor.get("status") == "not_initialized":
         issues.append("PIR sensor has not been initialized")
@@ -165,9 +163,7 @@ def _check_gpio_devices() -> dict:
                 {"path": chip, "accessible": accessible, "group": group, "mode": mode}
             )
         except Exception as e:
-            result["chips"].append(
-                {"path": chip, "accessible": False, "error": str(e)}
-            )
+            result["chips"].append({"path": chip, "accessible": False, "error": str(e)})
 
     # /dev/gpiomem
     if os.path.exists("/dev/gpiomem"):
@@ -208,7 +204,11 @@ def _check_sensor_state() -> dict:
 
     sensor = get_pir_sensor()
     if not sensor:
-        return {"status": "not_initialized", "monitoring": False, "gpio_available": False}
+        return {
+            "status": "not_initialized",
+            "monitoring": False,
+            "gpio_available": False,
+        }
 
     return {
         "status": "initialized",

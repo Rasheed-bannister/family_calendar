@@ -33,7 +33,6 @@ def add_motion_callback(callback: Callable):
         _motion_callbacks.append(callback)
 
 
-
 def trigger_motion_callbacks():
     """Trigger all registered motion callbacks"""
     for callback in _motion_callbacks:
@@ -225,5 +224,3 @@ def stop_pir_monitoring():
     """Stop PIR sensor monitoring"""
     if _pir_sensor:
         _pir_sensor.stop_monitoring()
-
-
