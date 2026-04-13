@@ -102,7 +102,10 @@ def start_monitoring():
             )
     except Exception as e:
         logging.error(f"Error starting PIR monitoring: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return (
+            jsonify({"success": False, "message": "Failed to start PIR monitoring"}),
+            500,
+        )
 
 
 @pir_bp.route("/stop", methods=["POST"])
@@ -113,7 +116,10 @@ def stop_monitoring():
         return jsonify({"success": True, "message": "PIR monitoring stopped"})
     except Exception as e:
         logging.error(f"Error stopping PIR monitoring: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return (
+            jsonify({"success": False, "message": "Failed to stop PIR monitoring"}),
+            500,
+        )
 
 
 @pir_bp.route("/events")
@@ -152,7 +158,10 @@ def trigger_test_motion():
         return jsonify({"success": True, "message": "Test motion triggered"})
     except Exception as e:
         logging.error(f"Error triggering test motion: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return (
+            jsonify({"success": False, "message": "Failed to trigger test motion"}),
+            500,
+        )
 
 
 @pir_bp.route("/diagnostics", methods=["GET"])
@@ -165,4 +174,4 @@ def run_diagnostics():
         return jsonify(results)
     except Exception as e:
         logging.error(f"Error running PIR diagnostics: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Failed to run PIR diagnostics"}), 500
