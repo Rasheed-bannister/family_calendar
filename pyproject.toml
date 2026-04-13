@@ -39,7 +39,7 @@ dev = [
 
     # Code quality and complexity analysis
     "radon>=6.0.1",
-    "vulture>=2.15",
+    "vulture>=2.16",
     "autoflake>=2.3.3",
 
     # Security scanning
