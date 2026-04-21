@@ -5,8 +5,8 @@
 Family Calendar is a small, single-maintainer project. Only the latest release receives security fixes.
 | Version  | Supported          |
 | -------- | ------------------ |
-| 0.2.9    | :white_check_mark: |
-| < 0.2.9  | :x:                |
+| 0.2.10   | :white_check_mark: |
+| < 0.2.10 | :x:                |
 
 If you're running an older version, please upgrade before reporting — the issue may already be fixed on `main`.
 

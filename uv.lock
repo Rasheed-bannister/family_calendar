@@ -127,7 +127,7 @@ filecache = [
 
 [[package]]
 name = "calendar"
-version = "0.2.9"
+version = "0.2.10"
 source = { virtual = "." }
 dependencies = [
     { name = "flask" },
