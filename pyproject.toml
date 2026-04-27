@@ -13,7 +13,7 @@ dependencies = [
     "google-auth-oauthlib>=1.3.1",
     "numpy>=2.4.4",
     "openmeteo-requests>=1.7.5",
-    "pandas>=3.0.1",
+    "pandas>=3.0.2",
     "requests-cache>=1.3.1",
     "retry-requests>=2.0.0",
     "gpiozero>=2.0.1; sys_platform == 'linux' and platform_machine == 'aarch64'",
