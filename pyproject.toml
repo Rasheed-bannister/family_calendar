@@ -51,9 +51,15 @@ dev = [
 ]
 
 [tool.uv]
-# Force patched version of pyasn1 (transitive dep of google-auth)
-# to resolve CVE for unbounded recursion DoS
-constraint-dependencies = ["pyasn1>=0.6.3"]
+# Force patched versions of transitive dependencies to resolve security advisories:
+# - pyasn1 (via google-auth): unbounded recursion DoS CVE
+# - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels (<48.0.1)
+# - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
+constraint-dependencies = [
+    "pyasn1>=0.6.3",
+    "cryptography>=48.0.1",
+    "msgpack>=1.2.1",
+]
 
 [tool.black]
 # Target Python 3.11+ to avoid 3.14-only syntax (e.g. unparenthesized
