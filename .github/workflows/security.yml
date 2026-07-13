@@ -143,14 +143,16 @@ jobs:
   docker-scan:
     runs-on: ubuntu-latest
     name: Container Security (if applicable)
-    # hashFiles is empty when no Dockerfile exists. The previous condition tested the
-    # repository *name* for the string "Dockerfile", so this job could never run.
-    if: hashFiles('Dockerfile') != ''
 
     steps:
     - uses: actions/checkout@v7
 
+    # The steps are guarded rather than the job: hashFiles is only available in a
+    # step context, and it needs the repo checked out to see the file anyway. The
+    # previous job-level condition tested the repository *name* for the string
+    # "Dockerfile", so this job could never do anything.
     - name: Run Trivy vulnerability scanner
+      if: hashFiles('Dockerfile') != ''
       uses: aquasecurity/trivy-action@master
       with:
         scan-type: 'fs'
@@ -161,8 +163,8 @@ jobs:
         severity: 'CRITICAL,HIGH'
 
     - name: Upload Trivy results to GitHub Security tab
+      if: hashFiles('Dockerfile') != ''
       uses: github/codeql-action/upload-sarif@v4
-      if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
