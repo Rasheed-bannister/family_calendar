@@ -31,6 +31,9 @@ reports/
 # Generated files that change frequently
 calendar.log
 src/weather_integration/weather_cache.json
-uv.lock
 
-.github/
+# uv.lock and .github/ were listed here but are both tracked, so the entries never
+# took effect. They are deliberately committed: the lockfile pins the exact
+# dependency versions we ship and audit, and .github/ holds the CI workflows. Left
+# in place they were a trap -- a new workflow file would be silently skipped by
+# `git add`, and dropping uv.lock from the index would make it disappear unnoticed.
