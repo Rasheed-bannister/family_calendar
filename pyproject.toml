@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "flask>=3.1.3",
     "werkzeug>=3.1.8",
-    "google-api-core>=2.30.3",
+    "google-api-core>=2.31.0",
     "google-api-python-client>=2.197.0",
     "google-auth-httplib2>=0.4.0",
     "google-auth-oauthlib>=1.4.0",
@@ -19,7 +19,7 @@ dependencies = [
     "gpiozero>=2.0.1; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "lgpio>=0.2.2.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "psutil>=7.2.2",
-    "Pillow>=12.2.0",
+    "Pillow>=12.3.0",
     "qrcode[pil]>=8.2",
     "pillow-heif>=1.3.0",
 ]
@@ -55,10 +55,12 @@ dev = [
 # - pyasn1 (via google-auth): unbounded recursion DoS CVE
 # - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels (<48.0.1)
 # - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
+# - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2)
 constraint-dependencies = [
     "pyasn1>=0.6.3",
     "cryptography>=48.0.1",
     "msgpack>=1.2.1",
+    "pip>=26.1.2",
 ]
 
 [tool.black]
