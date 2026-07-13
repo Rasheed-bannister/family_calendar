@@ -43,11 +43,13 @@ def authenticate_tasks():
             try:
                 creds.refresh(Request())
             except Exception as e:
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- logs the exception, not credential material
                 logger.error("Error refreshing tasks token: %s", e)
                 creds = None
 
         if not creds:
             if not os.path.exists(creds_path):
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- logs a filesystem path, not credential material
                 logger.error("Credentials file not found at %s", creds_path)
                 return None
             try:
@@ -64,6 +66,7 @@ def authenticate_tasks():
                 with open(token_path, "w") as token:
                     token.write(creds.to_json())
             except IOError as e:
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- logs the exception, not credential material
                 logger.error("Error saving tasks token file: %s", e)
 
     return creds

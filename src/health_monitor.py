@@ -244,8 +244,11 @@ class HealthMonitor:
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             logger.warning("Systemd not available for restart: %s", e)
 
-        # Fallback: restart the Python process directly
+        # Fallback: restart the Python process directly.
+        # Re-execs this same interpreter with its own argv; argv comes from the service
+        # definition, never from a request.
         logger.info("Falling back to direct process restart")
+        # nosemgrep: python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def enable_monitoring(self):
