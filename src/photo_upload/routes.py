@@ -464,7 +464,10 @@ def generate_qrcode():
         token = token_data["token"]
         expiry = token_data["expiry"]
 
-        # Create the URL with embedded token
+        # Create the URL with embedded token.
+        # host is resolved by get_local_ip() or CALENDAR_UPLOAD_HOST, never from the
+        # request's Host header, and the URL is only encoded into a QR image, not fetched.
+        # nosemgrep: python.flask.security.injection.tainted-url-host.tainted-url-host
         base_url = f"http://{host}:{port}/upload/manage"
         upload_url = generate_upload_url(base_url, token)
 

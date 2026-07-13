@@ -35,12 +35,13 @@ jobs:
         uv venv
         uv pip install -e .
 
+    # Writes the report for the artifact, then re-runs to gate. The first run is
+    # allowed to fail so a finding still produces an uploadable report.
     - name: Run pip-audit
       run: |
         uv pip install pip-audit
-        uv run pip-audit --desc --format json --output audit-report.json 2>/dev/null || echo '{"vulnerabilities": []}' > audit-report.json
-        uv run pip-audit --desc || true
-      continue-on-error: true
+        uv run pip-audit --desc --format json --output audit-report.json || true
+        uv run pip-audit --desc
 
     - name: Upload pip-audit results
       uses: actions/upload-artifact@v7
@@ -48,21 +49,6 @@ jobs:
       with:
         name: pip-audit-results
         path: audit-report.json
-        if-no-files-found: ignore
-
-    - name: Run Safety check
-      run: |
-        uv pip install safety
-        uv run safety check --json --output safety-report.json 2>/dev/null || echo '{"vulnerabilities": []}' > safety-report.json
-        uv run safety check || true
-      continue-on-error: true
-
-    - name: Upload Safety results
-      uses: actions/upload-artifact@v7
-      if: always()
-      with:
-        name: safety-results
-        path: safety-report.json
         if-no-files-found: ignore
 
   code-security:
@@ -81,11 +67,12 @@ jobs:
       run: |
         pip install bandit[toml] semgrep
 
+    # Gates on medium-and-above findings. B101 (assert) is skipped because pytest
+    # relies on bare asserts.
     - name: Run Bandit security linter
       run: |
         bandit -r src -f json -o bandit-report.json -ll --skip B101 || true
         bandit -r src -ll --skip B101
-      continue-on-error: true
 
     - name: Upload Bandit results
       uses: actions/upload-artifact@v7
@@ -94,15 +81,16 @@ jobs:
         name: bandit-results
         path: bandit-report.json
 
+    # --error makes semgrep exit non-zero on any finding. Known false positives are
+    # suppressed at the source with `# nosemgrep: <rule-id>` plus a justification.
     - name: Run Semgrep
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: >-
-          p/security-audit
-          p/python
-          p/flask
-          p/owasp-top-ten
-      continue-on-error: true
+      run: |
+        semgrep scan --error --quiet \
+          --config p/security-audit \
+          --config p/python \
+          --config p/flask \
+          --config p/owasp-top-ten \
+          src
 
   secret-scanning:
     runs-on: ubuntu-latest
@@ -113,20 +101,21 @@ jobs:
       with:
         fetch-depth: 0  # Full history for better secret detection
 
+    # Fails only on verified live credentials, so this does not fire on placeholders.
     - name: TruffleHog OSS
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
         base: ${{ github.event.repository.default_branch }}
-        extra_args: --debug --only-verified
-      continue-on-error: true
+        extra_args: --only-verified
 
+    # Fails on any secret not already recorded in .secrets.baseline. To accept a new
+    # false positive, re-run `detect-secrets scan --baseline .secrets.baseline` and
+    # commit the updated baseline.
     - name: Detect secrets with detect-secrets
       run: |
         pip install detect-secrets
-        detect-secrets scan --baseline .secrets.baseline || true
-        detect-secrets audit .secrets.baseline || true
-      continue-on-error: true
+        detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
 
   codeql-analysis:
     runs-on: ubuntu-latest
@@ -154,7 +143,9 @@ jobs:
   docker-scan:
     runs-on: ubuntu-latest
     name: Container Security (if applicable)
-    if: contains(github.repository, 'Dockerfile')
+    # hashFiles is empty when no Dockerfile exists. The previous condition tested the
+    # repository *name* for the string "Dockerfile", so this job could never run.
+    if: hashFiles('Dockerfile') != ''
 
     steps:
     - uses: actions/checkout@v7
@@ -166,7 +157,8 @@ jobs:
         scan-ref: '.'
         format: 'sarif'
         output: 'trivy-results.sarif'
-      continue-on-error: true
+        exit-code: '1'
+        severity: 'CRITICAL,HIGH'
 
     - name: Upload Trivy results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v4
