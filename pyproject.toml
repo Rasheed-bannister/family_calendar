@@ -58,12 +58,15 @@ dev = [
 # - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2)
 # - click (via black/flask): command injection in click.edit() (<8.3.3); not
 #   reachable from this codebase, constrained to keep pip-audit clean
+# - httplib2 (via google-auth-httplib2): unbounded decompression of gzip/deflate
+#   response bodies -> memory exhaustion / OOM DoS PYSEC-2026-3444 (<0.32.0)
 constraint-dependencies = [
     "pyasn1>=0.6.3",
     "cryptography>=48.0.1",
     "msgpack>=1.2.1",
     "pip>=26.1.2",
     "click>=8.3.3",
+    "httplib2>=0.32.0",
 ]
 
 [tool.black]
