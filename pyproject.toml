@@ -44,7 +44,7 @@ dev = [
     "autoflake>=2.3.3",
 
     # Security scanning
-    "pip-audit>=2.10.0",
+    "pip-audit>=2.10.1",
 
     # Pre-commit hooks
     "pre-commit>=4.6.0",
