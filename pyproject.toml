@@ -52,7 +52,8 @@ dev = [
 
 [tool.uv]
 # Force patched versions of transitive dependencies to resolve security advisories:
-# - pyasn1 (via google-auth): unbounded recursion DoS CVE
+# - pyasn1 (via google-auth): unbounded recursion DoS CVE, plus quadratic OID /
+#   long-form tag parsing and float-precision Real decoding (<0.6.4)
 # - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels (<48.0.1)
 # - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
 # - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2)
@@ -60,13 +61,17 @@ dev = [
 #   reachable from this codebase, constrained to keep pip-audit clean
 # - httplib2 (via google-auth-httplib2): unbounded decompression of gzip/deflate
 #   response bodies -> memory exhaustion / OOM DoS PYSEC-2026-3444 (<0.32.0)
+# - setuptools (build backend, pulled in at runtime by colorzero): MANIFEST.in
+#   exclusion bypass in sdist via Unicode NFC/NFD collision CVE-2026-59890
+#   (<83.0.0)
 constraint-dependencies = [
-    "pyasn1>=0.6.3",
+    "pyasn1>=0.6.4",
     "cryptography>=48.0.1",
     "msgpack>=1.2.1",
     "pip>=26.1.2",
     "click>=8.3.3",
     "httplib2>=0.32.0",
+    "setuptools>=83.0.0",
 ]
 
 [tool.black]
