@@ -116,16 +116,17 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
 
+    # Run the build tooling through uvx so each tool resolves its own dependencies
+    # in an isolated environment. `uv pip install X` followed by `uv run X` is
+    # unsound: `uv run` re-syncs the project environment from uv.lock first, which
+    # downgrades or removes anything installed ad-hoc. That is how twine 7.0.0 broke
+    # this job -- it needs packaging>=26.1, but `uv run` reset packaging to the
+    # locked 26.0, so twine failed on `from packaging import errors`.
     - name: Build package
-      run: |
-        uv venv
-        uv pip install build
-        uv run python -m build
+      run: uvx --from build pyproject-build
 
     - name: Check package
-      run: |
-        uv pip install twine
-        uv run twine check dist/*
+      run: uvx twine check dist/*
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
