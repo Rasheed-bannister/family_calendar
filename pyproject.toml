@@ -7,14 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
     "flask>=3.1.3",
     "werkzeug>=3.1.8",
-    "google-api-core>=2.31.0",
-    "google-api-python-client>=2.197.0",
+    "google-api-core>=2.32.0",
+    "google-api-python-client>=2.198.0",
     "google-auth-httplib2>=0.4.0",
     "google-auth-oauthlib>=1.4.0",
     "numpy>=2.4.6",
     "openmeteo-requests>=1.7.5",
     "pandas>=3.0.3",
-    "requests-cache>=1.3.2",
+    "requests-cache>=1.3.3",
     "retry-requests>=2.0.0",
     "gpiozero>=2.0.1; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "lgpio>=0.2.2.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
@@ -27,7 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     # Testing
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
 
     # Code formatting
     "black>=26.5.1",
@@ -44,7 +44,7 @@ dev = [
     "autoflake>=2.3.3",
 
     # Security scanning
-    "pip-audit>=2.10.0",
+    "pip-audit>=2.10.1",
 
     # Pre-commit hooks
     "pre-commit>=4.6.0",
