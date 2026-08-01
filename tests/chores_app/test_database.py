@@ -1,6 +1,7 @@
 """Tests for src/chores_app/database.py."""
 
 import sqlite3
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +19,55 @@ def temp_db(tmp_path):
         yield db_path
 
 
+class _TrackedConnection:
+    """Proxy around a real sqlite3 connection that records whether it was closed."""
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+        self.closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+    def close(self):
+        self.closed = True
+        self._wrapped.close()
+
+
+@contextmanager
+def track_connections():
+    """Wrap sqlite3.connect so tests can assert no connection is leaked."""
+    opened = []
+    real_connect = sqlite3.connect
+
+    def fake_connect(*args, **kwargs):
+        conn = _TrackedConnection(real_connect(*args, **kwargs))
+        opened.append(conn)
+        return conn
+
+    with patch("src.chores_app.database.sqlite3.connect", fake_connect):
+        yield opened
+
+
+def _break_schema(db_path):
+    """Drop the Chores table so the next database operation raises mid-flight."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("DROP TABLE Chores")
+    conn.commit()
+    conn.close()
+
+
+def _insert_raw_chore(db_path, chore_id, assigned_to, description, status, due=None):
+    """Insert a row directly, bypassing add_chore's status normalisation."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO Chores (id, assigned_to, description, status, due) VALUES (?, ?, ?, ?, ?)",
+        (chore_id, assigned_to, description, status, due),
+    )
+    conn.commit()
+    conn.close()
+
+
 class TestCreateAll:
     """Tests for chores database creation."""
 
@@ -31,6 +81,16 @@ class TestCreateAll:
             tables = {row[0] for row in cursor.fetchall()}
             conn.close()
             assert "Chores" in tables
+
+    def test_does_not_truncate_existing_database(self, temp_db):
+        """create_all must be safe to call against a populated database."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_chore(assigned_to="Alice", description="Dishes", google_id="keep-1")
+
+            db.create_all()
+
+            chores = db.get_chores()
+            assert [c["id"] for c in chores] == ["keep-1"]
 
 
 class TestAddChores:
@@ -87,6 +147,17 @@ class TestAddChores:
             invisible = [c for c in result if c["id"] == "1"]
             assert len(invisible) == 1
             assert invisible[0]["status"] == "invisible"
+
+    def test_missing_status_is_defaulted(self, temp_db):
+        """Google Tasks can omit `status`; it must not be persisted as NULL."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_chores(
+                [Chore(id="1", title="Alice", notes="Dishes", status=None, due=None)]
+            )
+
+            chores = db.get_chores()
+            assert len(chores) == 1
+            assert chores[0]["status"] == "needsAction"
 
 
 class TestAddChore:
@@ -183,6 +254,72 @@ class TestGetChores:
             assert "notes" in chore  # description maps to notes
             assert "status" in chore
             assert "due" in chore
+
+    def test_null_status_chore_is_returned(self, temp_db):
+        """A NULL status is not 'invisible', so the chore must still show.
+
+        `WHERE status != 'invisible'` alone drops these rows because
+        `NULL != 'invisible'` evaluates to NULL rather than true.
+        """
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            _insert_raw_chore(temp_db, "null-1", "Alice", "Legacy chore", None)
+
+            chores = db.get_chores()
+            assert [c["id"] for c in chores] == ["null-1"]
+            assert chores[0]["status"] is None
+
+    def test_null_status_returned_but_invisible_still_filtered(self, temp_db):
+        """Fixing the NULL case must not stop 'invisible' from being hidden."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            _insert_raw_chore(temp_db, "null-1", "Alice", "Legacy chore", None)
+            _insert_raw_chore(temp_db, "hid-1", "Bob", "Hidden chore", "invisible")
+            db.add_chore(assigned_to="Carol", description="Normal", google_id="vis-1")
+
+            visible_ids = {c["id"] for c in db.get_chores()}
+            assert visible_ids == {"null-1", "vis-1"}
+
+            all_ids = {c["id"] for c in db.get_chores(include_invisible=True)}
+            assert all_ids == {"null-1", "hid-1", "vis-1"}
+
+
+class TestConnectionHandling:
+    """Connections must not leak when an operation raises mid-flight."""
+
+    def test_get_chores_closes_connection_on_error(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            _break_schema(temp_db)
+
+            with track_connections() as opened:
+                with pytest.raises(sqlite3.Error):
+                    db.get_chores()
+
+            assert opened, "expected get_chores to open a connection"
+            assert all(conn.closed for conn in opened)
+
+    def test_update_chore_status_closes_connection_on_error(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            _break_schema(temp_db)
+
+            with track_connections() as opened:
+                with pytest.raises(sqlite3.Error):
+                    db.update_chore_status("missing", "completed")
+
+            assert opened, "expected update_chore_status to open a connection"
+            assert all(conn.closed for conn in opened)
+
+    def test_add_chores_closes_connection_on_error(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            _break_schema(temp_db)
+
+            chores = [
+                Chore(id="1", title="Alice", notes="Dishes", status=None, due=None)
+            ]
+            with track_connections() as opened:
+                with pytest.raises(sqlite3.Error):
+                    db.add_chores(chores)
+
+            assert opened, "expected add_chores to open a connection"
+            assert all(conn.closed for conn in opened)
 
 
 class TestUpdateChoreGoogleId:

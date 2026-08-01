@@ -3,11 +3,14 @@
 import datetime
 import sqlite3
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from src.calendar_app import database as db
 from src.calendar_app.models import Calendar, CalendarEvent, CalendarMonth
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 @pytest.fixture
@@ -17,6 +20,33 @@ def temp_db(tmp_path):
     with patch.object(db, "DATABASE_FILE", db_path):
         db.create_all()
         yield db_path
+
+
+@pytest.fixture
+def local_tz():
+    """Pin the app's display timezone so month bounds are deterministic."""
+    with patch("src.config.get_local_timezone", return_value=NEW_YORK):
+        yield NEW_YORK
+
+
+def _insert_raw_event(db_path, event_id, start, end, month_id="8.2026", all_day=0):
+    """Insert an event row with verbatim timestamp strings.
+
+    Bypasses add_event on purpose so tests can reproduce the mixed-offset rows
+    that real databases accumulated.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO CalendarEvent (
+            id, calendar_id, month_id, title, start_datetime, end_datetime,
+            all_day, location, description
+        ) VALUES (?, 'cal-1', ?, ?, ?, ?, ?, NULL, NULL)
+        """,
+        (event_id, month_id, event_id, start, end, all_day),
+    )
+    conn.commit()
+    conn.close()
 
 
 class TestCreateAll:
@@ -217,6 +247,195 @@ class TestAddAndGetEvents:
             assert events[0]["title"] == "May Event"
 
 
+class TestMonthRangeIsLocalTime:
+    """get_all_events_for_month_range must bound the month in local time.
+
+    The bounds used to be hardcoded UTC strings compared lexicographically
+    against rows stored with whatever offset Google returned, which is not an
+    instant comparison at all.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _calendar(self, temp_db, local_tz):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_calendar(
+                Calendar(calendar_id="cal-1", name="Test Cal", color_hex="#FF0000")
+            )
+        self.db_path = temp_db
+
+    def _titles_for(self, year, month):
+        with patch.object(db, "DATABASE_FILE", self.db_path):
+            return {e["title"] for e in db.get_all_events_for_month_range(year, month)}
+
+    def test_late_evening_event_on_last_day_is_in_that_month(self):
+        """22:00 on Aug 31 in New York is 02:00 Sep 1 UTC - still August."""
+        _insert_raw_event(
+            self.db_path,
+            "late-aug-31",
+            "2026-08-31T22:00:00-04:00",
+            "2026-08-31T23:00:00-04:00",
+        )
+        assert "late-aug-31" in self._titles_for(2026, 8)
+
+    def test_late_evening_event_on_last_day_is_not_in_the_next_month(self):
+        _insert_raw_event(
+            self.db_path,
+            "late-aug-31",
+            "2026-08-31T22:00:00-04:00",
+            "2026-08-31T23:00:00-04:00",
+        )
+        assert "late-aug-31" not in self._titles_for(2026, 9)
+
+    def test_previous_month_evening_event_is_excluded(self):
+        """A UTC window pulled in the tail of the previous local month."""
+        _insert_raw_event(
+            self.db_path,
+            "late-jul-31",
+            "2026-07-31T22:00:00-04:00",
+            "2026-07-31T23:00:00-04:00",
+            month_id="7.2026",
+        )
+        assert "late-jul-31" not in self._titles_for(2026, 8)
+        assert "late-jul-31" in self._titles_for(2026, 7)
+
+    def test_first_moment_of_local_month_is_included(self):
+        _insert_raw_event(
+            self.db_path,
+            "midnight-aug-1",
+            "2026-08-01T00:00:00-04:00",
+            "2026-08-01T01:00:00-04:00",
+        )
+        assert "midnight-aug-1" in self._titles_for(2026, 8)
+
+    def test_mixed_offset_rows_are_compared_as_instants(self):
+        """Rows written with different offsets must still sort/filter correctly."""
+        _insert_raw_event(
+            self.db_path,
+            "stored-utc",
+            "2026-08-15T18:00:00+00:00",
+            "2026-08-15T19:00:00+00:00",
+        )
+        _insert_raw_event(
+            self.db_path,
+            "stored-eastern",
+            "2026-08-15T09:00:00-04:00",
+            "2026-08-15T10:00:00-04:00",
+        )
+        _insert_raw_event(
+            self.db_path,
+            "stored-naive",
+            "2026-08-15T12:00:00",
+            "2026-08-15T13:00:00",
+        )
+
+        with patch.object(db, "DATABASE_FILE", self.db_path):
+            events = db.get_all_events_for_month_range(2026, 8)
+
+        # Instants are 12:00Z (naive), 13:00Z (-04:00) and 18:00Z. Sorting the
+        # raw strings would have put "...T09:00:00-04:00" first.
+        assert [e["title"] for e in events] == [
+            "stored-naive",
+            "stored-eastern",
+            "stored-utc",
+        ]
+
+    def test_all_day_event_on_first_of_month_is_included(self):
+        """All-day events are stored as floating midnight-UTC dates."""
+        _insert_raw_event(
+            self.db_path,
+            "all-day-aug-1",
+            "2026-08-01T00:00:00+00:00",
+            "2026-08-02T00:00:00+00:00",
+            all_day=1,
+        )
+        assert "all-day-aug-1" in self._titles_for(2026, 8)
+
+    def test_all_day_event_on_last_of_month_is_included(self):
+        _insert_raw_event(
+            self.db_path,
+            "all-day-aug-31",
+            "2026-08-31T00:00:00+00:00",
+            "2026-09-01T00:00:00+00:00",
+            all_day=1,
+        )
+        assert "all-day-aug-31" in self._titles_for(2026, 8)
+
+    def test_event_spanning_whole_month_is_included(self):
+        _insert_raw_event(
+            self.db_path,
+            "spanning",
+            "2026-07-20T10:00:00-04:00",
+            "2026-09-05T10:00:00-04:00",
+            month_id="7.2026",
+        )
+        assert "spanning" in self._titles_for(2026, 8)
+
+    def test_december_window_rolls_over_year_boundary(self):
+        _insert_raw_event(
+            self.db_path,
+            "new-years-eve",
+            "2026-12-31T22:00:00-05:00",
+            "2026-12-31T23:30:00-05:00",
+            month_id="12.2026",
+        )
+        assert "new-years-eve" in self._titles_for(2026, 12)
+        assert "new-years-eve" not in self._titles_for(2027, 1)
+
+
+class TestSerializeDatetime:
+    """Stored timestamps stay offset-qualified and keep their local offset."""
+
+    def test_preserves_offset_rather_than_converting_to_utc(self):
+        value = datetime.datetime(2026, 8, 31, 22, 0, tzinfo=NEW_YORK)
+        assert db.serialize_datetime(value) == "2026-08-31T22:00:00-04:00"
+
+    def test_naive_value_is_stamped_as_utc(self):
+        value = datetime.datetime(2026, 8, 31, 22, 0)
+        assert db.serialize_datetime(value) == "2026-08-31T22:00:00+00:00"
+
+    def test_round_trips_through_fromisoformat(self):
+        """The view layer reads rows back with fromisoformat."""
+        value = datetime.datetime(2026, 8, 31, 22, 0, tzinfo=NEW_YORK)
+        parsed = datetime.datetime.fromisoformat(db.serialize_datetime(value))
+        assert parsed == value
+        # Day placement in the calendar grid depends on this staying local.
+        assert parsed.date() == datetime.date(2026, 8, 31)
+
+    def test_add_event_stores_local_offset(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            cal = Calendar(calendar_id="cal-1", name="Test Cal", color_hex="#FF0000")
+            db.add_calendar(cal)
+            month = CalendarMonth(year=2026, month=8)
+            db.add_month(month)
+            db.add_event(
+                CalendarEvent(
+                    id="evt-late",
+                    calendar=cal,
+                    month=month,
+                    title="Late",
+                    start_datetime=datetime.datetime(
+                        2026, 8, 31, 22, 0, tzinfo=NEW_YORK
+                    ),
+                    end_datetime=datetime.datetime(2026, 8, 31, 23, 0, tzinfo=NEW_YORK),
+                    all_day=False,
+                )
+            )
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT start_datetime FROM CalendarEvent WHERE id = 'evt-late'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == "2026-08-31T22:00:00-04:00"
+
+
+class TestCheckEventExistsRemoved:
+    """BUG 16: dead helper with a row-index bug, deleted rather than fixed."""
+
+    def test_helper_is_gone(self):
+        assert not hasattr(db, "check_event_exists")
+
+
 class TestRunMigrations:
     """Tests for database migrations."""
 
@@ -226,13 +445,15 @@ class TestRunMigrations:
         # Create DB without display_name column
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE Calendar (
                 calendar_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 color TEXT
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -252,3 +473,53 @@ class TestRunMigrations:
         with patch.object(db, "DATABASE_FILE", temp_db):
             db.run_migrations()  # Already has display_name from create_all
             db.run_migrations()  # Should not fail
+
+    def test_leaves_existing_mixed_offset_rows_alone(self, temp_db):
+        """Pre-existing rows are already comparable; do not rewrite them."""
+        _insert_raw_event(
+            temp_db,
+            "legacy",
+            "2026-08-31T22:00:00-04:00",
+            "2026-08-31T23:00:00-04:00",
+        )
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.run_migrations()
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT start_datetime, end_datetime FROM CalendarEvent WHERE id = 'legacy'"
+        ).fetchone()
+        conn.close()
+        assert row == ("2026-08-31T22:00:00-04:00", "2026-08-31T23:00:00-04:00")
+
+    def test_repairs_timestamps_sqlite_cannot_parse(self, temp_db):
+        """A row SQLite can't read would silently vanish from the month view."""
+        _insert_raw_event(
+            temp_db,
+            "odd-format",
+            "2026-08-15T10:00:00+00:00:00",
+            "2026-08-15T11:00:00+00:00:00",
+        )
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.run_migrations()
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT start_datetime FROM CalendarEvent WHERE id = 'odd-format'"
+        ).fetchone()
+        parsed = conn.execute("SELECT datetime(?)", (row[0],)).fetchone()
+        conn.close()
+        assert parsed[0] is not None
+
+    def test_unrecoverable_row_is_kept_not_dropped(self, temp_db):
+        """Never silently delete data we cannot interpret."""
+        _insert_raw_event(temp_db, "garbage", "not-a-timestamp", "also-garbage")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.run_migrations()
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT start_datetime, end_datetime FROM CalendarEvent WHERE id = 'garbage'"
+        ).fetchone()
+        conn.close()
+        assert row == ("not-a-timestamp", "also-garbage")

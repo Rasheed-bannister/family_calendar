@@ -205,20 +205,30 @@ def require_upload_token(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Get token from various sources
+        # Get token from various sources.
+        #
+        # SECURITY: the token itself is a bearer credential granting photo
+        # upload and delete rights. It must never be written to the log --
+        # not in full, and not as a truncated "preview" either. Only the
+        # source it arrived on is ever recorded.
         token_from_args = request.args.get("token")
         token_from_headers = request.headers.get("X-Upload-Token")
         token_from_form = request.form.get("token")
 
         token = token_from_args or token_from_headers or token_from_form
 
-        logger.info(f"Token validation attempt from {request.remote_addr}")
-        logger.info(f"Token from args: {'Yes' if token_from_args else 'No'}")
-        logger.info(f"Token from headers: {'Yes' if token_from_headers else 'No'}")
-        logger.info(f"Token from form: {'Yes' if token_from_form else 'No'}")
-        logger.info(f"Final token: {'Yes' if token else 'No'}")
-        if token:
-            logger.info(f"Token preview: {token[:20]}...")
+        if token_from_args:
+            arrived_via = "query"
+        elif token_from_headers:
+            arrived_via = "header"
+        elif token_from_form:
+            arrived_via = "form"
+        else:
+            arrived_via = "none"
+
+        logger.debug(
+            "Upload token presented via %s from %s", arrived_via, request.remote_addr
+        )
 
         if not token:
             logger.warning(f"No token provided from {request.remote_addr}")

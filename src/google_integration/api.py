@@ -1,4 +1,3 @@
-import calendar as pycalendar
 import datetime
 import logging
 import os
@@ -10,6 +9,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from src.config import get_month_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,9 @@ def get_events_current_month(service, month: int, year: int):
     Fetches all events for a specific month and year from all accessible calendars,
     handling pagination.
 
+    The query window spans the month in the configured local timezone (see
+    ``src.config.get_month_bounds``), not in UTC.
+
     Args:
         service: The authorized Google Calendar API service instance.
         month (int): The month (1-12).
@@ -190,15 +194,18 @@ def get_events_current_month(service, month: int, year: int):
         logger.warning("No calendars found or error fetching calendar list.")
         return []
 
-    # Calculate the time range for the given month and year
-    start_day = 1
-    end_day = pycalendar.monthrange(year, month)[1]
-    time_min_dt = datetime.datetime(
-        year, month, start_day, 0, 0, 0, tzinfo=datetime.timezone.utc
-    )
-    time_max_dt = datetime.datetime(
-        year, month, end_day, 23, 59, 59, tzinfo=datetime.timezone.utc
-    )
+    # Calculate the time range for the given month and year.
+    #
+    # The window MUST be built in the user's local timezone. Hardcoding UTC
+    # ended the window at e.g. 2026-08-31T23:59:59Z, which is only 19:59:59
+    # local in America/New_York, so every event later that evening fell outside
+    # August's sync and was never stored for August (it only turned up once the
+    # user navigated to September). The mirror image applied at the start of the
+    # month, where the window reached back into the previous month.
+    #
+    # timeMax is exclusive in the Google Calendar API, so the first instant of
+    # the next local month is exactly the right upper bound.
+    time_min_dt, time_max_dt = get_month_bounds(year, month)
     time_min = time_min_dt.isoformat()
     time_max = time_max_dt.isoformat()
 

@@ -90,21 +90,18 @@ def _should_start_chores_background_task() -> bool:
 
 
 def _start_chores_background_sync() -> None:
-    """Run the chores sync, letting the worker claim and own its task status.
+    """Queue the chores sync on the shared thread pool.
 
-    NOTE: this still runs inline, so the page render waits on a Google Tasks
-    round-trip. Moving it onto the shared `sync_executor` (like the calendar
-    path) would be an improvement, but is deliberately left out here because
-    it changes the executor call pattern this route's tests assert on.
+    `start_tasks_sync` claims the "tasks" slot atomically and leaves the
+    status lifecycle to the worker, so the page render never waits on a
+    Google Tasks round-trip.
     """
     try:
-        from src.google_integration.routes import fetch_google_tasks_background
+        from src.google_integration.routes import start_tasks_sync
 
-        # No pre-set status: the worker claims "tasks" itself. Marking it
-        # "running" here would make the worker's own guard skip the sync.
-        fetch_google_tasks_background()
+        start_tasks_sync()
     except Exception as e:
-        logger.error("Error during automatic chores refresh: %s", e)
+        logger.error("Error queueing automatic chores refresh: %s", e)
 
 
 def _build_calendar_weeks_data(
@@ -145,13 +142,97 @@ def _build_calendar_weeks_data(
     return weeks_data
 
 
-def _get_weather_data_safe():
-    """Safely get weather data with exception handling."""
+WEATHER_TASK_ID = "weather"
+
+
+def _should_start_weather_refresh() -> bool:
+    """Atomically claim the weather refresh slot, if a refresh is due.
+
+    Returns False when a refresh is already in flight or when the last
+    attempt was too recent (a failing API must not be retried once per page
+    render while the Pi is offline).
+    """
+    import time
+
+    from src.config import get_config
+
+    cooldown_seconds = get_config().get("weather.cache_duration", 600)
+    now = time.time()
+
+    with google_fetch_lock:
+        task_info = background_tasks.get(WEATHER_TASK_ID)
+        if task_info:
+            if task_info.get("status") in ("pending", "running"):
+                return False
+            if now - task_info.get("last_attempt", 0) < cooldown_seconds:
+                return False
+        background_tasks[WEATHER_TASK_ID] = {
+            "status": "pending",
+            "updated": False,
+            "last_attempt": now,
+        }
+        return True
+
+
+def _refresh_weather_background() -> None:
+    """Fetch weather in a worker thread and refresh the on-disk cache."""
+    import time
+
+    status = "complete"
     try:
         from src.weather_integration.api import get_weather_data
 
-        return get_weather_data()
-    except Exception:
+        if get_weather_data() is None:
+            status = "error"
+    except Exception as e:
+        logger.error("Error refreshing weather data: %s", e)
+        status = "error"
+
+    with google_fetch_lock:
+        background_tasks[WEATHER_TASK_ID] = {
+            "status": status,
+            "updated": False,
+            "last_attempt": time.time(),
+        }
+
+
+def _start_weather_background_refresh() -> None:
+    """Queue a weather refresh on the shared thread pool."""
+    from src.main import sync_executor
+
+    if not _should_start_weather_refresh():
+        return
+
+    try:
+        sync_executor.submit(_refresh_weather_background)
+    except Exception as e:
+        logger.error("Could not queue weather refresh: %s", e)
+        with google_fetch_lock:
+            background_tasks[WEATHER_TASK_ID] = {
+                "status": "error",
+                "updated": False,
+                "last_attempt": 0,
+            }
+
+
+def _get_weather_data_safe():
+    """Return weather for the page render without blocking on the network.
+
+    Reads only the on-disk cache; the live fetch happens on the shared sync
+    executor. Returns None when no usable reading exists, which the template
+    renders as "Weather data unavailable" - never invented values.
+    """
+    try:
+        from src.weather_integration.api import (
+            get_weather_for_display,
+            weather_cache_needs_refresh,
+        )
+
+        if weather_cache_needs_refresh():
+            _start_weather_background_refresh()
+        return get_weather_for_display()
+    except Exception as e:
+        logger.error("Error preparing weather data for render: %s", e)
         return None
 
 
@@ -231,7 +312,12 @@ def _filter_events_for_day(events: list, target_date: datetime.date) -> list:
 @calendar_bp.route("/<int:year>/<int:month>")
 def view(year: int = None, month: int = None):
     """Renders the calendar view for a specific month and year."""
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    # Local time, not UTC: this drives both the default month and which cell is
+    # highlighted as "today". Under UTC the highlight jumped to tomorrow at
+    # local evening (8pm in America/New_York) on a display that is on all night.
+    from src.config import get_local_timezone
+
+    now = datetime.datetime.now(tz=get_local_timezone())
 
     # Set defaults and validate input
     if year is None:

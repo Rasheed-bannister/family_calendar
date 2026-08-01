@@ -54,7 +54,8 @@ document.addEventListener("DOMContentLoaded", async function () {
       NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
       NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
       NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
-      SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
+      // Key name must match the backend: config.inactivity.slideshow_delay_seconds
+      SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_delay_seconds || 5) * 1000;
 
       if (DEBUG_MODE) {
         console.log("Loaded inactivity config:", {
@@ -104,7 +105,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     loadingIndicator: await safeInit("loadingIndicator", () => LoadingIndicator.init()),
     modal: await safeInit("modal", () => Modal.init()),
     addChoreModal: await safeInit("addChoreModal", () =>
-      Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
+      Modal.initAddChoreModal ? Modal.initAddChoreModal() : true
     ),
     calendar: await safeInit("calendar", () => Calendar.init()),
     dailyView: await safeInit("dailyView", () => DailyView.init()),
@@ -122,7 +123,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   safeInit("pirSensor", () =>
     PIRSensor.init((activityType) => {
       registerActivity(`pir-${activityType}`);
-    }),
+    })
   ).then((result) => {
     componentsStatus.pirSensor = result;
   });

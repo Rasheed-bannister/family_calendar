@@ -6,10 +6,17 @@ Loads settings from config.json with defaults and validation.
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
+
+# Timezone used for every "what month/day is this?" decision in the app when
+# nothing has been configured. Kept identical to the historical
+# ``weather.timezone`` default so existing installs behave the same.
+DEFAULT_TIMEZONE = "America/New_York"
 
 
 class Config:
@@ -33,6 +40,10 @@ class Config:
             "use_reloader": False,
             "environment": "production",  # production, development, testing
             "family_name": "Family",  # Default family name
+            # Timezone the calendar is displayed in. ``None`` means "fall back
+            # to weather.timezone", which is what every pre-existing config.json
+            # (and the CALENDAR_TIMEZONE env var) sets.
+            "timezone": None,
         },
         "weather": {
             "latitude": 40.759010,
@@ -434,3 +445,65 @@ def reload_config():
     global _config
     _config = Config()
     return _config
+
+
+def get_timezone_name() -> str:
+    """Return the configured IANA timezone name for the calendar display.
+
+    Resolution order:
+      1. ``app.timezone`` - the dedicated key, for installs whose display
+         timezone differs from the location they want weather for.
+      2. ``weather.timezone`` - what every existing config.json (and the
+         long-documented ``CALENDAR_TIMEZONE`` env var) already sets, so
+         upgrading installs need no config change.
+      3. :data:`DEFAULT_TIMEZONE`.
+    """
+    config = get_config()
+    name = config.get("app.timezone") or config.get("weather.timezone")
+    if not isinstance(name, str) or not name.strip():
+        return DEFAULT_TIMEZONE
+    return name.strip()
+
+
+def get_local_timezone() -> ZoneInfo:
+    """Return the configured display timezone as a :class:`ZoneInfo`.
+
+    A bad/unknown timezone name must never take the calendar down, so an
+    unresolvable name degrades to :data:`DEFAULT_TIMEZONE` and finally to UTC
+    (which is all that is available if the tz database itself is missing).
+    """
+    name = get_timezone_name()
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        logger.warning(
+            "Unknown timezone %r in configuration; falling back to %s",
+            name,
+            DEFAULT_TIMEZONE,
+        )
+
+    try:
+        return ZoneInfo(DEFAULT_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError, OSError):  # pragma: no cover
+        logger.error("Timezone database unavailable; falling back to UTC")
+        return ZoneInfo("UTC")
+
+
+def get_month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    """Return the half-open ``[start, end)`` instants of a local calendar month.
+
+    ``start`` is midnight on the 1st and ``end`` is midnight on the 1st of the
+    following month, both in the configured display timezone. Callers that need
+    UTC can simply ``.astimezone(timezone.utc)``.
+
+    Computing this in local time is what keeps a 10pm event on the last day of
+    the month inside that month's window; a hardcoded UTC window would cut the
+    month short by the UTC offset.
+    """
+    tz = get_local_timezone()
+    start = datetime(year, month, 1, tzinfo=tz)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=tz)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=tz)
+    return start, end

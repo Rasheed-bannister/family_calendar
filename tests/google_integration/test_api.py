@@ -2,11 +2,16 @@
 
 import datetime
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from googleapiclient.errors import HttpError
 
-from src.google_integration.api import _retry_on_error, parse_google_datetime
+from src.google_integration.api import (
+    _retry_on_error,
+    get_events_current_month,
+    parse_google_datetime,
+)
 
 
 class TestParseGoogleDatetime:
@@ -45,6 +50,71 @@ class TestParseGoogleDatetime:
         dt, is_all_day = parse_google_datetime({"dateTime": "not-a-date"})
         assert is_all_day is False
         assert dt == datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+
+class TestMonthQueryWindow:
+    """The Google query window must span the month in local time, not UTC.
+
+    Building it in UTC ended August at 2026-08-31T23:59:59Z, which is only
+    19:59:59 in America/New_York, so anything later that evening was never
+    fetched for August and only appeared once the user browsed to September.
+    """
+
+    TZ = ZoneInfo("America/New_York")
+
+    def _fetch_window(self, month, year):
+        """Run get_events_current_month against a mocked service, return window."""
+        service = MagicMock()
+        service.calendarList().list().execute.return_value = {"items": [{"id": "cal1"}]}
+        service.events().list().execute.return_value = {"items": []}
+
+        with patch("src.config.get_local_timezone", return_value=self.TZ):
+            get_events_current_month(service, month, year)
+
+        kwargs = service.events().list.call_args.kwargs
+        return (
+            datetime.datetime.fromisoformat(kwargs["timeMin"]),
+            datetime.datetime.fromisoformat(kwargs["timeMax"]),
+        )
+
+    def test_window_starts_at_local_midnight_on_the_first(self):
+        time_min, _ = self._fetch_window(8, 2026)
+        assert time_min == datetime.datetime(2026, 8, 1, 0, 0, tzinfo=self.TZ)
+        assert time_min.utcoffset() == datetime.timedelta(hours=-4)
+
+    def test_late_evening_event_on_last_day_is_inside_window(self):
+        """The whole point: 10pm on Aug 31 belongs to August's sync window."""
+        time_min, time_max = self._fetch_window(8, 2026)
+        late_event = datetime.datetime(2026, 8, 31, 22, 0, tzinfo=self.TZ)
+
+        assert time_min <= late_event < time_max
+
+        # ...and the old hardcoded-UTC upper bound would have excluded it.
+        old_time_max = datetime.datetime(
+            2026, 8, 31, 23, 59, 59, tzinfo=datetime.timezone.utc
+        )
+        assert late_event > old_time_max
+
+    def test_window_ends_at_local_midnight_starting_the_next_month(self):
+        _, time_max = self._fetch_window(8, 2026)
+        assert time_max == datetime.datetime(2026, 9, 1, 0, 0, tzinfo=self.TZ)
+
+    def test_window_excludes_previous_month_tail(self):
+        """A UTC window reached back into the previous local month."""
+        time_min, _ = self._fetch_window(8, 2026)
+        prev_month_evening = datetime.datetime(2026, 7, 31, 22, 0, tzinfo=self.TZ)
+        assert prev_month_evening < time_min
+
+    def test_window_rolls_over_year_boundary(self):
+        time_min, time_max = self._fetch_window(12, 2026)
+        assert time_min == datetime.datetime(2026, 12, 1, 0, 0, tzinfo=self.TZ)
+        assert time_max == datetime.datetime(2027, 1, 1, 0, 0, tzinfo=self.TZ)
+
+    def test_window_accounts_for_dst_offset_change(self):
+        """November in New York starts on EDT and ends on EST."""
+        time_min, time_max = self._fetch_window(11, 2026)
+        assert time_min.utcoffset() == datetime.timedelta(hours=-4)
+        assert time_max.utcoffset() == datetime.timedelta(hours=-5)
 
 
 class TestRetryOnError:

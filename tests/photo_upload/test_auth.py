@@ -1,16 +1,41 @@
 """Tests for src/photo_upload/auth.py."""
 
+import logging
 import time
 
 import pytest
+from flask import Flask, jsonify
 
-from src.photo_upload.auth import RateLimiter, UploadTokenManager, generate_upload_url
+from src.photo_upload import auth as auth_module
+from src.photo_upload.auth import (
+    RateLimiter,
+    UploadTokenManager,
+    generate_upload_url,
+    require_upload_token,
+)
 
 
 @pytest.fixture
 def token_manager():
     """Create a token manager with a known secret."""
     return UploadTokenManager(secret_key="test-secret-key", token_lifetime=3600)
+
+
+@pytest.fixture
+def protected_app(token_manager):
+    """A minimal Flask app with a single token-protected route."""
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+
+    @app.route("/protected", methods=["GET", "POST"])
+    @require_upload_token
+    def protected():
+        return jsonify({"ok": True})
+
+    previous = auth_module.token_manager
+    auth_module.token_manager = token_manager
+    yield app
+    auth_module.token_manager = previous
 
 
 class TestTokenGeneration:
@@ -160,3 +185,103 @@ class TestGenerateUploadUrl:
     def test_basic_url(self):
         url = generate_upload_url("http://example.com/upload", "abc123")
         assert url == "http://example.com/upload?token=abc123"
+
+
+def _logged_messages(caplog):
+    """Return every captured log message as rendered text."""
+    return [record.getMessage() for record in caplog.records]
+
+
+def _assert_token_absent(caplog, token):
+    """Fail if the token, its id half or a prefix of it was logged."""
+    messages = _logged_messages(caplog)
+    joined = "\n".join(messages)
+
+    assert token not in joined, "full token written to the log"
+    token_id = token.split(".")[0]
+    assert token_id not in joined, "token id written to the log"
+    assert token[:20] not in joined, "token preview written to the log"
+
+
+class TestTokenNeverLogged:
+    """The bearer token must never reach the log, at any level."""
+
+    def test_token_from_query_not_logged(self, protected_app, token_manager, caplog):
+        token = token_manager.generate_token()["token"]
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            response = client.get(f"/protected?token={token}")
+
+        assert response.status_code == 200
+        _assert_token_absent(caplog, token)
+
+    def test_token_from_header_not_logged(self, protected_app, token_manager, caplog):
+        token = token_manager.generate_token()["token"]
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            response = client.get("/protected", headers={"X-Upload-Token": token})
+
+        assert response.status_code == 200
+        _assert_token_absent(caplog, token)
+
+    def test_token_from_form_not_logged(self, protected_app, token_manager, caplog):
+        token = token_manager.generate_token()["token"]
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            response = client.post("/protected", data={"token": token})
+
+        assert response.status_code == 200
+        _assert_token_absent(caplog, token)
+
+    def test_rejected_token_not_logged(self, protected_app, caplog):
+        bogus = "bogus-token-id.bogus-signature"  # pragma: allowlist secret
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            response = client.get(f"/protected?token={bogus}")
+
+        assert response.status_code == 401
+        joined = "\n".join(_logged_messages(caplog))
+        assert bogus not in joined
+        assert "bogus-token-id" not in joined
+
+    def test_source_is_still_recorded_for_debugging(
+        self, protected_app, token_manager, caplog
+    ):
+        """Useful context survives the cleanup, just without the credential."""
+        token = token_manager.generate_token()["token"]
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            client.get("/protected", headers={"X-Upload-Token": token})
+
+        joined = "\n".join(_logged_messages(caplog))
+        assert "header" in joined
+
+    def test_missing_token_logs_warning_and_401(self, protected_app, caplog):
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            response = client.get("/protected")
+
+        assert response.status_code == 401
+        assert any(record.levelno >= logging.WARNING for record in caplog.records)
+
+    def test_logging_is_not_chatty(self, protected_app, token_manager, caplog):
+        """A successful auth should not emit a burst of INFO lines per request."""
+        token = token_manager.generate_token()["token"]
+        caplog.set_level(logging.DEBUG)
+
+        with protected_app.test_client() as client:
+            client.get(f"/protected?token={token}")
+
+        auth_records = [
+            record
+            for record in caplog.records
+            if record.name == "src.photo_upload.auth"
+        ]
+        assert len(auth_records) <= 1
+        assert all(record.levelno <= logging.DEBUG for record in auth_records)

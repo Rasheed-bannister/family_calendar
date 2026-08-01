@@ -405,6 +405,25 @@
             pagination.innerHTML = paginationHTML;
         }
 
+        function showAuthRequired(message) {
+            photosContainer.style.display = 'none';
+            emptyState.style.display = 'block';
+            emptyState.replaceChildren();
+
+            const heading = document.createElement('h3');
+            heading.textContent = '🔒 Access Link Expired';
+
+            // textContent, not innerHTML: the reason comes off the wire, and this
+            // page is reachable from a QR-code URL an attacker could influence.
+            const reason = document.createElement('p');
+            reason.textContent = message ? String(message) : 'Upload token required';
+
+            const hint = document.createElement('p');
+            hint.textContent = 'Scan the QR code on the calendar display again to get a fresh link.';
+
+            emptyState.append(heading, reason, hint);
+        }
+
         function loadPhotos(page = 1) {
             showLoading();
             currentPage = page;
@@ -418,9 +437,17 @@
             }
 
             fetch(`/upload/api/photos?${params}`)
-                .then(response => response.json())
-                .then(data => {
+                .then(response => response.json().then(data => ({ status: response.status, data })))
+                .then(({ status, data }) => {
                     hideLoading();
+
+                    // Listing requires a valid upload token. Without this branch a 401
+                    // falls through to the "No Photos Yet" empty state, which reads as
+                    // "you have no photos" rather than "your link expired".
+                    if (status === 401) {
+                        showAuthRequired(data.error);
+                        return;
+                    }
 
                     if (data.photos && data.photos.length > 0) {
                         photosGrid.innerHTML = '';

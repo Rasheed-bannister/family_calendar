@@ -6,14 +6,16 @@
     "secret_key": "your-secret-key-here-change-this-in-production",
     "use_reloader": false,
     "environment": "production",
-    "family_name": "Bannister Family"
+    "family_name": "Bannister Family",
+    "timezone": null
   },
   "weather": {
     "latitude": 40.759010,
     "longitude": -73.984474,
     "timezone": "America/New_York",
     "cache_duration": 600,
-    "offline_fallback": true
+    "offline_fallback": true,
+    "request_timeout_seconds": 10.0
   },
   "pir_sensor": {
     "enabled": true,

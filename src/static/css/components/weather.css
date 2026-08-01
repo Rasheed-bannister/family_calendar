@@ -42,6 +42,16 @@
   letter-spacing: 0.5px;
 }
 
+/* Stale-reading badge: shown when the weather could not be refreshed and the
+   panel is displaying the last successful reading rather than current data. */
+.weather-stale-badge {
+  font-size: 0.8em;
+  font-weight: 500;
+  opacity: 0.75;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 /* Current time display */
 #current-time {
   font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace;

@@ -93,6 +93,17 @@ def create_app():
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.get("app.secret_key")
+
+    # Reject oversized request bodies at the WSGI boundary instead of letting
+    # Werkzeug buffer an unbounded upload onto the Pi's SD card first. The cap
+    # is derived from the photo-upload contract (16MB per photo x 10 photos per
+    # request, plus 1MB of multipart framing) because uploads are by far the
+    # largest legitimate bodies this app accepts; see
+    # src/photo_upload/routes.py for the constituent constants.
+    from src.photo_upload.routes import MAX_UPLOAD_CONTENT_LENGTH
+
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_CONTENT_LENGTH
+
     app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
 
     # Initialize health monitoring
@@ -105,6 +116,28 @@ def create_app():
             "Internal Server Error", str(error), is_critical=True
         )
         return "Internal Server Error", 500
+
+    @app.errorhandler(413)
+    def handle_request_too_large(error):
+        """Answer oversized request bodies with JSON rather than an HTML page.
+
+        Werkzeug raises RequestEntityTooLarge once MAX_CONTENT_LENGTH is
+        exceeded. Without this handler the request falls through to the
+        catch-all Exception handler below, which returns the exception object
+        unchanged; Flask then treats that HTTPException as a WSGI callable and
+        renders its default HTML page. The photo upload UI parses every
+        response as JSON, so it would surface a parse error instead of the
+        real reason. A code-specific handler takes precedence over the
+        class-based one, so this runs first.
+        """
+        from flask import jsonify
+
+        limit = app.config.get("MAX_CONTENT_LENGTH")
+        limit_mb = round(limit / (1024 * 1024)) if limit else None
+        message = "Upload too large"
+        if limit_mb:
+            message = f"{message}. Maximum request size is {limit_mb}MB"
+        return jsonify({"error": message}), 413
 
     @app.errorhandler(Exception)
     def handle_exception(error):
@@ -167,7 +200,11 @@ def create_app():
     @app.route("/")
     def index_redirect():
         """Redirects the base URL to the current month's calendar view."""
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        # Local time, not UTC — otherwise late on the last evening of a month
+        # the landing page redirects to the *next* month.
+        from src.config import get_local_timezone
+
+        now = datetime.datetime.now(tz=get_local_timezone())
         return redirect(url_for("calendar.view", year=now.year, month=now.month))
 
     @app.route("/api/config")

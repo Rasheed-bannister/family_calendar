@@ -15,36 +15,114 @@ from src.config import get_config
 # Cache file for offline mode
 WEATHER_CACHE_FILE = Path(__file__).parent / "weather_cache.json"
 
+# Oldest cached reading still worth showing. A real reading from a few hours
+# ago beats a blank panel on a display that may be offline for a while, but
+# past this point it is noise and we show nothing instead.
+CACHE_MAX_AGE = timedelta(hours=24)
 
-def load_cached_weather() -> Optional[Dict[str, Any]]:
-    """Load cached weather data for offline mode."""
-    if WEATHER_CACHE_FILE.exists():
-        try:
-            with open(WEATHER_CACHE_FILE, "r") as f:
-                cache_data = json.load(f)
-                # Check if cache is not too old (24 hours)
-                cache_time = datetime.fromisoformat(cache_data.get("cached_at", ""))
-                if datetime.now() - cache_time < timedelta(hours=24):
-                    logging.info("Using cached weather data for offline mode")
-                    # Deserialize datetime objects from cache
-                    return _deserialize_from_cache(cache_data["data"])
-        except (ValueError, KeyError) as e:
-            logging.error(f"Error loading weather cache: {e}")
-            # Remove corrupted cache file
-            try:
-                WEATHER_CACHE_FILE.unlink()
-                logging.info("Removed corrupted weather cache file")
-            except OSError:
-                pass
-        except Exception as e:
-            logging.error(f"Unexpected error loading weather cache: {e}")
-            # Remove corrupted cache file
-            try:
-                WEATHER_CACHE_FILE.unlink()
-                logging.info("Removed corrupted weather cache file")
-            except OSError:
-                pass
+# Per-request network timeout (seconds). The render path never waits on the
+# network any more, but an unbounded request would still pin a pool worker
+# forever when the Pi loses wifi, so every request gets an explicit deadline.
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
+
+
+def _discard_corrupted_cache() -> None:
+    """Delete an unreadable cache file so the next fetch can rewrite it."""
+    try:
+        WEATHER_CACHE_FILE.unlink()
+        logging.info("Removed corrupted weather cache file")
+    except OSError:
+        pass
+
+
+def _read_cache_entry() -> Optional[tuple]:
+    """Read the raw cache file, returning ``(data, cached_at)`` or None."""
+    if not WEATHER_CACHE_FILE.exists():
+        return None
+    try:
+        with open(WEATHER_CACHE_FILE, "r") as f:
+            cache_data = json.load(f)
+        cache_time = datetime.fromisoformat(cache_data.get("cached_at", ""))
+        return _deserialize_from_cache(cache_data["data"]), cache_time
+    except (ValueError, KeyError) as e:
+        logging.error(f"Error loading weather cache: {e}")
+        _discard_corrupted_cache()
+    except Exception as e:
+        logging.error(f"Unexpected error loading weather cache: {e}")
+        _discard_corrupted_cache()
     return None
+
+
+def load_cached_weather(
+    max_age: Optional[timedelta] = CACHE_MAX_AGE,
+) -> Optional[Dict[str, Any]]:
+    """Load cached weather data for offline mode.
+
+    Args:
+        max_age: Reject a cache older than this. ``None`` accepts any age.
+
+    Returns:
+        The cached reading annotated with ``cached_at`` / ``age_seconds``, or
+        None when there is no usable cache. Never fabricates values.
+    """
+    entry = _read_cache_entry()
+    if entry is None:
+        return None
+
+    data, cached_at = entry
+    age = datetime.now() - cached_at
+    if max_age is not None and age >= max_age:
+        logging.info("Weather cache is older than %s; ignoring it", max_age)
+        return None
+
+    logging.info("Using cached weather data for offline mode")
+    data["cached_at"] = cached_at
+    data["age_seconds"] = max(age.total_seconds(), 0.0)
+    return data
+
+
+def get_request_timeout() -> float:
+    """Return the configured per-request network timeout in seconds."""
+    timeout = get_config().get(
+        "weather.request_timeout_seconds", DEFAULT_REQUEST_TIMEOUT_SECONDS
+    )
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError):
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    return timeout if timeout > 0 else DEFAULT_REQUEST_TIMEOUT_SECONDS
+
+
+def get_weather_for_display() -> Optional[Dict[str, Any]]:
+    """Return the best available reading *without* touching the network.
+
+    Used by the page render: it must never block on an outbound HTTP call.
+    Returns None when no usable cache exists so the template can honestly
+    say "Weather data unavailable" instead of showing invented numbers.
+    """
+    data = load_cached_weather()
+    if data is None:
+        return None
+
+    cache_duration = get_config().get("weather.cache_duration", 600)
+    data["stale"] = data.get("age_seconds", 0) > cache_duration
+    return data
+
+
+def weather_cache_age_seconds() -> Optional[float]:
+    """Age of the on-disk cache in seconds, or None if there is no cache."""
+    entry = _read_cache_entry()
+    if entry is None:
+        return None
+    return max((datetime.now() - entry[1]).total_seconds(), 0.0)
+
+
+def weather_cache_needs_refresh() -> bool:
+    """True when the cache is missing or older than ``weather.cache_duration``."""
+    age = weather_cache_age_seconds()
+    if age is None:
+        return True
+    return age > get_config().get("weather.cache_duration", 600)
 
 
 def _serialize_for_cache(obj):
@@ -100,8 +178,20 @@ def save_weather_cache(data: Dict[str, Any]):
         logging.error(f"Error saving weather cache: {e}")
 
 
-def get_weather_data():
-    """Fetches current weather and daily forecast from Open-Meteo API with offline support."""
+def get_weather_data() -> Optional[Dict[str, Any]]:
+    """Fetch current weather and daily forecast from Open-Meteo.
+
+    Performs network I/O, so it must be called from a background worker and
+    never from a request handler. Every request carries an explicit timeout
+    (see ``get_request_timeout``) so a hung or unreachable API cannot pin a
+    worker indefinitely.
+
+    Returns:
+        The weather payload, a real (possibly stale) cached reading when the
+        fetch fails and offline fallback is enabled, or None. It never
+        returns fabricated temperatures - callers/templates must treat None
+        as "weather unavailable".
+    """
     config = get_config()
 
     # Get location settings from configuration
@@ -143,7 +233,12 @@ def get_weather_data():
             "temperature_unit": "fahrenheit",
             "precipitation_unit": "inch",
         }
-        responses = openmeteo.weather_api(url, params=params)
+        # An explicit timeout is required: retry_requests.retry() only adds a
+        # default timeout when it builds its own session, and here it is handed
+        # the CachedSession, so without this the request could hang forever.
+        responses = openmeteo.weather_api(
+            url, params=params, timeout=get_request_timeout()
+        )
 
         # Process first location. Add a for-loop for multiple locations or weather models
         response = responses[0]
@@ -199,20 +294,15 @@ def get_weather_data():
     except Exception as e:
         logging.error(f"Error fetching weather data: {e}")
 
-        # Try to use cached data if offline fallback is enabled
+        # Try to use cached data if offline fallback is enabled. A stale but
+        # real reading is honest; it is flagged so callers can label it.
         if offline_fallback:
             cached_data = load_cached_weather()
             if cached_data:
+                cached_data["stale"] = True
                 return cached_data
 
-        # Return default/empty weather data as fallback
-        logging.warning("Returning default weather data due to API failure")
-        return {
-            "current": {
-                "time": datetime.now(),
-                "apparent_temperature": 70,
-                "is_day": 1,
-                "weather_code": 0,
-            },
-            "daily": [],
-        }
+        # No usable data. Returning None (rather than an invented 70F/clear
+        # reading) lets the template show "Weather data unavailable".
+        logging.warning("No weather data available: API failed and no usable cache")
+        return None

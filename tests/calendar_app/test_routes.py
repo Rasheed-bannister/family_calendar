@@ -174,15 +174,19 @@ def test_filter_events_naive_datetime():
 
 
 @patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.get_weather_data")  # Corrected patch target
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
+@patch("src.weather_integration.api.get_weather_for_display")
 @patch("src.main.sync_executor")
+@patch("src.google_integration.routes.background_tasks", new_callable=dict)
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_default(
     mock_tasks,
     mock_lock,
+    mock_google_tasks,
     mock_executor,
     mock_get_weather,
+    mock_needs_refresh,
     mock_db,
     client,
 ):
@@ -230,22 +234,29 @@ def test_view_route_default(
     # Check for something rendered from the weather mock, e.g., current temp
     assert b"70\xc2\xb0" in response.data  # Check for 70° (UTF-8 encoded degree symbol)
     mock_db.add_month.assert_called_once()
-    # Check if background task was submitted to the thread pool
-    mock_executor.submit.assert_called_once()
-    call_args = mock_executor.submit.call_args[0]
-    assert call_args[1:] == (5, 2025)  # Check args passed to background task
+    # Both syncs are queued on the thread pool: nothing runs inline in the
+    # request handler (calendar events + Google Tasks/chores).
+    assert mock_executor.submit.call_count == 2
+    calendar_call = mock_executor.submit.call_args_list[0][0]
+    assert calendar_call[1:] == (5, 2025)  # Check args passed to background task
+    chores_call = mock_executor.submit.call_args_list[1][0]
+    assert chores_call[0].__name__ == "fetch_google_tasks_background"
 
 
 @patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.get_weather_data")  # Corrected patch target
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
+@patch("src.weather_integration.api.get_weather_for_display")
 @patch("src.main.sync_executor")
+@patch("src.google_integration.routes.background_tasks", new_callable=dict)
 @patch("src.calendar_app.routes.google_fetch_lock")
 @patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_specific_month(
     mock_tasks,
     mock_lock,
+    mock_google_tasks,
     mock_executor,
     mock_get_weather,
+    mock_needs_refresh,
     mock_db,
     client,
 ):
@@ -308,10 +319,105 @@ def test_view_route_specific_month(
     # e.g., check for the mocked current temperature
     assert b"65\xc2\xb0" in response.data  # Check for 65°
     mock_db.add_month.assert_called_once()
-    # Check if background task was submitted to the thread pool for Nov 2024
-    mock_executor.submit.assert_called_once()
-    call_args = mock_executor.submit.call_args[0]
-    assert call_args[1:] == (11, 2024)
+    # Calendar sync for Nov 2024 plus the chores sync, both queued on the pool
+    assert mock_executor.submit.call_count == 2
+    calendar_call = mock_executor.submit.call_args_list[0][0]
+    assert calendar_call[1:] == (11, 2024)
+    chores_call = mock_executor.submit.call_args_list[1][0]
+    assert chores_call[0].__name__ == "fetch_google_tasks_background"
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.get_weather_data")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+@patch("src.main.sync_executor")
+@patch("src.google_integration.routes.background_tasks", new_callable=dict)
+@patch("src.calendar_app.routes.google_fetch_lock")
+@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
+def test_view_renders_when_weather_unavailable(
+    mock_tasks,
+    mock_lock,
+    mock_google_tasks,
+    mock_executor,
+    mock_display,
+    mock_needs_refresh,
+    mock_live_fetch,
+    mock_db,
+    client,
+):
+    """The page still renders - and says so honestly - with no weather data."""
+    mock_db.get_all_events.return_value = []
+
+    response = client.get("/calendar/2024/11")
+
+    assert response.status_code == 200
+    assert b"Weather data unavailable" in response.data
+    # No invented temperature is rendered
+    assert b"70\xc2\xb0" not in response.data
+    # The live fetch never runs inside the request handler
+    mock_live_fetch.assert_not_called()
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.get_weather_data")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+@patch("src.main.sync_executor")
+@patch("src.google_integration.routes.background_tasks", new_callable=dict)
+@patch("src.calendar_app.routes.google_fetch_lock")
+@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
+def test_view_queues_weather_refresh_instead_of_blocking(
+    mock_tasks,
+    mock_lock,
+    mock_google_tasks,
+    mock_executor,
+    mock_display,
+    mock_needs_refresh,
+    mock_live_fetch,
+    mock_db,
+    client,
+):
+    """A stale/missing cache queues the fetch on the pool, never inline."""
+    mock_db.get_all_events.return_value = []
+
+    response = client.get("/calendar/2024/11")
+
+    assert response.status_code == 200
+    mock_live_fetch.assert_not_called()
+    submitted = [call[0][0] for call in mock_executor.submit.call_args_list]
+    assert calendar_routes._refresh_weather_background in submitted
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+@patch("src.main.sync_executor")
+@patch("src.google_integration.routes.fetch_google_tasks_background")
+@patch("src.google_integration.routes.background_tasks", new_callable=dict)
+@patch("src.calendar_app.routes.google_fetch_lock")
+@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
+def test_view_dispatches_chores_sync_via_executor(
+    mock_tasks,
+    mock_lock,
+    mock_google_tasks,
+    mock_fetch_tasks,
+    mock_executor,
+    mock_display,
+    mock_needs_refresh,
+    mock_db,
+    client,
+):
+    """The Google Tasks round-trip is queued on the pool, not run inline."""
+    mock_db.get_all_events.return_value = []
+
+    response = client.get("/calendar/2024/11")
+
+    assert response.status_code == 200
+    mock_fetch_tasks.assert_not_called()  # never executed in the request thread
+    submitted = [call[0][0] for call in mock_executor.submit.call_args_list]
+    assert mock_fetch_tasks in submitted
+    assert mock_google_tasks["tasks"]["status"] == "pending"
 
 
 def test_view_route_invalid_month(client):

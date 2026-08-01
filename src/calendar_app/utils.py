@@ -3,10 +3,17 @@ import pathlib
 import sqlite3  # Import sqlite3 for error handling
 
 from . import database as db
-from .database import db_connection, get_next_color
+from .database import db_connection, get_next_color, serialize_datetime
 from .models import Calendar, CalendarEvent, CalendarMonth
 
 logger = logging.getLogger(__name__)
+
+ALIASES_FILE = pathlib.Path(__file__).parent.parent.parent / "calendar_aliases.conf"
+
+# Parsed calendar_aliases.conf, keyed by the file's (mtime_ns, size) signature.
+# ``None`` as the signature means "the file was absent/unreadable last time".
+_alias_cache: dict | None = None
+_alias_cache_signature: object = object()
 
 
 @db_connection
@@ -28,9 +35,18 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
             calendar_obj = event.calendar
             if not calendar_obj.color:
                 calendar_obj.color = get_next_color(cursor=cursor)
+                # display_name must be listed here: INSERT OR REPLACE deletes
+                # the existing row before inserting, so omitting the column
+                # wiped out any calendar alias that had been stored for it.
                 cursor.execute(
-                    "INSERT OR REPLACE INTO Calendar (calendar_id, name, color) VALUES (?, ?, ?)",
-                    (calendar_obj.calendar_id, calendar_obj.name, calendar_obj.color),
+                    "INSERT OR REPLACE INTO Calendar "
+                    "(calendar_id, name, display_name, color) VALUES (?, ?, ?, ?)",
+                    (
+                        calendar_obj.calendar_id,
+                        calendar_obj.name,
+                        calendar_obj.get_display_name(),
+                        calendar_obj.color,
+                    ),
                 )
 
             cursor.execute(
@@ -47,8 +63,8 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
                     event.calendar.calendar_id,
                     event.month.id,
                     event.title,
-                    event.start.isoformat(),
-                    event.end.isoformat(),
+                    serialize_datetime(event.start),
+                    serialize_datetime(event.end),
                     event.all_day,
                     event.location,
                     event.description,
@@ -206,28 +222,62 @@ def cleanup_deleted_events(
         return False
 
 
-def load_calendar_aliases():
+def _alias_file_signature() -> object:
+    """Cheap fingerprint of calendar_aliases.conf, or None when it is absent."""
+    try:
+        stat = ALIASES_FILE.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _parse_calendar_aliases() -> dict:
+    """Read and parse calendar_aliases.conf from disk."""
+    aliases: dict = {}
+
+    try:
+        with open(ALIASES_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if line and not line.startswith("#"):
+                    if "=" in line:
+                        calendar_id, display_name = line.split("=", 1)
+                        aliases[calendar_id.strip()] = display_name.strip()
+    except OSError:
+        # Missing file is the normal case - no aliases configured.
+        pass
+    except Exception as e:
+        logger.warning("Could not load calendar aliases: %s", e)
+
+    return aliases
+
+
+def load_calendar_aliases() -> dict:
     """
     Load calendar aliases from calendar_aliases.conf file.
     Returns a dictionary mapping calendar_id to display_name.
+
+    The parse is cached against the file's (mtime, size) signature. This is
+    called once per event from the sync loop, so a 100-event month used to mean
+    100 open+parse cycles; now it means 100 ``stat()`` calls and one parse.
+
+    A plain "read it once per process" cache was rejected: this runs as a
+    long-lived service on a wall display, and someone who edits the conf file
+    should not have to restart it (or wonder why nothing happened) to see the
+    new alias. Checking the signature keeps that immediacy for a syscall that
+    costs a rounding error next to reading and parsing the file.
     """
-    aliases = {}
-    config_file = pathlib.Path(__file__).parent.parent.parent / "calendar_aliases.conf"
+    global _alias_cache, _alias_cache_signature
 
-    if config_file.exists():
-        try:
-            with open(config_file, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    # Skip comments and empty lines
-                    if line and not line.startswith("#"):
-                        if "=" in line:
-                            calendar_id, display_name = line.split("=", 1)
-                            aliases[calendar_id.strip()] = display_name.strip()
-        except Exception as e:
-            logger.warning("Could not load calendar aliases: %s", e)
+    signature = _alias_file_signature()
+    cache = _alias_cache
+    if cache is None or signature != _alias_cache_signature:
+        cache = {} if signature is None else _parse_calendar_aliases()
+        _alias_cache = cache
+        _alias_cache_signature = signature
 
-    return aliases
+    return cache
 
 
 def get_calendar_display_name(calendar_id: str, original_name: str) -> str:
