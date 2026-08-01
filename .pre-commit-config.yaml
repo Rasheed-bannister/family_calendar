@@ -120,8 +120,10 @@ repos:
         exclude: '^src/static/js/lib/'  # Exclude third-party libraries
 
   # Check for secrets
+  # Keep in sync with the pinned version in .github/workflows/security.yml —
+  # mismatched versions rewrite each other's baseline and one side always fails.
   - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
