@@ -1,12 +1,47 @@
 """Tests for src/config.py - Configuration management."""
 
 import json
+import logging
+import logging.handlers
 import os
 from unittest.mock import patch
 
 import pytest
 
 from src.config import Config
+
+
+@pytest.fixture(autouse=True)
+def restore_root_logger():
+    """Preserve global root-logger state across tests.
+
+    Config._setup_logging() removes every existing root handler and installs
+    its own, which would otherwise leak into unrelated tests (including
+    pytest's own logging capture).
+    """
+    root_logger = logging.getLogger()
+    saved_handlers = root_logger.handlers[:]
+    saved_level = root_logger.level
+    saved_third_party = {
+        name: logging.getLogger(name).level for name in ("werkzeug", "urllib3")
+    }
+
+    yield
+
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        if handler not in saved_handlers:
+            handler.close()
+    for handler in saved_handlers:
+        root_logger.addHandler(handler)
+    root_logger.setLevel(saved_level)
+    for name, level in saved_third_party.items():
+        logging.getLogger(name).setLevel(level)
+
+
+def _file_handlers(logger_obj):
+    """Return handlers on ``logger_obj`` that write to a file on disk."""
+    return [h for h in logger_obj.handlers if isinstance(h, logging.FileHandler)]
 
 
 @pytest.fixture
@@ -233,3 +268,143 @@ class TestConfigSecretKey:
         config = Config(str(config_path))
         assert config.get("app.secret_key") is not None
         assert len(config.get("app.secret_key")) == 64  # hex string of 32 bytes
+
+
+def _config_with_logging(base_config_file, logging_overrides):
+    """Rewrite a config file with the given ``logging`` section overrides."""
+    with open(base_config_file, "r") as f:
+        config_data = json.load(f)
+    for key, value in logging_overrides.items():
+        if value is None:
+            config_data["logging"].pop(key, None)
+        else:
+            config_data["logging"][key] = value
+    with open(base_config_file, "w") as f:
+        json.dump(config_data, f, indent=2)
+    return base_config_file
+
+
+class TestConfigLogging:
+    """Tests for Config._setup_logging handler wiring."""
+
+    def test_exactly_one_file_handler(self, minimal_config_file):
+        """Regression: a plain FileHandler and a RotatingFileHandler were both
+        attached to the same path, duplicating output and breaking rotation."""
+        Config(minimal_config_file)
+
+        root_logger = logging.getLogger()
+        file_handlers = _file_handlers(root_logger)
+        assert len(file_handlers) == 1
+        assert isinstance(file_handlers[0], logging.handlers.RotatingFileHandler)
+
+    def test_console_handler_present_alongside_file_handler(self, minimal_config_file):
+        Config(minimal_config_file)
+
+        root_logger = logging.getLogger()
+        console_handlers = [
+            h
+            for h in root_logger.handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        assert len(console_handlers) == 1
+        assert len(root_logger.handlers) == 2
+
+    def test_single_log_call_writes_single_line(self, minimal_config_file, tmp_path):
+        Config(minimal_config_file)
+
+        marker = "UNIQUE-LOG-MARKER-8675309"
+        logging.getLogger("test.duplication").warning(marker)
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+
+        log_path = tmp_path / "test.log"
+        contents = log_path.read_text()
+        assert contents.count(marker) == 1
+
+    def test_single_file_handler_when_max_bytes_missing(self, minimal_config_file):
+        """An absent max_bytes must still yield exactly one file handler.
+
+        The key is deep-merged from DEFAULTS, so it is removed from the
+        effective config before re-running the logging setup.
+        """
+        config = Config(minimal_config_file)
+        del config.config["logging"]["max_bytes"]
+        config._setup_logging()
+
+        file_handlers = _file_handlers(logging.getLogger())
+        assert len(file_handlers) == 1
+        assert file_handlers[0].maxBytes == 0  # rotation disabled, not duplicated
+
+    def test_single_file_handler_when_max_bytes_zero(self, minimal_config_file):
+        _config_with_logging(minimal_config_file, {"max_bytes": 0})
+        Config(minimal_config_file)
+
+        assert len(_file_handlers(logging.getLogger())) == 1
+
+    def test_single_log_call_single_line_without_max_bytes(
+        self, minimal_config_file, tmp_path
+    ):
+        config = Config(minimal_config_file)
+        del config.config["logging"]["max_bytes"]
+        config._setup_logging()
+
+        marker = "UNIQUE-LOG-MARKER-NOROTATE"
+        logging.getLogger("test.duplication").warning(marker)
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+
+        assert (tmp_path / "test.log").read_text().count(marker) == 1
+
+    def test_invalid_level_does_not_raise(self, minimal_config_file):
+        _config_with_logging(minimal_config_file, {"level": "VERBOSE"})
+
+        config = Config(minimal_config_file)  # must not raise AttributeError
+
+        assert logging.getLogger().level == logging.WARNING
+        assert config._invalid_log_level == "VERBOSE"
+
+    def test_missing_level_does_not_raise(self, minimal_config_file):
+        """An absent level key falls back instead of raising KeyError."""
+        config = Config(minimal_config_file)
+        del config.config["logging"]["level"]
+
+        config._setup_logging()
+
+        assert logging.getLogger().level == logging.WARNING
+
+    def test_warn_level_still_supported(self, minimal_config_file):
+        """WARN is the shipped default and must remain valid."""
+        _config_with_logging(minimal_config_file, {"level": "WARN"})
+
+        config = Config(minimal_config_file)
+
+        assert logging.getLogger().level == logging.WARNING
+        assert config._invalid_log_level is None
+
+    def test_valid_level_applied_to_third_party_loggers(self, minimal_config_file):
+        _config_with_logging(minimal_config_file, {"level": "DEBUG"})
+        Config(minimal_config_file)
+
+        assert logging.getLogger().level == logging.DEBUG
+        assert logging.getLogger("werkzeug").level == logging.DEBUG
+        assert logging.getLogger("urllib3").level == logging.DEBUG
+
+    def test_invalid_level_falls_back_for_third_party_loggers(
+        self, minimal_config_file
+    ):
+        _config_with_logging(minimal_config_file, {"level": "VERBOSE"})
+        Config(minimal_config_file)
+
+        assert logging.getLogger("werkzeug").level == logging.WARNING
+        assert logging.getLogger("urllib3").level == logging.WARNING
+
+    def test_rotation_uses_configured_max_bytes(self, minimal_config_file):
+        _config_with_logging(
+            minimal_config_file, {"max_bytes": 2048, "backup_count": 3}
+        )
+        Config(minimal_config_file)
+
+        handler = _file_handlers(logging.getLogger())[0]
+        assert handler.maxBytes == 2048
+        assert handler.backupCount == 3

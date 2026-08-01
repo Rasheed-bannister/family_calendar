@@ -15,6 +15,14 @@ logger = logging.getLogger(__name__)
 class Config:
     """Configuration manager for the Family Calendar application."""
 
+    # Logging level names accepted in config.json (mirrors logging module names)
+    VALID_LOG_LEVELS = frozenset(
+        {"CRITICAL", "FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "NOTSET"}
+    )
+
+    # Used when the configured logging level is missing or unrecognised
+    FALLBACK_LOG_LEVEL = logging.WARNING
+
     # Default configuration values
     DEFAULTS: dict[str, dict[str, Any]] = {
         "app": {
@@ -76,6 +84,7 @@ class Config:
         After _setup_logging(), all messages use the logger.
         """
         self._early_messages: list[str] = []
+        self._invalid_log_level: Any = None
         self.config_file = config_file or self._find_config_file()
         self.config = self._load_config()
         self._validate_config()
@@ -265,29 +274,78 @@ class Config:
 
         self._early_messages.append("Configuration validation successful")
 
+    def _resolve_log_level(self, raw_level: Any) -> int:
+        """Translate a configured logging level into a numeric level.
+
+        An unknown/invalid level must never crash application startup, so we
+        fall back to the default level and record a warning instead.
+        """
+        if isinstance(raw_level, int) and not isinstance(raw_level, bool):
+            return raw_level
+
+        name = str(raw_level).strip().upper() if raw_level is not None else ""
+        if name in self.VALID_LOG_LEVELS:
+            return int(getattr(logging, name))
+
+        self._invalid_log_level = raw_level
+        return self.FALLBACK_LOG_LEVEL
+
     def _setup_logging(self):
-        """Configure logging based on settings."""
+        """Configure logging based on settings.
+
+        Exactly one file handler is attached. A plain FileHandler must never be
+        combined with a RotatingFileHandler on the same path: they would both
+        emit every record (duplicate lines) and, after a rotation, the plain
+        handler would keep writing to the renamed inode so the file grows
+        without bound while appearing to rotate correctly.
+        """
+        from logging.handlers import RotatingFileHandler
+
         log_config = self.config["logging"]
 
         # Create logs directory if needed
         log_file = Path(log_config["file"])
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
+        self._invalid_log_level = None
+        level = self._resolve_log_level(log_config.get("level"))
+
         # Clear any existing handlers and reconfigure completely
         root_logger = logging.getLogger()
 
-        # Remove all existing handlers
+        # Remove all existing handlers. File handlers are closed as they go so
+        # repeated setup (e.g. reload_config) does not leak file descriptors
+        # onto files that may since have been rotated away.
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
+            if isinstance(handler, logging.FileHandler):
+                try:
+                    handler.close()
+                except OSError:  # pragma: no cover - defensive
+                    pass
 
         # Set the logging level
-        root_logger.setLevel(getattr(logging, log_config["level"]))
+        root_logger.setLevel(level)
 
         # Create formatter
         formatter = logging.Formatter(log_config["format"])
 
-        # Add file handler
-        file_handler = logging.FileHandler(log_file)
+        # Single file handler. maxBytes=0 disables rotation, so a missing or
+        # falsy max_bytes still yields exactly one file handler rather than
+        # zero (no file logging) or two (duplicate lines + broken rotation).
+        max_bytes = log_config.get("max_bytes") or 0
+        try:
+            max_bytes = int(max_bytes)
+        except (TypeError, ValueError):
+            max_bytes = 0
+        if max_bytes < 0:
+            max_bytes = 0
+
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=log_config.get("backup_count", 5) if max_bytes else 0,
+        )
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 
@@ -296,25 +354,19 @@ class Config:
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
-        # Add rotating file handler if specified
-        if log_config.get("max_bytes"):
-            from logging.handlers import RotatingFileHandler
-
-            rotating_handler = RotatingFileHandler(
-                log_file,
-                maxBytes=log_config["max_bytes"],
-                backupCount=log_config.get("backup_count", 5),
-            )
-            rotating_handler.setFormatter(formatter)
-            root_logger.addHandler(rotating_handler)
-
         # Configure Flask/werkzeug loggers to respect the same level
-        werkzeug_logger = logging.getLogger("werkzeug")
-        werkzeug_logger.setLevel(getattr(logging, log_config["level"]))
+        logging.getLogger("werkzeug").setLevel(level)
 
         # Configure other common third-party loggers
-        urllib3_logger = logging.getLogger("urllib3")
-        urllib3_logger.setLevel(getattr(logging, log_config["level"]))
+        logging.getLogger("urllib3").setLevel(level)
+
+        # Now that handlers exist, surface any problem with the configured level
+        if self._invalid_log_level is not None:
+            logger.warning(
+                "Invalid logging level %r in configuration; falling back to %s",
+                self._invalid_log_level,
+                logging.getLevelName(self.FALLBACK_LOG_LEVEL),
+            )
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value using dot notation."""

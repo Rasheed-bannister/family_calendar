@@ -73,39 +73,38 @@ def _start_calendar_background_sync(current_month: int, current_year: int) -> No
 
 
 def _should_start_chores_background_task() -> bool:
-    """Check if chores background task should be started.
+    """Check if a chores background sync is worth starting from the page render.
 
-    Atomically checks and marks task as pending to prevent race conditions (#5).
+    Read-only on purpose: claiming the task (and every later status change) is
+    owned by the sync starter/worker in src/google_integration/routes.py, so a
+    caller can never latch a status the worker then refuses to take over.
     """
     chores_task_id = "tasks"
     with google_fetch_lock:
         chores_task_info = background_tasks.get(chores_task_id)
-        if not chores_task_info or chores_task_info["status"] not in [
+        return not chores_task_info or chores_task_info.get("status") not in [
             "running",
             "complete",
             "pending",
-        ]:
-            background_tasks[chores_task_id] = {
-                "status": "pending",
-                "updated": False,
-                "chores_changed": False,
-            }
-            return True
-    return False
+        ]
 
 
 def _start_chores_background_sync() -> None:
-    """Start chores background sync (direct call, not threaded)."""
-    chores_task_id = "tasks"
+    """Run the chores sync, letting the worker claim and own its task status.
+
+    NOTE: this still runs inline, so the page render waits on a Google Tasks
+    round-trip. Moving it onto the shared `sync_executor` (like the calendar
+    path) would be an improvement, but is deliberately left out here because
+    it changes the executor call pattern this route's tests assert on.
+    """
     try:
         from src.google_integration.routes import fetch_google_tasks_background
 
+        # No pre-set status: the worker claims "tasks" itself. Marking it
+        # "running" here would make the worker's own guard skip the sync.
         fetch_google_tasks_background()
     except Exception as e:
         logger.error("Error during automatic chores refresh: %s", e)
-        with google_fetch_lock:
-            if chores_task_id in background_tasks:
-                background_tasks[chores_task_id]["status"] = "error"
 
 
 def _build_calendar_weeks_data(

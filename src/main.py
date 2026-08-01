@@ -23,6 +23,58 @@ background_tasks: dict[str, dict] = (
 sync_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sync")
 
 
+# Allowlist of configuration values exposed to the browser via /api/config.
+#
+# The frontend is the only consumer of this endpoint, so this map mirrors
+# exactly what the JS reads (see the loadConfig()/loadConfiguration() helpers in
+# static/js/app.js, components/calendar.js, components/dailyView.js,
+# components/loadingIndicator.js, components/pirSensor.js and
+# components/virtualKeyboard.js).
+#
+# Nothing else may be added here without checking it is not sensitive: the
+# "app" section holds secret_key (session cookie + photo-upload token signing
+# key), and "paths"/"logging" leak filesystem layout. The nested section shape
+# is load-bearing — the frontend indexes config.<section>.<key>, so flattening
+# this would silently break every read.
+PUBLIC_CONFIG_KEYS: dict[str, tuple[str, ...]] = {
+    "inactivity": (
+        "day_timeout_minutes",
+        "night_timeout_seconds",
+        "day_brightness_reduction",
+        "night_brightness_reduction",
+        "night_start_hour",
+        "night_end_hour",
+        "slideshow_delay_seconds",
+    ),
+    "google": ("sync_interval_minutes",),
+    "ui": (
+        "show_loading_indicators",
+        "show_pir_feedback",
+        "enhanced_virtual_keyboard",
+        "touch_optimized",
+        "animation_duration_ms",
+    ),
+}
+
+
+def _build_public_config(config) -> dict[str, dict]:
+    """Build the browser-safe view of the configuration.
+
+    Args:
+        config: The application Config instance.
+
+    Returns:
+        dict: Nested config sections containing only allowlisted keys.
+    """
+    public: dict[str, dict] = {}
+    for section, keys in PUBLIC_CONFIG_KEYS.items():
+        section_values = config.get(section) or {}
+        public[section] = {
+            key: section_values[key] for key in keys if key in section_values
+        }
+    return public
+
+
 def clear_stale_background_tasks():
     """Clear any stale background tasks from previous runs."""
     global background_tasks
@@ -120,11 +172,17 @@ def create_app():
 
     @app.route("/api/config")
     def get_config_api():
-        """API endpoint to get configuration data."""
+        """API endpoint exposing the browser-safe subset of configuration.
+
+        Only the keys the frontend actually reads are returned. The full config
+        object must never be serialized here: it contains ``app.secret_key``
+        (used to sign session cookies and HMAC photo-upload tokens) as well as
+        filesystem paths and logging settings.
+        """
         from flask import jsonify
 
         config = get_config()
-        return jsonify(config.config)
+        return jsonify(_build_public_config(config))
 
     @app.route("/api/version")
     def version_api():

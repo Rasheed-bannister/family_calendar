@@ -3,7 +3,6 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from src.google_integration import tasks_api
-from src.main import background_tasks, google_fetch_lock
 
 from . import database as db
 
@@ -44,32 +43,26 @@ def update_status(chore_id):
 
 @chores_bp.route("/refresh", methods=["POST"])
 def refresh_chores():
-    """Manually trigger a refresh of chores data from Google Tasks"""
-    # Start a background task for tasks
-    chores_task_id = "tasks"
+    """Manually trigger a refresh of chores data from Google Tasks.
 
-    with google_fetch_lock:
-        # Mark as running if not already
-        if (
-            chores_task_id in background_tasks
-            and background_tasks[chores_task_id]["status"] == "running"
-        ):
-            return jsonify({"message": "Refresh already in progress"}), 202
+    The sync runs on the shared thread pool; the background worker owns the
+    task status lifecycle. This route must not pre-set a status itself - doing
+    so used to make the worker's "already running" guard reject the sync,
+    wedging chores syncing at status "running" for the life of the process.
+    Clients poll /calendar/check-updates for the resulting chores_status.
+    """
+    from src.google_integration.routes import start_tasks_sync
 
-        background_tasks[chores_task_id] = {"status": "running", "updated": False}
-
-    # Execute the sync directly instead of in a thread to avoid threading issues
     try:
-        from src.google_integration.routes import fetch_google_tasks_background
-
-        fetch_google_tasks_background()  # Call directly without threading
-        return jsonify({"message": "Chores refresh completed"}), 200
+        started = start_tasks_sync()
     except Exception as e:
         logger.error("Error during chores refresh: %s", e)
-        with google_fetch_lock:
-            if chores_task_id in background_tasks:
-                background_tasks[chores_task_id]["status"] = "error"
         return jsonify({"error": f"Chores refresh failed: {str(e)}"}), 500
+
+    if not started:
+        return jsonify({"message": "Refresh already in progress"}), 202
+
+    return jsonify({"message": "Chores refresh started"}), 202
 
 
 @chores_bp.route("/add", methods=["POST"])
