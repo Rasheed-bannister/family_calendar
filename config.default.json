@@ -10,7 +10,7 @@
     "timezone": null
   },
   "weather": {
-    "latitude": 40.759010,
+    "latitude": 40.75901,
     "longitude": -73.984474,
     "timezone": "America/New_York",
     "cache_duration": 600,
@@ -36,6 +36,9 @@
     "sync_interval_minutes": 1,
     "max_retry_attempts": 3,
     "offline_mode_enabled": true
+  },
+  "scheduler": {
+    "enabled": true
   },
   "ui": {
     "show_loading_indicators": false,

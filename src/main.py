@@ -8,6 +8,7 @@ from src.config import get_config
 
 # Background sync state. Lives in its own module so blueprints can import it
 # without importing src.main, which would be an import cycle.
+from src.scheduler import scheduler
 from src.sync_state import registry
 
 # Import utility functions
@@ -86,6 +87,76 @@ def _build_public_config(config) -> dict[str, dict]:
 def clear_stale_background_tasks():
     """Clear any stale background tasks from previous runs."""
     registry.clear()
+
+
+def _sync_interval_seconds() -> float:
+    return get_config().get("google.sync_interval_minutes", 5) * 60
+
+
+def _weather_interval_seconds() -> float:
+    return get_config().get("weather.cache_duration", 600)
+
+
+def _sync_current_month_calendar() -> None:
+    """Keep the month the display is showing today up to date.
+
+    The scheduler has no idea which month a browser is looking at, so it
+    covers the common case -- today's month -- and the render path still
+    queues an on-demand sync when someone navigates elsewhere. Both go
+    through the registry, so whichever gets there first wins and the other
+    is deduplicated rather than doing the work twice.
+    """
+    from src.config import get_local_timezone
+    from src.google_integration.routes import calendar_task_id, start_calendar_sync
+
+    now = datetime.datetime.now(tz=get_local_timezone())
+    if registry.is_stale(
+        calendar_task_id(now.month, now.year), _sync_interval_seconds()
+    ):
+        start_calendar_sync(now.month, now.year)
+
+
+def _sync_chores() -> None:
+    from src.google_integration.routes import TASKS_TASK_ID, start_tasks_sync
+
+    if registry.is_stale(TASKS_TASK_ID, _sync_interval_seconds()):
+        start_tasks_sync()
+
+
+def _sync_weather() -> None:
+    from src.calendar_app.routes import _start_weather_background_refresh
+
+    _start_weather_background_refresh()
+
+
+def register_sync_jobs(sched) -> None:
+    """Register the recurring sync jobs on a scheduler.
+
+    Kept here rather than in src/scheduler.py so the scheduler stays free of
+    application imports. Each job only *queues* work on the registry's pool;
+    none of them block the scheduler thread on a network call.
+    """
+    sched.add_job("calendar", _sync_current_month_calendar, _sync_interval_seconds)
+    sched.add_job("chores", _sync_chores, _sync_interval_seconds)
+    sched.add_job("weather", _sync_weather, _weather_interval_seconds)
+
+
+def start_background_sync():
+    """Start the periodic sync scheduler. Returns the scheduler.
+
+    Called by the __main__ entrypoint rather than by create_app(), because a
+    scheduler is a process-level concern: create_app() is invoked many times
+    across the test suite and by tooling, and none of those should spawn a
+    thread that reaches out to the Google APIs. Any other entrypoint (a WSGI
+    server, say) must call this itself.
+    """
+    if not get_config().get("scheduler.enabled", True):
+        logger.info("Sync scheduler disabled by configuration")
+        return scheduler
+
+    register_sync_jobs(scheduler)
+    scheduler.start()
+    return scheduler
 
 
 def create_app():
@@ -315,6 +386,10 @@ if __name__ == "__main__":
                 logging.info("PIR sensor monitoring started")
             else:
                 logging.warning("Failed to start PIR sensor monitoring")
+
+        # Keep the local database current regardless of whether a browser is
+        # connected. Without this, nothing syncs until something loads a page.
+        start_background_sync()
 
         # Get app configuration
         debug_mode = config.get("app.debug", False)

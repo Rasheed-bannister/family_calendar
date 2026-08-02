@@ -68,6 +68,10 @@ class Config:
             "slideshow_delay_seconds": 5,
         },
         "google": {"sync_interval_minutes": 3, "max_retry_attempts": 3},
+        "scheduler": {
+            # Periodic background syncing, independent of any browser.
+            "enabled": True,
+        },
         "ui": {
             "show_loading_indicators": False,
             "show_pir_feedback": False,

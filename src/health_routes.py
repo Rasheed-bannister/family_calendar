@@ -39,6 +39,36 @@ def health_check():
         )
 
 
+@health_bp.route("/sync")
+def sync_status():
+    """Background sync status: scheduler jobs and current task states.
+
+    Without this, "is the calendar actually syncing?" can only be answered by
+    reading the log file over SSH -- which is how the sync wedge that started
+    this work went unnoticed.
+    """
+    try:
+        from src.scheduler import scheduler
+        from src.sync_state import registry
+
+        with registry.lock:
+            tasks = {task_id: dict(state) for task_id, state in registry.tasks.items()}
+
+        return (
+            jsonify(
+                {
+                    "scheduler_running": scheduler.is_running,
+                    "jobs": scheduler.job_status(),
+                    "tasks": tasks,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Sync status check failed: {e}")
+        return jsonify({"status": "error", "message": "Sync status failed"}), 500
+
+
 @health_bp.route("/detailed")
 def detailed_health():
     """
