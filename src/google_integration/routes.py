@@ -2,15 +2,17 @@ import logging
 
 from flask import jsonify
 
+# Shared sync state. Imported from src.sync_state rather than src.main so this
+# module does not participate in an import cycle with the app factory.
+from src import events, sync_state
 from src.calendar_app import database as calendar_db
 from src.calendar_app import utils as calendar_utils
 from src.calendar_app.models import CalendarMonth
 from src.chores_app import database as chores_db
 from src.chores_app import utils as chores_utils
 from src.chores_app.utils import make_chores_comparable
-
-# Shared resources
-from src.main import background_tasks, google_fetch_lock
+from src.events import broker
+from src.sync_state import registry
 
 from . import api as calendar_api
 from . import tasks_api
@@ -25,17 +27,44 @@ def get_google_bp():
     return google_bp
 
 
+TASKS_TASK_ID = "tasks"
+
+
+def calendar_task_id(month, year) -> str:
+    """Registry key for a month's calendar sync."""
+    return f"calendar.{month}.{year}"
+
+
+def start_calendar_sync(month, year) -> bool:
+    """Queue a Google Calendar sync for a month.
+
+    Returns False (without queueing) if a sync for that month is already
+    pending or running. The registry performs the claim, so no caller is in a
+    position to write a status itself -- see src/sync_state.py for why that
+    matters.
+    """
+    return registry.submit(
+        calendar_task_id(month, year), fetch_google_events_background, month, year
+    )
+
+
+def start_tasks_sync() -> bool:
+    """Queue a Google Tasks (chores) sync.
+
+    Returns False (without queueing) if a chores sync is already pending or
+    running.
+    """
+    return registry.submit(
+        TASKS_TASK_ID, fetch_google_tasks_background, chores_changed=False
+    )
+
+
 def fetch_google_events_background(month, year):
     """Fetches Google Calendar events in a background thread and updates the local DB."""
-    task_id = f"calendar.{month}.{year}"
+    task_id = calendar_task_id(month, year)
 
-    with google_fetch_lock:
-        if (
-            task_id in background_tasks
-            and background_tasks[task_id]["status"] == "running"
-        ):
-            return
-        background_tasks[task_id] = {"status": "running", "updated": False}
+    if not registry.mark_running(task_id):
+        return
 
     try:
         # --- Calendar Event Processing ---
@@ -70,30 +99,30 @@ def fetch_google_events_background(month, year):
             events_changed = False
 
         # --- Update Task Status ---
-        with google_fetch_lock:
-            import time
+        registry.update(
+            task_id,
+            updated=events_changed,
+            events_changed=events_changed,
+        )
 
-            background_tasks[task_id]["updated"] = events_changed
-            background_tasks[task_id]["events_changed"] = events_changed
-            background_tasks[task_id][
-                "last_update_time"
-            ] = time.time()  # Record when this sync completed
+        # Tell connected displays to re-fetch the calendar fragment. Only on
+        # an actual change: a notification per sync would make every display
+        # re-render every few minutes for nothing.
+        if events_changed:
+            broker.publish(events.CALENDAR_CHANGED, month=month, year=year)
 
     except Exception as e:
         logger.error("Error in calendar fetch background task %s: %s", task_id, e)
-        with google_fetch_lock:
-            background_tasks[task_id]["status"] = "error"
-            background_tasks[task_id]["updated"] = False
-            background_tasks[task_id]["events_changed"] = False
-            import time
-
-            background_tasks[task_id][
-                "last_update_time"
-            ] = time.time()  # Record error time too
+        registry.update(
+            task_id,
+            status=sync_state.ERROR,
+            updated=False,
+            events_changed=False,
+        )
     finally:
-        with google_fetch_lock:
-            if background_tasks[task_id]["status"] != "error":
-                background_tasks[task_id]["status"] = "complete"
+        # Stamps last_update_time for both the success and error paths, which
+        # is what the staleness check keys off.
+        registry.finalize(task_id)
 
 
 def fetch_google_tasks_background():
@@ -101,20 +130,11 @@ def fetch_google_tasks_background():
     Fetches Google Tasks (chores) in a background thread and updates the local DB.
     This is completely independent from calendar events fetch.
     """
-    task_id = "tasks"
+    task_id = TASKS_TASK_ID
 
-    # Initialize the background task entry
-    with google_fetch_lock:
-        if (
-            task_id in background_tasks
-            and background_tasks[task_id]["status"] == "running"
-        ):
-            return  # Already running
-        background_tasks[task_id] = {
-            "status": "running",
-            "updated": False,
-            "chores_changed": False,
-        }
+    # Take ownership of the task entry (no-op if another worker already has it)
+    if not registry.mark_running(task_id, chores_changed=False):
+        return  # Already running
 
     try:
         # --- Chore Processing ---
@@ -151,59 +171,30 @@ def fetch_google_tasks_background():
             )  # This function already handles the 'invisible' check on write
 
         # --- Update Task Status ---
-        with google_fetch_lock:
-            background_tasks[task_id]["updated"] = chores_changed
-            background_tasks[task_id]["chores_changed"] = chores_changed
+        registry.update(task_id, updated=chores_changed, chores_changed=chores_changed)
+
+        if chores_changed:
+            broker.publish(events.CHORES_CHANGED)
 
     except Exception as e:
         logger.error(
             "Error in tasks fetch background task %s: %s", task_id, e, exc_info=True
         )
-        with google_fetch_lock:
-            # Ensure the task entry exists before updating
-            if task_id not in background_tasks:
-                background_tasks[task_id] = {
-                    "status": "error",
-                    "updated": False,
-                    "chores_changed": False,
-                }
-            else:
-                background_tasks[task_id]["status"] = "error"
-                background_tasks[task_id]["updated"] = False
-                background_tasks[task_id]["chores_changed"] = False
+        registry.update(
+            task_id, status=sync_state.ERROR, updated=False, chores_changed=False
+        )
     finally:
-        with google_fetch_lock:
-            # Ensure the task entry exists before updating
-            if task_id in background_tasks:
-                current_status = background_tasks[task_id]["status"]
-                if current_status != "error":
-                    background_tasks[task_id]["status"] = "complete"
-            else:
-                # Task entry missing, create a completed one
-                background_tasks[task_id] = {
-                    "status": "complete",
-                    "updated": False,
-                    "chores_changed": False,
-                }
+        registry.finalize(task_id)
 
 
 @get_google_bp().route("/refresh-calendar/<int:year>/<int:month>")
 def refresh_calendar(year, month):
     """Manually trigger a refresh of calendar events for a specific month"""
-    from src.main import sync_executor
+    task_id = calendar_task_id(month, year)
 
-    task_id = f"calendar.{month}.{year}"
-
-    # Check if already running and atomically mark as pending (#5: race condition fix)
-    with google_fetch_lock:
-        if (
-            task_id in background_tasks
-            and background_tasks[task_id]["status"] == "running"
-        ):
-            return jsonify({"message": "Calendar refresh already in progress"}), 202
-        background_tasks[task_id] = {"status": "pending", "updated": False}
-
-    sync_executor.submit(fetch_google_events_background, month, year)
+    # Atomically claim the slot; the worker owns the status from here (#5)
+    if not start_calendar_sync(month, year):
+        return jsonify({"message": "Calendar refresh already in progress"}), 202
 
     return (
         jsonify(

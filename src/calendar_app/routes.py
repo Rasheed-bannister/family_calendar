@@ -1,11 +1,15 @@
 import calendar
 import datetime
 import logging
+import threading
+from typing import Optional
 
-from flask import Blueprint, current_app, jsonify, render_template
+from flask import Blueprint, Response, current_app, jsonify, render_template
 
-# Shared resources
-from src.main import background_tasks, google_fetch_lock
+# Shared sync state. Imported from src.sync_state rather than src.main so this
+# module does not participate in an import cycle with the app factory.
+from src import sync_state
+from src.sync_state import registry
 
 from . import database as db
 from .models import CalendarMonth
@@ -34,78 +38,58 @@ def _calculate_navigation_dates(
     return prev_year, prev_month, next_year, next_month
 
 
+def _sync_interval_seconds() -> float:
+    """How long a completed sync stays fresh before a refresh is worthwhile."""
+    from src.config import get_config
+
+    return get_config().get("google.sync_interval_minutes", 5) * 60
+
+
 def _should_start_calendar_background_task(task_id: str) -> bool:
-    """Check if calendar background task should be started or refreshed.
+    """Whether a calendar sync for this month is worth starting right now.
 
-    Atomically checks and marks task as pending to prevent race conditions (#5).
+    Read-only. Claiming the slot belongs to the registry, which does it as
+    part of dispatching the work -- a caller that marked the task itself
+    could hand the worker a status the worker then refuses to take over.
     """
-    with google_fetch_lock:
-        task_info = background_tasks.get(task_id)
-        if not task_info or task_info["status"] not in [
-            "running",
-            "complete",
-            "pending",
-        ]:
-            background_tasks[task_id] = {"status": "pending", "updated": False}
-            return True
-        elif task_info["status"] == "complete":
-            import time
-
-            from src.config import get_config
-
-            sync_interval_seconds = (
-                get_config().get("google.sync_interval_minutes", 5) * 60
-            )
-            last_update_time = task_info.get("last_update_time", 0)
-            current_time = time.time()
-            if current_time - last_update_time > sync_interval_seconds:
-                task_info["status"] = "pending_refresh"
-                return True
-    return False
+    return registry.is_stale(task_id, _sync_interval_seconds())
 
 
 def _start_calendar_background_sync(current_month: int, current_year: int) -> None:
-    """Start calendar background sync using the shared thread pool."""
-    from src.google_integration.routes import fetch_google_events_background
-    from src.main import sync_executor
+    """Start a calendar background sync, if one is not already in flight."""
+    from src.google_integration.routes import start_calendar_sync
 
-    sync_executor.submit(fetch_google_events_background, current_month, current_year)
+    start_calendar_sync(current_month, current_year)
 
 
 def _should_start_chores_background_task() -> bool:
-    """Check if chores background task should be started.
+    """Check if a chores background sync is worth starting from the page render.
 
-    Atomically checks and marks task as pending to prevent race conditions (#5).
+    Read-only on purpose: claiming the task (and every later status change) is
+    owned by the sync starter/worker in src/google_integration/routes.py, so a
+    caller can never latch a status the worker then refuses to take over.
     """
-    chores_task_id = "tasks"
-    with google_fetch_lock:
-        chores_task_info = background_tasks.get(chores_task_id)
-        if not chores_task_info or chores_task_info["status"] not in [
-            "running",
-            "complete",
-            "pending",
-        ]:
-            background_tasks[chores_task_id] = {
-                "status": "pending",
-                "updated": False,
-                "chores_changed": False,
-            }
-            return True
-    return False
+    from src.google_integration.routes import TASKS_TASK_ID
+
+    # Staleness-based, matching the calendar path. Previously any "complete"
+    # chores task blocked further syncs from the render path for the life of
+    # the process, leaving chore freshness entirely to the browser poll.
+    return registry.is_stale(TASKS_TASK_ID, _sync_interval_seconds())
 
 
 def _start_chores_background_sync() -> None:
-    """Start chores background sync (direct call, not threaded)."""
-    chores_task_id = "tasks"
-    try:
-        from src.google_integration.routes import fetch_google_tasks_background
+    """Queue the chores sync on the shared thread pool.
 
-        fetch_google_tasks_background()
+    `start_tasks_sync` claims the "tasks" slot atomically and leaves the
+    status lifecycle to the worker, so the page render never waits on a
+    Google Tasks round-trip.
+    """
+    try:
+        from src.google_integration.routes import start_tasks_sync
+
+        start_tasks_sync()
     except Exception as e:
-        logger.error("Error during automatic chores refresh: %s", e)
-        with google_fetch_lock:
-            if chores_task_id in background_tasks:
-                background_tasks[chores_task_id]["status"] = "error"
+        logger.error("Error queueing automatic chores refresh: %s", e)
 
 
 def _build_calendar_weeks_data(
@@ -146,13 +130,73 @@ def _build_calendar_weeks_data(
     return weeks_data
 
 
-def _get_weather_data_safe():
-    """Safely get weather data with exception handling."""
+WEATHER_TASK_ID = "weather"
+
+
+def _should_start_weather_refresh() -> bool:
+    """Atomically claim the weather refresh slot, if a refresh is due.
+
+    Returns False when a refresh is already in flight or when the last
+    attempt was too recent (a failing API must not be retried once per page
+    render while the Pi is offline).
+    """
+    from src.config import get_config
+
+    # The registry treats an in-flight task as not stale, so this covers both
+    # "already queued" and "attempted too recently". finalize() stamps the
+    # completion time on the error path too, so a failing fetch backs off
+    # instead of retrying on every render while the Pi is offline.
+    cooldown_seconds = get_config().get("weather.cache_duration", 600)
+    return registry.is_stale(WEATHER_TASK_ID, cooldown_seconds)
+
+
+def _refresh_weather_background() -> None:
+    """Fetch weather in a worker thread and refresh the on-disk cache."""
+    if not registry.mark_running(WEATHER_TASK_ID):
+        return
+
     try:
         from src.weather_integration.api import get_weather_data
 
-        return get_weather_data()
-    except Exception:
+        if get_weather_data() is None:
+            registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
+    except Exception as e:
+        logger.error("Error refreshing weather data: %s", e)
+        registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
+    finally:
+        registry.finalize(WEATHER_TASK_ID)
+
+
+def _start_weather_background_refresh() -> None:
+    """Queue a weather refresh on the shared thread pool."""
+    if not _should_start_weather_refresh():
+        return
+
+    try:
+        registry.submit(WEATHER_TASK_ID, _refresh_weather_background)
+    except Exception as e:
+        logger.error("Could not queue weather refresh: %s", e)
+        registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
+
+
+def _get_weather_data_safe():
+    """Return weather for the page render without blocking on the network.
+
+    Reads only the on-disk cache; the live fetch happens on the shared sync
+    executor. Returns None when no usable reading exists, which the template
+    renders as "Weather data unavailable" - never invented values.
+    """
+    try:
+        from src.weather_integration.api import (
+            get_weather_for_display,
+            weather_cache_needs_refresh,
+        )
+
+        if weather_cache_needs_refresh():
+            _start_weather_background_refresh()
+        return get_weather_for_display()
+    except Exception as e:
+        logger.error("Error preparing weather data for render: %s", e)
         return None
 
 
@@ -228,11 +272,85 @@ def _filter_events_for_day(events: list, target_date: datetime.date) -> list:
     return day_events
 
 
+def html_fragment_response(html: str) -> Response:
+    """Wrap rendered partial markup in the fragment response contract.
+
+    One helper for every fragment endpoint so the headers cannot drift apart:
+    HTML with an explicit charset, and never cached - fragments exist precisely
+    because the data behind them just changed.
+    """
+    response = Response(html, mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def build_calendar_context(
+    current_year: int, current_month: int, today_date: datetime.date
+) -> dict:
+    """Assemble the template context shared by the full page and the fragments.
+
+    The full page and the fragment endpoints must render the partials from an
+    identical context: if they drift, the display visibly changes appearance
+    the moment it live-updates. Sharing one builder is what guarantees they
+    cannot.
+
+    Deliberately read-only. Nothing here starts a background sync, so a
+    fragment fetched on every data-change notification cannot feed back into
+    starting more syncs. The sync triggers stay in `view`, which runs once per
+    real page load.
+    """
+    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
+        current_year, current_month
+    )
+
+    db_events = db.get_all_events_for_month_range(current_year, current_month)
+    weeks_data = _build_calendar_weeks_data(
+        current_year, current_month, today_date, db_events
+    )
+    today_events = _filter_events_for_day(db_events, today_date)
+
+    from src.chores_app.routes import build_chores_context
+    from src.config import get_config
+
+    config = get_config()
+
+    return {
+        "weeks": weeks_data,
+        "today_events": today_events,
+        "month_name": calendar.month_name[current_month],
+        "month_number": current_month,
+        "year": current_year,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+        "today_actual_day": today_date.day,
+        "today_actual_month": today_date.month,
+        "today_actual_year": today_date.year,
+        "debug_enabled": config.get("app.debug", False),
+        "show_pir_feedback": config.get("ui.show_pir_feedback", False),
+        "family_name": config.get("app.family_name", "Family"),
+        **build_chores_context(),
+    }
+
+
+def _local_now() -> datetime.datetime:
+    """Now in the configured local timezone.
+
+    Local time, not UTC: this drives both the default month and which cell is
+    highlighted as "today". Under UTC the highlight jumped to tomorrow at
+    local evening (8pm in America/New_York) on a display that is on all night.
+    """
+    from src.config import get_local_timezone
+
+    return datetime.datetime.now(tz=get_local_timezone())
+
+
 @calendar_bp.route("/")
 @calendar_bp.route("/<int:year>/<int:month>")
 def view(year: int = None, month: int = None):
     """Renders the calendar view for a specific month and year."""
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    now = _local_now()
 
     # Set defaults and validate input
     if year is None:
@@ -245,11 +363,6 @@ def view(year: int = None, month: int = None):
     current_year = year
     current_month = month
     today_date = now.date()
-
-    # Calculate navigation dates
-    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
-        current_year, current_month
-    )
 
     # Register current month in database
     current_calendar_month = CalendarMonth(year=current_year, month=current_month)
@@ -264,64 +377,64 @@ def view(year: int = None, month: int = None):
     if _should_start_chores_background_task():
         _start_chores_background_sync()
 
-    # Get calendar events data
-    db_events = db.get_all_events_for_month_range(current_year, current_month)
-    weeks_data = _build_calendar_weeks_data(
-        current_year, current_month, today_date, db_events
-    )
-    today_events = _filter_events_for_day(db_events, today_date)
-
-    # Get additional data for template
-    weather_data = _get_weather_data_safe()
-
-    from src.chores_app import database as chores_db
-
-    chores_to_display = chores_db.get_chores()
-
-    month_name = calendar.month_name[current_month]
-
-    from src.config import get_config
-
-    config = get_config()
+    # Sync triggering lives here, in the full page render, and not in the
+    # shared context builder: the fragment endpoints reuse the builder and must
+    # stay read-only.
+    context = build_calendar_context(current_year, current_month, today_date)
 
     return render_template(
         "index.html",
-        weeks=weeks_data,
-        today_events=today_events,
-        chores=chores_to_display,
-        weather=weather_data,
-        month_name=month_name,
-        month_number=current_month,
-        year=current_year,
-        prev_year=prev_year,
-        prev_month=prev_month,
-        next_year=next_year,
-        next_month=next_month,
-        today_actual_day=today_date.day,
-        today_actual_month=today_date.month,
-        today_actual_year=today_date.year,
-        debug_enabled=config.get("app.debug", False),
-        show_pir_feedback=config.get("ui.show_pir_feedback", False),
-        family_name=config.get("app.family_name", "Family"),
+        weather=_get_weather_data_safe(),
+        **context,
     )
+
+
+@calendar_bp.route("/fragment/<int:year>/<int:month>")
+def fragment(year: int, month: int):
+    """Render just the calendar component, for in-place client updates.
+
+    Returns the same markup the full page carries for this month, so the client
+    can swap one region instead of calling location.reload() - a full reload on
+    a wall display resets the slideshow position, scroll state and any open UI.
+
+    Read-only: no calendar, chores or weather sync is started here. The client
+    fetches this on every change notification, so a sync trigger would be a
+    feedback loop.
+    """
+    if not 1 <= month <= 12:
+        return "Invalid month", 404
+
+    context = build_calendar_context(year, month, _local_now().date())
+    return html_fragment_response(
+        render_template("components/calendar.html", **context)
+    )
+
+
+PHOTO_SYNC_INTERVAL_SECONDS = 600
+
+# Guarded by _photo_sync_lock rather than stored in the sync registry: this is
+# a plain rate-limit timestamp, not a background task with a status lifecycle,
+# and keeping it out of the registry stops it showing up in task lookups.
+_last_photo_sync = 0.0
+_photo_sync_lock = threading.Lock()
 
 
 def _sync_photos_if_needed() -> None:
     """Sync photos occasionally (every 10 minutes) to avoid excessive operations."""
+    global _last_photo_sync
     import time
 
     from src.slideshow import database as slideshow_db
 
-    last_photo_sync_key = "_last_photo_sync"
-    current_time = time.time()
+    now = time.time()
+    with _photo_sync_lock:
+        if now - _last_photo_sync <= PHOTO_SYNC_INTERVAL_SECONDS:
+            return
+        # Claim the slot before the scan so concurrent pollers do not all
+        # stat the photos directory at once.
+        _last_photo_sync = now
 
-    if (
-        last_photo_sync_key not in background_tasks
-        or current_time - background_tasks[last_photo_sync_key].get("last_sync", 0)
-        > 600
-    ):  # 10 minutes
-        slideshow_db.sync_photos(current_app.static_folder)
-        background_tasks[last_photo_sync_key] = {"last_sync": current_time}
+    slideshow_db.sync_photos(current_app.static_folder)
 
 
 def _check_calendar_task_status(calendar_task_id: str) -> tuple[str, bool, bool]:
@@ -330,33 +443,21 @@ def _check_calendar_task_status(calendar_task_id: str) -> tuple[str, bool, bool]
     Returns:
         tuple: (task_status, events_changed, should_trigger_refresh)
     """
-    import time
-
-    from src.config import get_config
-
-    calendar_task_info = background_tasks.get(calendar_task_id)
-    if not calendar_task_info:
+    status = registry.status(calendar_task_id)
+    if status is None:
         return "not_tracked", False, True
 
-    calendar_task_status = calendar_task_info["status"]
     events_changed = False
-    should_trigger_refresh = False
+    if status == sync_state.COMPLETE:
+        events_changed = registry.consume_flag(calendar_task_id, "events_changed")
 
-    if calendar_task_status == "complete":
-        events_changed = calendar_task_info.get("events_changed", False)
-        if events_changed:
-            calendar_task_info["events_changed"] = False
-            calendar_task_info["updated"] = False
+    # is_stale() reports False while a sync is in flight, so this never
+    # queues a duplicate on top of one that is already running.
+    should_trigger_refresh = registry.is_stale(
+        calendar_task_id, _sync_interval_seconds()
+    )
 
-        # Check if we need to trigger a refresh due to time elapsed
-        sync_interval_seconds = get_config().get("google.sync_interval_minutes", 5) * 60
-        last_update_time = calendar_task_info.get("last_update_time", 0)
-        current_time = time.time()
-        if current_time - last_update_time > sync_interval_seconds:
-            should_trigger_refresh = True
-            calendar_task_info["status"] = "pending_refresh"
-
-    return calendar_task_status, events_changed, should_trigger_refresh
+    return status, events_changed, should_trigger_refresh
 
 
 def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
@@ -365,70 +466,88 @@ def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
     Returns:
         tuple: (task_status, chores_changed)
     """
-    chores_task_info = background_tasks.get(chores_task_id)
-    if not chores_task_info:
+    status = registry.status(chores_task_id)
+    if status is None:
         return "not_tracked", False
 
-    chores_task_status = chores_task_info["status"]
     chores_changed = False
+    if status == sync_state.COMPLETE:
+        chores_changed = registry.consume_flag(chores_task_id, "chores_changed")
 
-    if chores_task_status == "complete":
-        chores_changed = chores_task_info.get("chores_changed", False)
-        if chores_changed:
-            chores_task_info["chores_changed"] = False
-            chores_task_info["updated"] = False
-
-    return chores_task_status, chores_changed
+    return status, chores_changed
 
 
 def _trigger_calendar_refresh_if_needed(
     should_trigger_refresh: bool, month: int, year: int
-) -> None:
-    """Trigger background calendar refresh if needed."""
+) -> tuple[bool, Optional[str]]:
+    """Queue a background calendar refresh if one is due.
+
+    Returns ``(queued, error)`` describing what actually happened, not what was
+    intended. Both parts matter to the caller:
+
+    * ``queued`` is False when ``start_calendar_sync`` declined because another
+      poller claimed the slot between the staleness read and this call. The
+      staleness read is necessarily stale by the time we act on it, so it must
+      not be reported to the client as if it were the outcome.
+    * ``error`` is set when the work could not be queued at all. The registry
+      re-raises if the pool rejects the submission, which is what a
+      ThreadPoolExecutor does for the entire duration of shutdown. Letting that
+      escape would be a failure of the *endpoint*, which is polled by every
+      connected display every few seconds and whose exceptions are recorded by
+      the catch-all handler as critical errors counting towards the health
+      monitor's restart threshold. Failing to start a refresh does not stop the
+      endpoint reporting the task status it just read, so it degrades instead.
+    """
     if not should_trigger_refresh:
-        return
+        return False, None
 
-    from src.google_integration.routes import fetch_google_events_background
-    from src.main import sync_executor
+    from src.google_integration.routes import start_calendar_sync
 
-    sync_executor.submit(fetch_google_events_background, month, year)
-    logger.info(
-        "Triggered background refresh for %s/%s due to time elapsed or missing task",
-        month,
-        year,
-    )
+    try:
+        queued = start_calendar_sync(month, year)
+    except Exception as e:
+        logger.error(
+            "Could not queue background calendar refresh for %s/%s: %s", month, year, e
+        )
+        return False, str(e)
+
+    if queued:
+        logger.info(
+            "Triggered background refresh for %s/%s due to time elapsed or missing task",
+            month,
+            year,
+        )
+    return queued, None
 
 
 @calendar_bp.route("/check-updates/<int:year>/<int:month>")
 def check_updates(year: int, month: int):
     """API endpoint to check if the background task detected calendar or chore updates."""
-    calendar_task_id = f"calendar.{month}.{year}"
-    chores_task_id = "tasks"
+    from src.google_integration.routes import TASKS_TASK_ID, calendar_task_id
+
+    cal_task_id = calendar_task_id(month, year)
 
     # Sync photos occasionally
     _sync_photos_if_needed()
 
-    # Initialize status variables
-    updates_available = False
-    should_trigger_refresh = False
+    # No lock held here: each registry call takes the lock itself, and the
+    # flag reads are atomic read-and-clear. Holding one lock across all of
+    # them bought nothing -- these are independent tasks -- and the old code
+    # called the refresh trigger outside it anyway.
+    calendar_task_status, events_changed, should_trigger_refresh = (
+        _check_calendar_task_status(cal_task_id)
+    )
+    chores_task_status, chores_changed = _check_chores_task_status(TASKS_TASK_ID)
+    updates_available = events_changed or chores_changed
 
-    with google_fetch_lock:
-        # Check calendar task status
-        calendar_task_status, events_changed, calendar_refresh_needed = (
-            _check_calendar_task_status(calendar_task_id)
-        )
-        if events_changed:
-            updates_available = True
-        if calendar_refresh_needed:
-            should_trigger_refresh = True
-
-        # Check chores task status
-        chores_task_status, chores_changed = _check_chores_task_status(chores_task_id)
-        if chores_changed:
-            updates_available = True
-
-    # Trigger refresh outside of lock
-    _trigger_calendar_refresh_if_needed(should_trigger_refresh, month, year)
+    # What was reported here used to be the pre-trigger staleness read, so the
+    # client could be told a refresh was coming when the trigger had in fact
+    # declined (or failed). calendar.js waits 3s and re-polls on
+    # refresh_triggered, so an optimistic True costs a wasted round trip and a
+    # sync that never arrives.
+    refresh_triggered, refresh_error = _trigger_calendar_refresh_if_needed(
+        should_trigger_refresh, month, year
+    )
 
     return jsonify(
         {
@@ -437,6 +556,10 @@ def check_updates(year: int, month: int):
             "updates_available": updates_available,
             "events_changed": events_changed,
             "chores_changed": chores_changed,
-            "refresh_triggered": should_trigger_refresh,
+            "refresh_triggered": refresh_triggered,
+            # Null on the happy path. An extra field the frontend ignores is
+            # how the failure stays visible (to /health, to a curl, to logs)
+            # without the endpoint having to fail.
+            "refresh_error": refresh_error,
         }
     )

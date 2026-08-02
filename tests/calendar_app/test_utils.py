@@ -8,6 +8,15 @@ from src.calendar_app import database as db
 from src.calendar_app import utils
 from src.calendar_app.models import Calendar, CalendarEvent, CalendarMonth
 
+
+@pytest.fixture(autouse=True)
+def _reset_alias_cache():
+    """Keep the module-level alias cache from leaking between tests."""
+    utils._alias_cache = None
+    yield
+    utils._alias_cache = None
+
+
 # --- Fixtures ---
 
 
@@ -181,10 +190,12 @@ def test_add_events_inserts_new(
             # Check calendar insert/replace first
             insert_calls.append(
                 call(
-                    "INSERT OR REPLACE INTO Calendar (calendar_id, name, color) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO Calendar "
+                    "(calendar_id, name, display_name, color) VALUES (?, ?, ?, ?)",
                     (
                         event.calendar.calendar_id,
                         event.calendar.name,
+                        event.calendar.get_display_name(),
                         mocked_color,
                     ),  # Expected assigned color
                 )
@@ -488,10 +499,12 @@ def test_add_events_updates_existing(
         if not event.calendar.color:
             expected_calls.append(
                 call(
-                    "INSERT OR REPLACE INTO Calendar (calendar_id, name, color) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO Calendar "
+                    "(calendar_id, name, display_name, color) VALUES (?, ?, ?, ?)",
                     (
                         event.calendar.calendar_id,
                         event.calendar.name,
+                        event.calendar.get_display_name(),
                         mock_get_next_color.return_value,
                     ),
                 )
@@ -534,3 +547,134 @@ def test_add_events_updates_existing(
     else:
         # Add assertion for calls if sample_calendar might not have color
         pass
+
+
+# --- Calendar alias loading (caching) ---
+
+
+@pytest.fixture
+def alias_file(tmp_path):
+    """Point the alias loader at a writable temp conf file."""
+    conf = tmp_path / "calendar_aliases.conf"
+    conf.write_text("# comment\ncal1 = Work Calendar\n\ncal2=Home\n")
+    with patch.object(utils, "ALIASES_FILE", conf):
+        yield conf
+
+
+class TestLoadCalendarAliases:
+    def test_parses_aliases_and_skips_comments(self, alias_file):
+        assert utils.load_calendar_aliases() == {
+            "cal1": "Work Calendar",
+            "cal2": "Home",
+        }
+
+    def test_missing_file_returns_empty_dict(self, tmp_path):
+        with patch.object(utils, "ALIASES_FILE", tmp_path / "nope.conf"):
+            assert utils.load_calendar_aliases() == {}
+
+    def test_file_is_parsed_only_once_for_repeated_lookups(self, alias_file):
+        """BUG 17: this ran once per event, so a 100-event sync read the file
+        100 times."""
+        with patch.object(
+            utils, "_parse_calendar_aliases", wraps=utils._parse_calendar_aliases
+        ) as parse:
+            for _ in range(100):
+                utils.get_calendar_display_name("cal1", "Original")
+
+        assert parse.call_count == 1
+
+    def test_cache_picks_up_edits_to_the_conf_file(self, alias_file):
+        """A wall display runs for weeks; an edited alias must not need a
+        restart."""
+        assert utils.get_calendar_display_name("cal1", "Original") == "Work Calendar"
+
+        alias_file.write_text("cal1 = Renamed Calendar\n")
+        # Force a distinct (mtime, size) signature regardless of clock
+        # granularity.
+        import os
+
+        os.utime(alias_file, ns=(0, 0))
+
+        assert utils.get_calendar_display_name("cal1", "Original") == "Renamed Calendar"
+
+    def test_cache_notices_the_file_appearing(self, tmp_path):
+        conf = tmp_path / "calendar_aliases.conf"
+        with patch.object(utils, "ALIASES_FILE", conf):
+            assert utils.get_calendar_display_name("cal1", "Original") == "Original"
+            conf.write_text("cal1 = Later Alias\n")
+            assert utils.get_calendar_display_name("cal1", "Original") == "Later Alias"
+
+    def test_unknown_calendar_falls_back_to_original_name(self, alias_file):
+        assert utils.get_calendar_display_name("unknown", "Original") == "Original"
+
+
+# --- Calendar upsert must not drop the alias (BUG 19) ---
+
+
+@pytest.fixture
+def real_db(tmp_path):
+    """A real sqlite database so INSERT OR REPLACE semantics are exercised."""
+    db_path = tmp_path / "calendar.db"
+    with patch.object(db, "DATABASE_FILE", db_path):
+        db.create_all()
+        yield db_path
+
+
+def test_add_events_preserves_calendar_display_name(real_db, sample_month):
+    """INSERT OR REPLACE without display_name wiped out the calendar alias."""
+    with patch.object(db, "DATABASE_FILE", real_db):
+        db.add_calendar(
+            Calendar(
+                calendar_id="cal_alias",
+                name="raw@group.calendar.google.com",
+                display_name="Soccer Practice",
+                color_hex="#123456",
+            )
+        )
+
+        # The sync path hands add_events a Calendar object with no color yet,
+        # which is what triggers the upsert.
+        colorless = Calendar(
+            calendar_id="cal_alias",
+            name="raw@group.calendar.google.com",
+            display_name="Soccer Practice",
+            color_hex=None,
+        )
+        event = CalendarEvent(
+            id="evt-alias",
+            calendar=colorless,
+            month=sample_month,
+            title="Practice",
+            start_datetime=datetime(2025, 5, 10, 10, 0, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 5, 10, 11, 0, 0, tzinfo=timezone.utc),
+            all_day=False,
+        )
+        assert utils.add_events([event]) is True
+
+        stored = db.get_calendar("cal_alias")
+
+    assert stored is not None
+    assert stored.display_name == "Soccer Practice"
+
+
+def test_add_events_stores_offset_qualified_timestamps(real_db, sample_month):
+    """Naive datetimes are stamped UTC so every stored row is comparable."""
+    calendar = Calendar(calendar_id="cal_ts", name="TS", color_hex="#123456")
+    event = CalendarEvent(
+        id="evt-naive",
+        calendar=calendar,
+        month=sample_month,
+        title="Naive",
+        start_datetime=datetime(2025, 5, 10, 10, 0, 0),
+        end_datetime=datetime(2025, 5, 10, 11, 0, 0),
+        all_day=False,
+    )
+    with patch.object(db, "DATABASE_FILE", real_db):
+        assert utils.add_events([event]) is True
+
+    conn = sqlite3.connect(real_db)
+    row = conn.execute(
+        "SELECT start_datetime, end_datetime FROM CalendarEvent WHERE id = 'evt-naive'"
+    ).fetchone()
+    conn.close()
+    assert row == ("2025-05-10T10:00:00+00:00", "2025-05-10T11:00:00+00:00")

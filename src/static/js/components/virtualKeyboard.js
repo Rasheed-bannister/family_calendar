@@ -2,6 +2,7 @@
  * Virtual Keyboard Component
  * Provides an enhanced on-screen keyboard for touchscreen devices
  */
+import { loadAppConfig } from "./appConfig.js";
 const VirtualKeyboard = (function () {
   // Private variables
   let keyboardContainer;
@@ -35,9 +36,8 @@ const VirtualKeyboard = (function () {
   // Configuration loading
   async function loadConfiguration() {
     try {
-      const response = await fetch("/api/config");
-      if (response.ok) {
-        const fullConfig = await response.json();
+      const fullConfig = await loadAppConfig();
+      if (fullConfig) {
         config = {
           enhanced_virtual_keyboard: fullConfig.ui?.enhanced_virtual_keyboard ?? true,
           animation_duration: fullConfig.ui?.animation_duration_ms ?? 300,
@@ -682,14 +682,16 @@ const VirtualKeyboard = (function () {
         keyboardContainer = null;
       }
 
-      // Clear references
+      // Clear references.
+      //
+      // `keyMap`, `isShifted`, `isCapsLock` and `isSymbols` were assigned
+      // here but none of them is declared anywhere in this module --
+      // leftovers from removed code. Modules run in strict mode, so the
+      // first bare assignment threw ReferenceError and aborted the rest of
+      // cleanup, leaking the keyboard's listeners and container.
       currentInput = null;
       config = null;
-      keyMap = null;
       currentLayout = "default";
-      isShifted = false;
-      isCapsLock = false;
-      isSymbols = false;
       isOpen = false;
     },
   };

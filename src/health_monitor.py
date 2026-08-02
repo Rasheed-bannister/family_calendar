@@ -195,31 +195,69 @@ class HealthMonitor:
         if len(self.critical_errors) > self.max_critical_errors:
             self.critical_errors = self.critical_errors[-self.max_critical_errors :]
 
+    def _database_paths(self) -> Dict[str, Path]:
+        """Resolve the databases to report on, keyed by a short label.
+
+        Asks each module for the path it actually uses rather than rebuilding
+        it here. The previous version hardcoded strings relative to the
+        current working directory and globbed for ``calendar_*.db``:
+
+        * the calendar database is ``calendar.db``, so that glob matched
+          nothing and the app's main database was never reported at all --
+          from any directory;
+        * every path was cwd-relative, so launching from anywhere other than
+          the repo root reported all databases missing. The shipped systemd
+          unit sets WorkingDirectory so it happened to work, but a false
+          "all databases missing" is exactly the sort of alarm that teaches
+          people to ignore a health endpoint.
+        """
+        paths: Dict[str, Path] = {}
+        try:
+            from src.calendar_app.database import DATABASE_FILE as calendar_db
+
+            paths["calendar"] = Path(calendar_db)
+        except Exception as e:  # pragma: no cover - import failure is fatal earlier
+            logger.warning("Could not resolve calendar database path: %s", e)
+        try:
+            from src.chores_app.database import DATABASE_FILE as chores_db
+
+            paths["chores"] = Path(chores_db)
+        except Exception as e:  # pragma: no cover
+            logger.warning("Could not resolve chores database path: %s", e)
+        try:
+            from src.slideshow.database import DATABASE_PATH as slideshow_db
+
+            paths["slideshow"] = Path(slideshow_db)
+        except Exception as e:  # pragma: no cover
+            logger.warning("Could not resolve slideshow database path: %s", e)
+        return paths
+
     def get_database_status(self) -> Dict[str, Any]:
         """Check database file status."""
         db_status = {}
-        db_files = ["src/slideshow/slideshow.db", "src/chores_app/chores.db"]
 
-        # Add calendar database files (they're dynamically created)
-        calendar_db_pattern = "src/calendar_app/calendar_*.db"
-        calendar_dbs = list(Path(".").glob(calendar_db_pattern))
-        db_files.extend([str(db) for db in calendar_dbs])
-
-        for db_file in db_files:
-            if os.path.exists(db_file):
-                stat = os.stat(db_file)
-                db_status[db_file] = {
-                    "exists": True,
-                    "size_bytes": stat.st_size,
-                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "readable": os.access(db_file, os.R_OK),
-                    "writable": os.access(db_file, os.W_OK),
-                }
-            else:
-                db_status[db_file] = {
+        for label, db_path in self._database_paths().items():
+            # Reported under the absolute path so the answer is unambiguous
+            # about which file on disk was actually checked.
+            key = str(db_path)
+            try:
+                stat = db_path.stat()
+            except OSError as e:
+                db_status[key] = {
+                    "name": label,
                     "exists": False,
-                    "error": "Database file not found",
+                    "error": f"Database file not found: {e.strerror}",
                 }
+                continue
+
+            db_status[key] = {
+                "name": label,
+                "exists": True,
+                "size_bytes": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "readable": os.access(db_path, os.R_OK),
+                "writable": os.access(db_path, os.W_OK),
+            }
 
         return db_status
 

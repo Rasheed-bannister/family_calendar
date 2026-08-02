@@ -1,16 +1,25 @@
 """Tests for helper functions in src/calendar_app/routes.py."""
 
 import datetime
+import time
+from unittest.mock import MagicMock, patch
 
+from src import sync_state
 from src.calendar_app.routes import (
+    WEATHER_TASK_ID,
     _build_calendar_weeks_data,
     _calculate_navigation_dates,
+    _get_weather_data_safe,
     _is_event_relevant_for_date,
     _is_midnight_end,
     _is_multi_day_event_relevant,
     _is_single_day_event_relevant,
     _normalize_event_timezone,
+    _refresh_weather_background,
+    _should_start_weather_refresh,
+    _start_weather_background_refresh,
 )
+from src.sync_state import registry
 
 
 class TestCalculateNavigationDates:
@@ -233,3 +242,153 @@ class TestBuildCalendarWeeksData:
                     assert len(day["events"]) == 1
                     found = True
         assert found
+
+
+class TestWeatherRefreshGate:
+    """The render path must delegate the live fetch and never hammer it."""
+
+    def test_starts_refresh_when_no_task_tracked(self):
+        with patch.object(registry, "tasks", {}):
+            assert _should_start_weather_refresh() is True
+            # The gate is read-only: the claim belongs to registry.submit(), so
+            # a render that decides "yes" cannot latch a status the worker
+            # would then refuse to take over.
+            assert registry.status(WEATHER_TASK_ID) is None
+
+    def test_does_not_start_when_already_in_flight(self):
+        for status in sync_state.IN_FLIGHT:
+            tasks = {WEATHER_TASK_ID: {"status": status, "last_update_time": 0}}
+            with patch.object(registry, "tasks", tasks):
+                assert _should_start_weather_refresh() is False
+
+    def test_does_not_retry_within_cooldown(self):
+        """A failing API must not be retried on every single page render.
+
+        registry.finalize() stamps last_update_time on the error path too, so
+        the backoff applies to failed attempts, not just successful ones.
+        """
+        tasks = {
+            WEATHER_TASK_ID: {
+                "status": sync_state.ERROR,
+                "last_update_time": time.time(),
+            }
+        }
+        with patch.object(registry, "tasks", tasks):
+            assert _should_start_weather_refresh() is False
+
+    def test_retries_after_cooldown_elapsed(self):
+        tasks = {WEATHER_TASK_ID: {"status": sync_state.ERROR, "last_update_time": 0}}
+        with patch.object(registry, "tasks", tasks):
+            assert _should_start_weather_refresh() is True
+
+
+class TestWeatherBackgroundRefresh:
+    """The live fetch runs on the shared pool, not in the request handler."""
+
+    def test_refresh_is_submitted_to_executor(self):
+        executor = MagicMock()
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
+                _start_weather_background_refresh()
+
+        executor.submit.assert_called_once_with(_refresh_weather_background)
+
+    def test_executor_failure_is_swallowed_and_recorded(self):
+        executor = MagicMock()
+        executor.submit.side_effect = RuntimeError("pool is shut down")
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
+                _start_weather_background_refresh()
+
+                assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
+
+    def test_worker_marks_complete_on_success(self):
+        with patch.object(registry, "tasks", {}):
+            with patch(
+                "src.weather_integration.api.get_weather_data",
+                return_value={"current": {}, "daily": []},
+            ):
+                _refresh_weather_background()
+
+            assert registry.status(WEATHER_TASK_ID) == sync_state.COMPLETE
+
+    def test_worker_marks_error_when_no_data_available(self):
+        with patch.object(registry, "tasks", {}):
+            with patch(
+                "src.weather_integration.api.get_weather_data", return_value=None
+            ):
+                _refresh_weather_background()
+
+            assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
+
+    def test_worker_marks_error_when_fetch_raises(self):
+        with patch.object(registry, "tasks", {}):
+            with patch(
+                "src.weather_integration.api.get_weather_data",
+                side_effect=RuntimeError("network down"),
+            ):
+                _refresh_weather_background()
+
+            assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
+
+
+class TestGetWeatherDataSafe:
+    """`_get_weather_data_safe` must never perform network I/O itself."""
+
+    def test_returns_cached_reading_without_fetching(self):
+        cached = {"current": {"apparent_temperature": 55}, "daily": [], "stale": False}
+        with patch.object(registry, "tasks", {}):
+            with patch(
+                "src.weather_integration.api.weather_cache_needs_refresh",
+                return_value=False,
+            ):
+                with patch(
+                    "src.weather_integration.api.get_weather_for_display",
+                    return_value=cached,
+                ):
+                    with patch(
+                        "src.weather_integration.api.get_weather_data"
+                    ) as mock_fetch:
+                        result = _get_weather_data_safe()
+
+        assert result == cached
+        mock_fetch.assert_not_called()
+
+    def test_stale_cache_queues_refresh_and_still_returns_data(self):
+        executor = MagicMock()
+        cached = {"current": {"apparent_temperature": 55}, "daily": [], "stale": True}
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
+                with patch(
+                    "src.weather_integration.api.weather_cache_needs_refresh",
+                    return_value=True,
+                ):
+                    with patch(
+                        "src.weather_integration.api.get_weather_for_display",
+                        return_value=cached,
+                    ):
+                        result = _get_weather_data_safe()
+
+        executor.submit.assert_called_once_with(_refresh_weather_background)
+        assert result["stale"] is True
+
+    def test_returns_none_when_no_reading_available(self):
+        executor = MagicMock()
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
+                with patch(
+                    "src.weather_integration.api.weather_cache_needs_refresh",
+                    return_value=True,
+                ):
+                    with patch(
+                        "src.weather_integration.api.get_weather_for_display",
+                        return_value=None,
+                    ):
+                        assert _get_weather_data_safe() is None
+
+    def test_unexpected_error_returns_none(self):
+        with patch(
+            "src.weather_integration.api.weather_cache_needs_refresh",
+            side_effect=RuntimeError("boom"),
+        ):
+            assert _get_weather_data_safe() is None

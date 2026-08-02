@@ -1,15 +1,43 @@
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 from src.google_integration import tasks_api
-from src.main import background_tasks, google_fetch_lock
 
 from . import database as db
 
 logger = logging.getLogger(__name__)
 
 chores_bp = Blueprint("chores", __name__, url_prefix="/chores")
+
+
+def build_chores_context() -> dict:
+    """Template context for components/chores.html.
+
+    Owned here rather than at each call site so the full page render and the
+    fragment endpoint feed the partial exactly the same data; if they drifted,
+    the chores list would change appearance the moment it live-updated.
+
+    Read-only: reads the local database and never triggers a Google Tasks sync.
+    """
+    return {"chores": db.get_chores()}
+
+
+@chores_bp.route("/fragment")
+def fragment():
+    """Render just the chores component, for in-place client updates.
+
+    Lets the client swap the chores list instead of calling location.reload(),
+    which on a wall display resets the slideshow position and any open UI.
+
+    Read-only: fetched on every change notification, so starting a sync here
+    would be a feedback loop.
+    """
+    from src.calendar_app.routes import html_fragment_response
+
+    return html_fragment_response(
+        render_template("components/chores.html", **build_chores_context())
+    )
 
 
 @chores_bp.route("/update_status/<chore_id>", methods=["POST"])
@@ -44,32 +72,26 @@ def update_status(chore_id):
 
 @chores_bp.route("/refresh", methods=["POST"])
 def refresh_chores():
-    """Manually trigger a refresh of chores data from Google Tasks"""
-    # Start a background task for tasks
-    chores_task_id = "tasks"
+    """Manually trigger a refresh of chores data from Google Tasks.
 
-    with google_fetch_lock:
-        # Mark as running if not already
-        if (
-            chores_task_id in background_tasks
-            and background_tasks[chores_task_id]["status"] == "running"
-        ):
-            return jsonify({"message": "Refresh already in progress"}), 202
+    The sync runs on the shared thread pool; the background worker owns the
+    task status lifecycle. This route must not pre-set a status itself - doing
+    so used to make the worker's "already running" guard reject the sync,
+    wedging chores syncing at status "running" for the life of the process.
+    Clients poll /calendar/check-updates for the resulting chores_status.
+    """
+    from src.google_integration.routes import start_tasks_sync
 
-        background_tasks[chores_task_id] = {"status": "running", "updated": False}
-
-    # Execute the sync directly instead of in a thread to avoid threading issues
     try:
-        from src.google_integration.routes import fetch_google_tasks_background
-
-        fetch_google_tasks_background()  # Call directly without threading
-        return jsonify({"message": "Chores refresh completed"}), 200
+        started = start_tasks_sync()
     except Exception as e:
         logger.error("Error during chores refresh: %s", e)
-        with google_fetch_lock:
-            if chores_task_id in background_tasks:
-                background_tasks[chores_task_id]["status"] = "error"
         return jsonify({"error": f"Chores refresh failed: {str(e)}"}), 500
+
+    if not started:
+        return jsonify({"message": "Refresh already in progress"}), 202
+
+    return jsonify({"message": "Chores refresh started"}), 202
 
 
 @chores_bp.route("/add", methods=["POST"])

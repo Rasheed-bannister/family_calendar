@@ -1,35 +1,162 @@
 import datetime
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, redirect, request, url_for
 
 # Import configuration
 from src.config import get_config
 
+# Background sync state. Lives in its own module so blueprints can import it
+# without importing src.main, which would be an import cycle.
+from src.scheduler import scheduler
+from src.sync_state import registry
+
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 
 logger = logging.getLogger(__name__)
 
-# Shared resources across components
-google_fetch_lock = threading.Lock()  # Global lock for Google API fetching
-background_tasks: dict[str, dict] = (
-    {}
-)  # Dict to track background task status by month/year
+# Backwards-compatible aliases, bound to the *same* objects the registry uses.
+#
+# Read-only. Never patch these, and never write through them:
+#   * writing to the task dict directly is what caused the sync wedges the
+#     registry now prevents by construction;
+#   * these names are bound once at import, so patching them (or patching
+#     ``registry.tasks``) makes the two views diverge silently -- the alias
+#     keeps pointing at the original object while production code reads the
+#     replacement.
+# Use ``src.sync_state.registry`` and its methods instead, in both application
+# code and tests.
+background_tasks: dict[str, dict] = registry.tasks
+google_fetch_lock = registry.lock
+sync_executor = registry.executor
 
-# Thread pool for background sync tasks (caps concurrency, reuses threads)
-sync_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sync")
+
+# Allowlist of configuration values exposed to the browser via /api/config.
+#
+# The frontend is the only consumer of this endpoint, so this map mirrors
+# exactly what the JS reads (see the loadConfig()/loadConfiguration() helpers in
+# static/js/app.js, components/calendar.js, components/dailyView.js,
+# components/loadingIndicator.js, components/pirSensor.js and
+# components/virtualKeyboard.js).
+#
+# Nothing else may be added here without checking it is not sensitive: the
+# "app" section holds secret_key (session cookie + photo-upload token signing
+# key), and "paths"/"logging" leak filesystem layout. The nested section shape
+# is load-bearing — the frontend indexes config.<section>.<key>, so flattening
+# this would silently break every read.
+PUBLIC_CONFIG_KEYS: dict[str, tuple[str, ...]] = {
+    "inactivity": (
+        "day_timeout_minutes",
+        "night_timeout_seconds",
+        "day_brightness_reduction",
+        "night_brightness_reduction",
+        "night_start_hour",
+        "night_end_hour",
+        "slideshow_delay_seconds",
+    ),
+    "google": ("sync_interval_minutes",),
+    "ui": (
+        "show_loading_indicators",
+        "show_pir_feedback",
+        "enhanced_virtual_keyboard",
+        "touch_optimized",
+        "animation_duration_ms",
+    ),
+}
+
+
+def _build_public_config(config) -> dict[str, dict]:
+    """Build the browser-safe view of the configuration.
+
+    Args:
+        config: The application Config instance.
+
+    Returns:
+        dict: Nested config sections containing only allowlisted keys.
+    """
+    public: dict[str, dict] = {}
+    for section, keys in PUBLIC_CONFIG_KEYS.items():
+        section_values = config.get(section) or {}
+        public[section] = {
+            key: section_values[key] for key in keys if key in section_values
+        }
+    return public
 
 
 def clear_stale_background_tasks():
     """Clear any stale background tasks from previous runs."""
-    global background_tasks
-    with google_fetch_lock:
-        # Clear all background tasks on startup to prevent stuck states
-        background_tasks.clear()
-        logger.info("Cleared stale background tasks")
+    registry.clear()
+
+
+def _sync_interval_seconds() -> float:
+    return get_config().get("google.sync_interval_minutes", 5) * 60
+
+
+def _weather_interval_seconds() -> float:
+    return get_config().get("weather.cache_duration", 600)
+
+
+def _sync_current_month_calendar() -> None:
+    """Keep the month the display is showing today up to date.
+
+    The scheduler has no idea which month a browser is looking at, so it
+    covers the common case -- today's month -- and the render path still
+    queues an on-demand sync when someone navigates elsewhere. Both go
+    through the registry, so whichever gets there first wins and the other
+    is deduplicated rather than doing the work twice.
+    """
+    from src.config import get_local_timezone
+    from src.google_integration.routes import calendar_task_id, start_calendar_sync
+
+    now = datetime.datetime.now(tz=get_local_timezone())
+    if registry.is_stale(
+        calendar_task_id(now.month, now.year), _sync_interval_seconds()
+    ):
+        start_calendar_sync(now.month, now.year)
+
+
+def _sync_chores() -> None:
+    from src.google_integration.routes import TASKS_TASK_ID, start_tasks_sync
+
+    if registry.is_stale(TASKS_TASK_ID, _sync_interval_seconds()):
+        start_tasks_sync()
+
+
+def _sync_weather() -> None:
+    from src.calendar_app.routes import _start_weather_background_refresh
+
+    _start_weather_background_refresh()
+
+
+def register_sync_jobs(sched) -> None:
+    """Register the recurring sync jobs on a scheduler.
+
+    Kept here rather than in src/scheduler.py so the scheduler stays free of
+    application imports. Each job only *queues* work on the registry's pool;
+    none of them block the scheduler thread on a network call.
+    """
+    sched.add_job("calendar", _sync_current_month_calendar, _sync_interval_seconds)
+    sched.add_job("chores", _sync_chores, _sync_interval_seconds)
+    sched.add_job("weather", _sync_weather, _weather_interval_seconds)
+
+
+def start_background_sync():
+    """Start the periodic sync scheduler. Returns the scheduler.
+
+    Called by the __main__ entrypoint rather than by create_app(), because a
+    scheduler is a process-level concern: create_app() is invoked many times
+    across the test suite and by tooling, and none of those should spawn a
+    thread that reaches out to the Google APIs. Any other entrypoint (a WSGI
+    server, say) must call this itself.
+    """
+    if not get_config().get("scheduler.enabled", True):
+        logger.info("Sync scheduler disabled by configuration")
+        return scheduler
+
+    register_sync_jobs(scheduler)
+    scheduler.start()
+    return scheduler
 
 
 def create_app():
@@ -41,6 +168,17 @@ def create_app():
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.get("app.secret_key")
+
+    # Reject oversized request bodies at the WSGI boundary instead of letting
+    # Werkzeug buffer an unbounded upload onto the Pi's SD card first. The cap
+    # is derived from the photo-upload contract (16MB per photo x 10 photos per
+    # request, plus 1MB of multipart framing) because uploads are by far the
+    # largest legitimate bodies this app accepts; see
+    # src/photo_upload/routes.py for the constituent constants.
+    from src.photo_upload.routes import MAX_UPLOAD_CONTENT_LENGTH
+
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_CONTENT_LENGTH
+
     app.jinja_env.globals.update(get_weather_icon=get_weather_icon)
 
     # Initialize health monitoring
@@ -53,6 +191,28 @@ def create_app():
             "Internal Server Error", str(error), is_critical=True
         )
         return "Internal Server Error", 500
+
+    @app.errorhandler(413)
+    def handle_request_too_large(error):
+        """Answer oversized request bodies with JSON rather than an HTML page.
+
+        Werkzeug raises RequestEntityTooLarge once MAX_CONTENT_LENGTH is
+        exceeded. Without this handler the request falls through to the
+        catch-all Exception handler below, which returns the exception object
+        unchanged; Flask then treats that HTTPException as a WSGI callable and
+        renders its default HTML page. The photo upload UI parses every
+        response as JSON, so it would surface a parse error instead of the
+        real reason. A code-specific handler takes precedence over the
+        class-based one, so this runs first.
+        """
+        from flask import jsonify
+
+        limit = app.config.get("MAX_CONTENT_LENGTH")
+        limit_mb = round(limit / (1024 * 1024)) if limit else None
+        message = "Upload too large"
+        if limit_mb:
+            message = f"{message}. Maximum request size is {limit_mb}MB"
+        return jsonify({"error": message}), 413
 
     @app.errorhandler(Exception)
     def handle_exception(error):
@@ -115,16 +275,45 @@ def create_app():
     @app.route("/")
     def index_redirect():
         """Redirects the base URL to the current month's calendar view."""
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        # Local time, not UTC — otherwise late on the last evening of a month
+        # the landing page redirects to the *next* month.
+        from src.config import get_local_timezone
+
+        now = datetime.datetime.now(tz=get_local_timezone())
         return redirect(url_for("calendar.view", year=now.year, month=now.month))
+
+    @app.route("/events")
+    def events_stream():
+        """Single SSE stream carrying motion and data-change notifications.
+
+        Replaces the browser's polling loop. The client re-fetches the
+        affected fragment when it sees an event, rather than reloading the
+        whole page and resetting the slideshow.
+        """
+        from flask import Response
+
+        from src import events as events_mod
+        from src.events import broker
+
+        return Response(
+            broker.stream(),
+            mimetype="text/event-stream",
+            headers=events_mod.sse_headers(),
+        )
 
     @app.route("/api/config")
     def get_config_api():
-        """API endpoint to get configuration data."""
+        """API endpoint exposing the browser-safe subset of configuration.
+
+        Only the keys the frontend actually reads are returned. The full config
+        object must never be serialized here: it contains ``app.secret_key``
+        (used to sign session cookies and HMAC photo-upload tokens) as well as
+        filesystem paths and logging settings.
+        """
         from flask import jsonify
 
         config = get_config()
-        return jsonify(config.config)
+        return jsonify(_build_public_config(config))
 
     @app.route("/api/version")
     def version_api():
@@ -216,6 +405,10 @@ if __name__ == "__main__":
                 logging.info("PIR sensor monitoring started")
             else:
                 logging.warning("Failed to start PIR sensor monitoring")
+
+        # Keep the local database current regardless of whether a browser is
+        # connected. Without this, nothing syncs until something loads a page.
+        start_background_sync()
 
         # Get app configuration
         debug_mode = config.get("app.debug", False)

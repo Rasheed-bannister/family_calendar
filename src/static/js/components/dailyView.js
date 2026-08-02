@@ -2,6 +2,7 @@
  * DailyView Component
  * Handles the display and interactions with the daily event view
  */
+import { loadAppConfig } from "./appConfig.js";
 import Modal from "./modal.js";
 
 const DailyView = (function () {
@@ -78,8 +79,7 @@ const DailyView = (function () {
   // Load configuration from server
   async function loadConfig() {
     try {
-      const response = await fetch("/api/config");
-      const config = await response.json();
+      const config = await loadAppConfig();
 
       // Update sync interval from config
       const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;

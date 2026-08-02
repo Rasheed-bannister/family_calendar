@@ -112,9 +112,12 @@ jobs:
     # Fails on any secret not already recorded in .secrets.baseline. To accept a new
     # false positive, re-run `detect-secrets scan --baseline .secrets.baseline` and
     # commit the updated baseline.
+    # Pinned to match the rev in .pre-commit-config.yaml. An unpinned install
+    # drifts from the pinned hook, and the two versions rewrite each other's
+    # baseline format — so one of them always fails while the other passes.
     - name: Detect secrets with detect-secrets
-      run: |
-        pip install detect-secrets
+      run: | # pragma: allowlist secret
+        pip install detect-secrets==1.5.0
         detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
 
   codeql-analysis:

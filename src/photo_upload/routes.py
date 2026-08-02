@@ -16,6 +16,9 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
+from src import events
+from src.events import broker
+
 from ..slideshow import database as slideshow_db
 from .auth import generate_upload_url, rate_limit_upload, require_upload_token
 
@@ -61,10 +64,21 @@ def after_request(response):
 
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif"}
-MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
+MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB, per individual photo
 THUMBNAIL_SIZE = (300, 300)
 
-logger = logging.getLogger(__name__)
+# A single upload request may carry several photos (the form posts every
+# selected file at once), so the app-wide body limit has to cover a whole
+# batch rather than a single file. These constants are the source of truth for
+# MAX_CONTENT_LENGTH, which src.main.create_app installs on the Flask app so
+# that oversized bodies are rejected by Werkzeug before anything is buffered.
+MAX_FILES_PER_REQUEST = 10  # mirrors RateLimiter.upload_limits
+MULTIPART_OVERHEAD = 1024 * 1024  # 1MB for part boundaries/headers/token field
+MAX_UPLOAD_CONTENT_LENGTH = MAX_FILE_SIZE * MAX_FILES_PER_REQUEST + MULTIPART_OVERHEAD
+
+# Pagination bounds for the photo listing endpoint.
+DEFAULT_PER_PAGE = 20
+MAX_PER_PAGE = 100
 
 
 def allowed_file(filename):
@@ -167,8 +181,8 @@ def optimize_image(image_path):
 @upload_bp.route("/")
 def upload_page():
     """Render the photo upload page."""
-    logger.info(f"Photo upload page accessed from {request.remote_addr}")
-    logger.info(f"Query parameters: {dict(request.args)}")
+    # Never log request.args here: the upload token is passed as ?token=...
+    logger.debug("Photo upload page accessed from %s", request.remote_addr)
 
     now = datetime.datetime.now()
     from src.config import get_config
@@ -201,10 +215,8 @@ def upload_photos_preflight():
 @rate_limit_upload
 def upload_photos():
     """Handle photo upload from mobile devices."""
-    logger.info(f"Upload request received from {request.remote_addr}")
-    logger.info(f"Request files: {list(request.files.keys())}")
-    logger.info(f"Request form: {dict(request.form)}")
-
+    # SECURITY: never dump request.form here -- the upload token is submitted
+    # as a form field, so a full form dump writes the credential to the log.
     if "photos" not in request.files:
         logger.warning("No 'photos' field in request files")
         return jsonify({"error": "No photos provided"}), 400
@@ -212,6 +224,10 @@ def upload_photos():
     files = request.files.getlist("photos")
     if not files or all(f.filename == "" for f in files):
         return jsonify({"error": "No photos selected"}), 400
+
+    logger.debug(
+        "Upload request from %s with %d file(s)", request.remote_addr, len(files)
+    )
 
     uploaded_files = []
     errors = []
@@ -250,7 +266,7 @@ def upload_photos():
         try:
             # Save the uploaded file
             file.save(filepath)
-            logger.info(f"Saved uploaded file: {unique_filename}")
+            logger.debug("Saved uploaded file: %s", unique_filename)
 
             # Optimize the image
             optimized_path = optimize_image(filepath)
@@ -289,10 +305,21 @@ def upload_photos():
     # Sync database with new photos
     try:
         slideshow_db.sync_photos(current_app.static_folder)
-        logger.info("Photo database synced successfully")
+        # Tell connected displays so a photo sent from a phone appears in the
+        # slideshow rotation without waiting for the next 10-minute rescan.
+        if uploaded_files:
+            broker.publish(events.PHOTOS_CHANGED, count=len(uploaded_files))
     except Exception as e:
         logger.error(f"Failed to sync photo database: {e}")
         errors.append("Failed to update photo database")
+
+    # One summary line per request rather than five-plus: this app runs on a
+    # Raspberry Pi logging to an SD card.
+    logger.info(
+        "Upload complete: %d photo(s) stored, %d error(s)",
+        len(uploaded_files),
+        len(errors),
+    )
 
     return jsonify(
         {
@@ -304,16 +331,62 @@ def upload_photos():
     )
 
 
-@upload_bp.route("/api/photos", methods=["GET"])
-def list_photos():
-    """List all photos with pagination support."""
-    try:
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 20))
+def _parse_pagination_args(args):
+    """Parse and clamp the pagination query parameters.
 
+    Values that are numeric but out of range are clamped to sane bounds so a
+    stray ``per_page=0`` cannot cause a ZeroDivisionError and a negative page
+    cannot produce a nonsense slice. Values that are not integers at all are
+    genuinely malformed input and raise, so the caller can answer 400.
+
+    Args:
+        args: The request's query-string mapping.
+
+    Returns:
+        tuple: (page, per_page), both clamped to valid ranges.
+
+    Raises:
+        ValueError: If either parameter is not an integer.
+    """
+    page = int(args.get("page", 1))
+    per_page = int(args.get("per_page", DEFAULT_PER_PAGE))
+
+    page = max(1, page)
+    per_page = min(max(1, per_page), MAX_PER_PAGE)
+
+    return page, per_page
+
+
+@upload_bp.route("/api/photos", methods=["GET"])
+@require_upload_token
+def list_photos():
+    """List all photos with pagination support.
+
+    Requires an upload token, matching the POST and DELETE handlers on the
+    same resource: the filenames, sizes and timestamps returned here are the
+    exact inputs the token-protected DELETE endpoint takes, so leaving the
+    read side open hands an unauthenticated LAN client the whole target list.
+    The /upload/manage page is reached from a QR code whose URL carries
+    ?token=..., and its loadPhotos() already forwards that token on this
+    request, so the real flow is unaffected.
+    """
+    try:
+        page, per_page = _parse_pagination_args(request.args)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid pagination parameters"}), 400
+
+    try:
         photos_dir = os.path.join(current_app.static_folder, "photos")
         if not os.path.exists(photos_dir):
-            return jsonify({"photos": [], "total": 0, "page": 1, "pages": 1})
+            return jsonify(
+                {
+                    "photos": [],
+                    "total": 0,
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": 1,
+                }
+            )
 
         # Get all photo files
         photo_files = []
@@ -343,7 +416,9 @@ def list_photos():
                 "photos": photos_page,
                 "total": total,
                 "page": page,
-                "pages": (total + per_page - 1) // per_page,
+                "per_page": per_page,
+                # per_page is clamped to >= 1, so this cannot divide by zero.
+                "pages": max(1, (total + per_page - 1) // per_page),
             }
         )
 
@@ -376,6 +451,9 @@ def delete_photo(filename):
 
         # Sync database
         slideshow_db.sync_photos(current_app.static_folder)
+        # A deleted photo must leave the rotation promptly, or the display
+        # keeps serving a file that no longer exists.
+        broker.publish(events.PHOTOS_CHANGED, deleted=filename)
 
         logger.info(f"Deleted photo: {filename}")
         return jsonify({"success": True, "message": f"Photo {filename} deleted"})
@@ -388,8 +466,8 @@ def delete_photo(filename):
 @upload_bp.route("/manage")
 def manage_photos():
     """Render the photo management page."""
-    logger.info(f"Photo management page accessed from {request.remote_addr}")
-    logger.info(f"Query parameters: {dict(request.args)}")
+    # Never log request.args here: the upload token is passed as ?token=...
+    logger.debug("Photo management page accessed from %s", request.remote_addr)
 
     now = datetime.datetime.now()
     from src.config import get_config
@@ -428,8 +506,19 @@ def test_token():
 
 
 @upload_bp.route("/qrcode")
+@rate_limit_upload
 def generate_qrcode():
-    """Generate a QR code with secure token for the photo upload page."""
+    """Generate a QR code with secure token for the photo upload page.
+
+    Rate limited because every call mints a live upload token. The endpoint is
+    unauthenticated by necessity -- it is how a phone gets its first credential
+    -- so without a limit any LAN client could grow the token table without
+    bound: 200 plain GETs produced 200 live tokens. The token manager reclaims
+    expired entries, but only as fast as they expire.
+
+    The UI fetches this only when someone presses the QR button, so the
+    existing per-client allowance is far above any legitimate use.
+    """
     if not QRCODE_AVAILABLE:
         return jsonify({"error": "QR code generation not available"}), 500
 

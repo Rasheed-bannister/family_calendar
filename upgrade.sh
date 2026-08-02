@@ -91,11 +91,17 @@ backup_user_data() {
         [ -f "$APP_DIR/src/google_integration/$f" ] && cp "$APP_DIR/src/google_integration/$f" "$BACKUP_DIR/$TIMESTAMP/"
     done
 
-    # Databases
+    # Databases. These run in WAL mode, so a committed transaction can still
+    # live in the -wal sidecar rather than the main file. Copy the sidecars
+    # too: backing up the .db alone would silently lose recent writes if the
+    # service did not shut down cleanly. main() stops the service first, which
+    # checkpoints on the last connection close, so this is belt-and-braces.
     for db in src/calendar_app/calendar.db src/chores_app/chores.db src/slideshow/slideshow.db; do
         if [ -f "$APP_DIR/$db" ]; then
             mkdir -p "$BACKUP_DIR/$TIMESTAMP/$(dirname "$db")"
-            cp "$APP_DIR/$db" "$BACKUP_DIR/$TIMESTAMP/$db"
+            for part in "" "-wal" "-shm"; do
+                [ -f "$APP_DIR/$db$part" ] && cp "$APP_DIR/$db$part" "$BACKUP_DIR/$TIMESTAMP/$db$part"
+            done
         fi
     done
 
@@ -179,8 +185,11 @@ main() {
 
     check_prerequisites
     show_versions
-    backup_user_data
+    # Stop before backing up: the databases run in WAL mode, and stopping the
+    # service closes the last connection, which checkpoints the -wal file into
+    # the main database. Backing up a live WAL database can miss recent commits.
     stop_service
+    backup_user_data
     apply_update
     install_dependencies
     restart_service

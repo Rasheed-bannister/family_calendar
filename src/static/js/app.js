@@ -12,10 +12,10 @@ import VirtualKeyboard from "./components/virtualKeyboard.js";
 import PIRSensor from "./components/pirSensor.js";
 import LoadingIndicator from "./components/loadingIndicator.js";
 import UpdateNotifier from "./components/updateNotifier.js";
+import LiveUpdates, { swapFragment } from "./components/liveUpdates.js";
+import { loadAppConfig } from "./components/appConfig.js";
 
 // Global variables for cleanup tracking
-let chorePollingTimeout = null;
-let choreCheckTimeout = null;
 let pirDebugInterval = null;
 let cleanupHandlers = [];
 
@@ -44,8 +44,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Load configuration from server
   async function loadInactivityConfig() {
     try {
-      const response = await fetch("/api/config");
-      const config = await response.json();
+      const config = await loadAppConfig();
 
       // Update inactivity settings from config
       DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;
@@ -54,7 +53,8 @@ document.addEventListener("DOMContentLoaded", async function () {
       NIGHT_BRIGHTNESS_REDUCTION = config.inactivity?.night_brightness_reduction || 0.2;
       NIGHT_START_HOUR = config.inactivity?.night_start_hour || 21;
       NIGHT_END_HOUR = config.inactivity?.night_end_hour || 6;
-      SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_start_delay_seconds || 5) * 1000;
+      // Key name must match the backend: config.inactivity.slideshow_delay_seconds
+      SLIDESHOW_START_DELAY = (config.inactivity?.slideshow_delay_seconds || 5) * 1000;
 
       if (DEBUG_MODE) {
         console.log("Loaded inactivity config:", {
@@ -104,7 +104,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     loadingIndicator: await safeInit("loadingIndicator", () => LoadingIndicator.init()),
     modal: await safeInit("modal", () => Modal.init()),
     addChoreModal: await safeInit("addChoreModal", () =>
-      Modal.initAddChoreModal ? Modal.initAddChoreModal() : true,
+      Modal.initAddChoreModal ? Modal.initAddChoreModal() : true
     ),
     calendar: await safeInit("calendar", () => Calendar.init()),
     dailyView: await safeInit("dailyView", () => DailyView.init()),
@@ -122,7 +122,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   safeInit("pirSensor", () =>
     PIRSensor.init((activityType) => {
       registerActivity(`pir-${activityType}`);
-    }),
+    })
   ).then((result) => {
     componentsStatus.pirSensor = result;
   });
@@ -551,16 +551,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       motionFeedbackTimeout = null;
     }
 
-    if (chorePollingTimeout) {
-      clearTimeout(chorePollingTimeout);
-      chorePollingTimeout = null;
-    }
-
-    if (choreCheckTimeout) {
-      clearTimeout(choreCheckTimeout);
-      choreCheckTimeout = null;
-    }
-
     if (pirDebugInterval) {
       clearInterval(pirDebugInterval);
       pirDebugInterval = null;
@@ -610,112 +600,84 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 });
 
-// Chore polling mechanism
-const CHORE_POLLING_INTERVAL = 300000; // 5 minutes: How often to trigger a full refresh cycle
-const CHORE_CHECK_UPDATE_INTERVAL = 10000; // 10 seconds: How often to check status after triggering
-let isCheckingChoreUpdates = false; // Flag to prevent overlapping check loops
+// Live updates
+//
+// The server pushes what changed over a single SSE stream and we re-fetch just
+// that fragment. This replaces a 10-second poll of /calendar/check-updates
+// whose "yes" branch called window.location.reload() — on a wall display that
+// reload restarted the background slideshow and dropped scroll position every
+// time a chore was ticked off.
 
-async function triggerChoresRefresh() {
-  if (isCheckingChoreUpdates) {
-    return;
+/** The month currently on screen, which is not necessarily today's month. */
+function displayedMonth() {
+  const match = window.location.pathname.match(/\/calendar\/(\d{4})\/(\d{1,2})/);
+  if (match) {
+    return { year: Number(match[1]), month: Number(match[2]) };
   }
-  isCheckingChoreUpdates = true;
-
-  try {
-    const response = await fetch("/chores/refresh", { method: "POST" }); // Corrected endpoint and added POST method
-    if (response.ok) {
-      // Clear any existing timeout before setting new one
-      if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
-        clearTimeout(choreCheckTimeout);
-      }
-      choreCheckTimeout = setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL); // Start checking status
-    } else {
-      console.error("Chores: Failed to trigger refresh. Status:", response.status);
-      isCheckingChoreUpdates = false;
-      // Clear any existing timeout before setting new one
-      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-        clearTimeout(chorePollingTimeout);
-      }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
-    }
-  } catch (error) {
-    console.error("Chores: Error during triggerChoresRefresh:", error);
-    isCheckingChoreUpdates = false;
-    // Clear any existing timeout before setting new one
-    if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-      clearTimeout(chorePollingTimeout);
-    }
-    chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Retry full cycle later
-  }
-}
-
-async function checkChoresUpdatesLoop() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1; // JavaScript months are 0-indexed
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
 
-  try {
-    const response = await fetch(`/calendar/check-updates/${year}/${month}`); // Ensure this path is correct
-    if (!response.ok) {
-      console.error("Chores: Failed to check for updates. Status:", response.status);
-      isCheckingChoreUpdates = false;
-      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-        clearTimeout(chorePollingTimeout);
-      }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL);
-      return;
+async function refreshCalendarRegion() {
+  const { year, month } = displayedMonth();
+  const swapped = await swapFragment(`/calendar/fragment/${year}/${month}`, "#main-calendar-area");
+  if (swapped) {
+    // The swapped markup is new DOM, so anything the calendar component bound
+    // to the old nodes is gone and has to be re-bound.
+    try {
+      Calendar.init();
+      DailyView.init();
+    } catch (err) {
+      console.error("Live update: re-init after calendar swap failed:", err);
     }
-
-    const data = await response.json();
-
-    if (data.chores_status === "running") {
-      if (typeof choreCheckTimeout !== "undefined" && choreCheckTimeout) {
-        clearTimeout(choreCheckTimeout);
-      }
-      choreCheckTimeout = setTimeout(checkChoresUpdatesLoop, CHORE_CHECK_UPDATE_INTERVAL);
-    } else if (data.chores_status === "complete") {
-      isCheckingChoreUpdates = false;
-      if (data.chores_changed) {
-        // Chores changed, reloading page
-        window.location.reload();
-      } else {
-        if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-          clearTimeout(chorePollingTimeout);
-        }
-        chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-      }
-    } else if (data.chores_status === "error") {
-      console.error("Chores: Refresh completed with an error.");
-      isCheckingChoreUpdates = false;
-      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-        clearTimeout(chorePollingTimeout);
-      }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-    } else {
-      isCheckingChoreUpdates = false;
-      if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-        clearTimeout(chorePollingTimeout);
-      }
-      chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
-    }
-  } catch (error) {
-    console.error("Chores: Error during checkChoresUpdatesLoop:", error);
-    isCheckingChoreUpdates = false;
-    if (typeof chorePollingTimeout !== "undefined" && chorePollingTimeout) {
-      clearTimeout(chorePollingTimeout);
-    }
-    chorePollingTimeout = setTimeout(triggerChoresRefresh, CHORE_POLLING_INTERVAL); // Schedule next full cycle
   }
 }
 
-function initChoresPolling() {
-  triggerChoresRefresh(); // Start the first refresh cycle
+async function refreshChoresRegion() {
+  const swapped = await swapFragment("/chores/fragment", ".chores-list");
+  if (swapped) {
+    try {
+      Chores.init();
+    } catch (err) {
+      console.error("Live update: re-init after chores swap failed:", err);
+    }
+  }
+}
+
+function initLiveUpdates() {
+  LiveUpdates.on("calendar_changed", (event) => {
+    const shown = displayedMonth();
+    // Ignore a sync for a month we are not showing; otherwise a background
+    // refresh of another month would replace what the user is looking at.
+    if (event.month && event.year) {
+      if (event.month !== shown.month || event.year !== shown.year) return;
+    }
+    refreshCalendarRegion();
+  });
+
+  LiveUpdates.on("chores_changed", () => refreshChoresRegion());
+
+  LiveUpdates.on("photos_changed", () => {
+    // New or deleted photos change the slideshow pool. Ask the slideshow to
+    // pick up the change rather than reloading the page.
+    try {
+      if (typeof Slideshow.refreshPool === "function") {
+        Slideshow.refreshPool();
+      }
+    } catch (err) {
+      console.error("Live update: slideshow refresh failed:", err);
+    }
+  });
+
+  LiveUpdates.init();
+
+  cleanupHandlers.push(() => LiveUpdates.destroy());
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initChoresPolling);
+  document.addEventListener("DOMContentLoaded", initLiveUpdates);
 } else {
-  initChoresPolling(); // DOMContentLoaded has already fired
+  initLiveUpdates(); // DOMContentLoaded has already fired
 }
 
 // PIR Sensor Debug Panel Setup

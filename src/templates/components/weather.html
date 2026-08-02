@@ -3,7 +3,18 @@
     {% if weather and weather.current and weather.daily %}
         {# Current Weather (Left - flex: 1) #}
         <div class="current-weather" data-is-day="{{ weather.current.is_day }}">
-            <div class="weather-day-title">Today  <span id="current-time"></span></div>
+            <div class="weather-day-title">
+                Today  <span id="current-time"></span>
+                {# A stale reading is real data, just old - label it rather than
+                   passing it off as current. Freshly fetched data has no
+                   `stale` key, so this stays hidden on the happy path. #}
+                {% if weather.stale and weather.cached_at %}
+                <span class="weather-stale-badge"
+                      title="Weather could not be refreshed; showing the last successful reading.">
+                    ⚠️ {{ weather.cached_at.strftime('%-I:%M %p') }}
+                </span>
+                {% endif %}
+            </div>
             <div class="weather-day-contents">
                 <div class="weather-icon-container">
                     <div class="sunrise-time">☀️ {{ weather.daily[0].sunrise.strftime('%-I:%M %p') }}</div>

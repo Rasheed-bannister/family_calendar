@@ -5,6 +5,8 @@
 import Modal from "./modal.js";
 import DailyView from "./dailyView.js";
 import LoadingIndicator from "./loadingIndicator.js";
+import { swapFragment } from "./liveUpdates.js";
+import { loadAppConfig } from "./appConfig.js";
 
 const Calendar = (function () {
   // Private variables
@@ -206,17 +208,36 @@ const Calendar = (function () {
       });
   }
 
+  /**
+   * Bring the calendar up to date with the server.
+   *
+   * This used to navigate to the current URL with a cache-busting query
+   * parameter — a full page reload, which on a wall display restarts the
+   * background slideshow and drops scroll position. It now swaps in the
+   * freshly rendered fragment instead, so only the calendar region changes.
+   *
+   * The polling that calls this is retained as a fallback for when the SSE
+   * stream is unavailable; the push path in app.js normally gets here first.
+   */
   function refreshPage() {
     showUpdateNotification();
     updateCheckEnabled = false;
 
-    // Use a more reliable reload method
-    setTimeout(() => {
-      // Add cache busting parameter to prevent browser caching
-      const cacheBuster = new Date().getTime();
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set("_", cacheBuster);
-      window.location.href = currentUrl.toString();
+    setTimeout(async () => {
+      const swapped = await swapFragment(
+        `/calendar/fragment/${currentDisplayedYear}/${currentDisplayedMonth}`,
+        "#main-calendar-area"
+      );
+      if (swapped) {
+        // Fresh DOM: anything bound to the replaced nodes is gone.
+        try {
+          Calendar.init();
+          DailyView.init();
+        } catch (err) {
+          console.error("Calendar: re-init after refresh failed:", err);
+        }
+      }
+      updateCheckEnabled = true;
     }, 1500);
   }
 
@@ -403,8 +424,7 @@ const Calendar = (function () {
   // Load configuration from server
   async function loadConfig() {
     try {
-      const response = await fetch("/api/config");
-      const config = await response.json();
+      const config = await loadAppConfig();
 
       // Update sync intervals from config
       const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;

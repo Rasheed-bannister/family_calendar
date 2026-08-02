@@ -3,13 +3,14 @@ PIR Sensor Routes for Calendar Application
 Provides endpoints for PIR sensor status and activity reporting
 """
 
-import json
+import functools
 import logging
-import threading
-import time
-from queue import Empty, Full, Queue
+from urllib.parse import urlsplit
 
-from flask import Blueprint, Response, jsonify
+from flask import Blueprint, Response, jsonify, request
+
+from src import events
+from src.events import broker
 
 from .sensor import (
     add_motion_callback,
@@ -20,51 +21,83 @@ from .sensor import (
 
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 
-# Per-client SSE queues with bounded size
-_sse_clients: list[Queue] = []
-_sse_clients_lock = threading.Lock()
-_MAX_QUEUE_SIZE = 50
-
-
-def _add_sse_client() -> Queue:
-    """Register a new SSE client and return its event queue."""
-    q: Queue = Queue(maxsize=_MAX_QUEUE_SIZE)
-    with _sse_clients_lock:
-        _sse_clients.append(q)
-    return q
-
-
-def _remove_sse_client(q: Queue) -> None:
-    """Unregister an SSE client."""
-    with _sse_clients_lock:
-        try:
-            _sse_clients.remove(q)
-        except ValueError:
-            pass
-
 
 def motion_detected_sse():
-    """Callback function: broadcast motion event to all connected SSE clients."""
-    event_data = {
-        "type": "motion_detected",
-        "timestamp": time.time(),
-        "data": "Motion detected by PIR sensor",
-    }
-    with _sse_clients_lock:
-        for q in _sse_clients:
-            try:
-                q.put_nowait(event_data)
-            except Full:
-                # Client is too slow — drop oldest event and enqueue new one
-                try:
-                    q.get_nowait()
-                    q.put_nowait(event_data)
-                except (Empty, Full):
-                    pass
+    """Callback function: broadcast motion to every connected client."""
+    broker.publish(events.MOTION_DETECTED, data="Motion detected by PIR sensor")
 
 
 # Register the SSE callback
 add_motion_callback(motion_detected_sse)
+
+
+# --- Access control for the state-changing endpoints -----------------------
+#
+# /start, /stop and /trigger_test change what the whole household sees: they
+# can switch motion wake-up off, or fan fake motion out to every connected
+# display through the shared broker. The app has no login and the frontend
+# calls /start and /stop unauthenticated on every page load, so a token scheme
+# would mean changing the frontend and storing a secret on a wall display for
+# little gain against someone who is already on the LAN.
+#
+# What is worth blocking is the reachable attack: a page in a browser on the
+# LAN quietly POSTing to the calendar. A cross-site POST with no preflight
+# (form encoding or text/plain) would otherwise be executed. Browsers attach
+# Origin to those requests, so comparing it against the host the request
+# arrived on rejects them while leaving the display's own same-origin calls
+# untouched. Requests with no Origin and no Referer (curl, scripts, the
+# deployment's own health checks) are allowed through: this is a CSRF guard,
+# not authentication, and it does not pretend otherwise.
+
+
+def _origin_allowed() -> bool:
+    """True unless the request demonstrably came from another site's page."""
+    source = request.headers.get("Origin") or request.headers.get("Referer")
+    if not source:
+        # No browser context claimed. Nothing to check against.
+        return True
+    # "null" (sandboxed iframe, file://) parses to an empty netloc and is
+    # treated as foreign rather than as "no origin".
+    return urlsplit(source).netloc == request.host
+
+
+def same_origin_required(view):
+    """Reject a state-changing PIR call made from another site's page."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not _origin_allowed():
+            logging.warning(
+                "Rejected cross-origin PIR control request (Origin=%r, Referer=%r)",
+                request.headers.get("Origin"),
+                request.headers.get("Referer"),
+            )
+            return (
+                jsonify({"success": False, "message": "Cross-origin request rejected"}),
+                403,
+            )
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def _test_motion_enabled() -> bool:
+    """True when the fake-motion endpoint may be used.
+
+    /trigger_test exists for the hidden debug panel in index.html. On a
+    deployed display it is purely an amplifier -- anything that reaches it can
+    spam every connected browser -- so it is off unless the install is
+    explicitly in debug or non-production mode. Failing to read the config
+    fails closed.
+    """
+    try:
+        from src.config import get_config
+
+        config = get_config()
+        return bool(config.get("app.debug", False)) or not config.is_production()
+    except Exception as e:  # pragma: no cover - config is loaded at startup
+        logging.error(f"Could not determine PIR test endpoint availability: {e}")
+        return False
 
 
 @pir_bp.route("/status", methods=["GET"])
@@ -87,6 +120,7 @@ def get_pir_status():
 
 
 @pir_bp.route("/start", methods=["POST"])
+@same_origin_required
 def start_monitoring():
     """Start PIR sensor monitoring"""
     try:
@@ -109,6 +143,7 @@ def start_monitoring():
 
 
 @pir_bp.route("/stop", methods=["POST"])
+@same_origin_required
 def stop_monitoring():
     """Stop PIR sensor monitoring"""
     try:
@@ -124,35 +159,35 @@ def stop_monitoring():
 
 @pir_bp.route("/events")
 def pir_events():
-    """Server-Sent Events endpoint for real-time PIR sensor events"""
-    client_queue = _add_sse_client()
+    """Legacy motion-only SSE stream.
 
-    def event_stream():
-        try:
-            while True:
-                try:
-                    event = client_queue.get(timeout=30)
-                    yield f"data: {json.dumps(event)}\n\n"
-                except Empty:
-                    # Send heartbeat to keep connection alive
-                    heartbeat = {"type": "heartbeat", "timestamp": time.time()}
-                    yield f"data: {json.dumps(heartbeat)}\n\n"
-                except Exception as e:
-                    logging.error(f"Error in PIR SSE stream: {e}")
-                    break
-        finally:
-            _remove_sse_client(client_queue)
-
+    Superseded by ``GET /events``, which carries motion plus data-change
+    notifications on a single connection. Kept because Flask's threaded
+    server holds a thread per open stream, so any client still on this
+    endpoint should be moved rather than left to open a second one.
+    """
     return Response(
-        event_stream(),
+        broker.stream(only=(events.MOTION_DETECTED,)),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        headers=events.sse_headers(),
     )
 
 
 @pir_bp.route("/trigger_test", methods=["POST"])
+@same_origin_required
 def trigger_test_motion():
-    """Test endpoint to simulate motion detection"""
+    """Test endpoint to simulate motion detection (debug installs only)."""
+    if not _test_motion_enabled():
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Test motion is disabled outside debug mode",
+                }
+            ),
+            403,
+        )
+
     try:
         motion_detected_sse()
         return jsonify({"success": True, "message": "Test motion triggered"})
