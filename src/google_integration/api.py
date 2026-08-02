@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import time
+from typing import NamedTuple
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -59,6 +60,81 @@ def _retry_on_error(func, *args, retries=MAX_RETRIES, **kwargs):
                 )
                 time.sleep(sleep_time)
     raise last_error
+
+
+class SourcedEvent(NamedTuple):
+    """A raw Google event paired with the calendar it was actually fetched from.
+
+    The source calendar used to be thrown away by the fetch loop, leaving
+    ``fetch_and_process_google_events`` to guess it from ``organizer.email``.
+    That guess names whoever *organised* the event, which is a stranger's
+    address for anything you were merely invited to - so the event landed in
+    its own pseudo-calendar with its own palette colour, and any
+    ``calendar_aliases.conf`` entry for the real calendar silently missed it.
+    """
+
+    calendar_id: str
+    calendar_name: str
+    event: dict
+
+
+def _calendar_identity(calendar: dict) -> tuple[str, str]:
+    """Return the (id, display name) to attribute a calendar's events to.
+
+    ``summaryOverride`` wins over ``summary`` because it is the name *this*
+    user gave the calendar in their own Google Calendar UI, and it is what
+    Google itself shows them. A shared calendar published as
+    "Bannister Family Shared Calendar" but renamed to "Family" locally should
+    read "Family" on the wall display too. ``summary`` is the owner's name for
+    it, and only a sensible fallback when the user has not renamed it.
+    """
+    calendar_id = calendar.get("id") or "primary"
+    calendar_name = (
+        calendar.get("summaryOverride") or calendar.get("summary") or calendar_id
+    )
+    return calendar_id, calendar_name
+
+
+def _calendar_precedence(calendar: dict) -> tuple[int, str]:
+    """Rank a calendar for resolving an event visible on more than one of them.
+
+    The user's primary calendar wins; otherwise calendars are ranked by id.
+    Both keys are properties of the calendar itself, never of the order Google
+    happened to return things in, so the winner is the same on every sync.
+    """
+    calendar_id, _ = _calendar_identity(calendar)
+    return (0 if calendar.get("primary") else 1, calendar_id)
+
+
+def _deduplicate_by_event_id(
+    sourced_events: list[SourcedEvent], precedence: dict[str, tuple[int, str]]
+) -> list[SourcedEvent]:
+    """Keep one copy of each event id, from the highest-precedence calendar.
+
+    Google returns the same event ``id`` from every calendar that can see it,
+    and downstream ``add_events`` does an ``INSERT OR REPLACE`` keyed on that
+    id. Left alone, the last calendar processed won and the event's colour
+    flapped between syncs. Choosing by calendar precedence instead of arrival
+    order pins the event to one calendar permanently.
+    """
+    best: dict[str, SourcedEvent] = {}
+    unkeyed: list[SourcedEvent] = []
+
+    for item in sourced_events:
+        event_id = item.event.get("id")
+        if not event_id:
+            # No id to collapse on (and nothing downstream can store it
+            # anyway); pass it through untouched rather than dropping it.
+            unkeyed.append(item)
+            continue
+
+        incumbent = best.get(event_id)
+        if incumbent is None or precedence.get(
+            item.calendar_id, (2, item.calendar_id)
+        ) < precedence.get(incumbent.calendar_id, (2, incumbent.calendar_id)):
+            best[event_id] = item
+
+    return list(best.values()) + unkeyed
 
 
 def parse_google_datetime(google_date_obj):
@@ -186,8 +262,12 @@ def get_events_current_month(service, month: int, year: int):
         year (int): The year.
 
     Returns:
-        list: A list of event dictionaries, sorted by start time,
-              or an empty list if no events are found or an error occurs.
+        list[SourcedEvent]: One entry per event, sorted by start time, each
+              pairing the raw Google event dict with the id and display name of
+              the calendar it was fetched from. An event visible on several
+              calendars appears once, attributed to the highest-precedence one
+              (see ``_calendar_precedence``). Empty if no events are found or
+              an error occurs.
     """
     calendars = get_calendar_list(service)
     if not calendars:
@@ -209,10 +289,12 @@ def get_events_current_month(service, month: int, year: int):
     time_min = time_min_dt.isoformat()
     time_max = time_max_dt.isoformat()
 
-    all_events = []
+    all_events: list[SourcedEvent] = []
+    precedence: dict[str, tuple[int, str]] = {}
 
     for calendar in calendars:
-        calendar_id = calendar["id"]
+        calendar_id, calendar_name = _calendar_identity(calendar)
+        precedence.setdefault(calendar_id, _calendar_precedence(calendar))
         page_token = None
         page_count = 0
         while True:
@@ -229,7 +311,12 @@ def get_events_current_month(service, month: int, year: int):
                 )
                 events_result = _retry_on_error(request_obj.execute)
                 events = events_result.get("items", [])
-                all_events.extend(events)
+                # Pair each event with its source calendar here, while we
+                # still know which calendar we asked - it is unrecoverable
+                # from the event payload alone.
+                all_events.extend(
+                    SourcedEvent(calendar_id, calendar_name, event) for event in events
+                )
 
                 page_token = events_result.get("nextPageToken")
                 if not page_token:
@@ -255,8 +342,11 @@ def get_events_current_month(service, month: int, year: int):
     if not all_events:
         return []
 
+    all_events = _deduplicate_by_event_id(all_events, precedence)
+
     # Sort all collected events by start time
-    def get_start_time(event):
+    def get_start_time(sourced_event):
+        event = sourced_event.event
         # Handles both 'dateTime' and 'date' keys
         start = event["start"].get("dateTime", event["start"].get("date"))
         # Ensure 'date' strings are comparable with 'dateTime' strings
@@ -319,6 +409,9 @@ def fetch_and_process_google_events(month: int, year: int) -> list[dict]:
     Fetches events from Google Calendar for a given month/year, processes them,
     and returns a list of dictionaries ready for database insertion.
 
+    'calendar_id'/'calendar_name' describe the calendar the event was *read
+    from*, carried through from the fetch loop - not the event's organizer.
+
     Returns:
         list[dict]: A list of processed event dictionaries, or an empty list on error/no events.
                     Each dictionary contains keys like 'id', 'calendar_id', 'calendar_name',
@@ -335,11 +428,10 @@ def fetch_and_process_google_events(month: int, year: int) -> list[dict]:
         if not google_events_raw:
             return []
 
-        for event_data in google_events_raw:
-            google_cal_id = event_data.get("organizer", {}).get("email", "primary")
-            google_cal_summary = event_data.get("organizer", {}).get(
-                "displayName", google_cal_id
-            )
+        for sourced_event in google_events_raw:
+            event_data = sourced_event.event
+            google_cal_id = sourced_event.calendar_id
+            google_cal_summary = sourced_event.calendar_name
 
             start_datetime, start_all_day = parse_google_datetime(event_data["start"])
             end_datetime, end_all_day = parse_google_datetime(event_data["end"])

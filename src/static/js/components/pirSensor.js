@@ -6,6 +6,7 @@
  * a connection of this component's own; see startEventStream below.
  */
 import LiveUpdates from "./liveUpdates.js";
+import { loadAppConfig } from "./appConfig.js";
 
 const PIRSensor = (function () {
   // Private variables
@@ -133,9 +134,8 @@ const PIRSensor = (function () {
   async function loadConfiguration() {
     try {
       // Try to load configuration from server
-      const response = await fetch("/api/config");
-      if (response.ok) {
-        const fullConfig = await response.json();
+      const fullConfig = await loadAppConfig();
+      if (fullConfig) {
         config = {
           show_pir_feedback: fullConfig.ui?.show_pir_feedback ?? true,
           animation_duration: fullConfig.ui?.animation_duration_ms ?? 300,

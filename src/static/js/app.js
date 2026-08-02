@@ -13,6 +13,7 @@ import PIRSensor from "./components/pirSensor.js";
 import LoadingIndicator from "./components/loadingIndicator.js";
 import UpdateNotifier from "./components/updateNotifier.js";
 import LiveUpdates, { swapFragment } from "./components/liveUpdates.js";
+import { loadAppConfig } from "./components/appConfig.js";
 
 // Global variables for cleanup tracking
 let pirDebugInterval = null;
@@ -43,8 +44,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Load configuration from server
   async function loadInactivityConfig() {
     try {
-      const response = await fetch("/api/config");
-      const config = await response.json();
+      const config = await loadAppConfig();
 
       // Update inactivity settings from config
       DAY_INACTIVITY_TIMEOUT = (config.inactivity?.day_timeout_minutes || 60) * 60 * 1000;

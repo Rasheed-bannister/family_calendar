@@ -506,8 +506,19 @@ def test_token():
 
 
 @upload_bp.route("/qrcode")
+@rate_limit_upload
 def generate_qrcode():
-    """Generate a QR code with secure token for the photo upload page."""
+    """Generate a QR code with secure token for the photo upload page.
+
+    Rate limited because every call mints a live upload token. The endpoint is
+    unauthenticated by necessity -- it is how a phone gets its first credential
+    -- so without a limit any LAN client could grow the token table without
+    bound: 200 plain GETs produced 200 live tokens. The token manager reclaims
+    expired entries, but only as fast as they expire.
+
+    The UI fetches this only when someone presses the QR button, so the
+    existing per-client allowance is far above any legitimate use.
+    """
     if not QRCODE_AVAILABLE:
         return jsonify({"error": "QR code generation not available"}), 500
 

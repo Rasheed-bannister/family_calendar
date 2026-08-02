@@ -643,3 +643,59 @@ def test_check_updates_task_complete_no_updates(
     assert not json_data["events_changed"]
     assert not json_data["chores_changed"]
     mock_sync_photos.assert_called_once()
+
+
+@patch("src.slideshow.database.sync_photos")
+def test_check_updates_survives_executor_rejection(
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
+):
+    """A pool that refuses work must not turn the poll into a 500.
+
+    ``registry.submit`` re-raises when the executor rejects the submission -
+    which is what a ThreadPoolExecutor does for the whole of shutdown. This
+    endpoint is polled by every connected display every few seconds, so an
+    escaping exception would hit the app's catch-all handler repeatedly and be
+    recorded as a *critical* error counting towards the restart threshold. A
+    refresh that could not be queued is not a failure of the endpoint: it can
+    still report the task status it just read.
+    """
+    mock_executor.submit.side_effect = RuntimeError(
+        "cannot schedule new futures after shutdown"
+    )
+
+    response = client.get("/calendar/check-updates/2025/5")
+
+    assert response.status_code == 200
+    json_data = response.get_json()
+    # The status read still happened and is reported truthfully.
+    assert json_data["calendar_status"] == "not_tracked"
+    assert not json_data["updates_available"]
+    # Nothing was queued, so the response must not claim otherwise - the
+    # frontend re-polls after 3s when refresh_triggered is true, expecting a
+    # sync that would never have run.
+    assert json_data["refresh_triggered"] is False
+    # The failure is reported rather than swallowed.
+    assert json_data["refresh_error"]
+    mock_sync_photos.assert_called_once()
+
+
+@patch("src.slideshow.database.sync_photos")
+def test_check_updates_reports_refresh_not_triggered_when_claim_lost(
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
+):
+    """refresh_triggered reflects what happened, not what was intended.
+
+    Staleness is read before the trigger runs, so between the two another
+    poller can claim the slot and ``start_calendar_sync`` declines. Reporting
+    True there makes the client wait for a refresh nobody started.
+    """
+    with patch(
+        "src.google_integration.routes.start_calendar_sync", return_value=False
+    ) as mock_start:
+        response = client.get("/calendar/check-updates/2025/5")
+
+    assert response.status_code == 200
+    json_data = response.get_json()
+    mock_start.assert_called_once_with(5, 2025)
+    assert json_data["refresh_triggered"] is False
+    assert json_data["refresh_error"] is None

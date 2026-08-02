@@ -2,6 +2,7 @@ import calendar
 import datetime
 import logging
 import threading
+from typing import Optional
 
 from flask import Blueprint, Response, current_app, jsonify, render_template
 
@@ -478,19 +479,45 @@ def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
 
 def _trigger_calendar_refresh_if_needed(
     should_trigger_refresh: bool, month: int, year: int
-) -> None:
-    """Trigger background calendar refresh if needed."""
+) -> tuple[bool, Optional[str]]:
+    """Queue a background calendar refresh if one is due.
+
+    Returns ``(queued, error)`` describing what actually happened, not what was
+    intended. Both parts matter to the caller:
+
+    * ``queued`` is False when ``start_calendar_sync`` declined because another
+      poller claimed the slot between the staleness read and this call. The
+      staleness read is necessarily stale by the time we act on it, so it must
+      not be reported to the client as if it were the outcome.
+    * ``error`` is set when the work could not be queued at all. The registry
+      re-raises if the pool rejects the submission, which is what a
+      ThreadPoolExecutor does for the entire duration of shutdown. Letting that
+      escape would be a failure of the *endpoint*, which is polled by every
+      connected display every few seconds and whose exceptions are recorded by
+      the catch-all handler as critical errors counting towards the health
+      monitor's restart threshold. Failing to start a refresh does not stop the
+      endpoint reporting the task status it just read, so it degrades instead.
+    """
     if not should_trigger_refresh:
-        return
+        return False, None
 
     from src.google_integration.routes import start_calendar_sync
 
-    if start_calendar_sync(month, year):
+    try:
+        queued = start_calendar_sync(month, year)
+    except Exception as e:
+        logger.error(
+            "Could not queue background calendar refresh for %s/%s: %s", month, year, e
+        )
+        return False, str(e)
+
+    if queued:
         logger.info(
             "Triggered background refresh for %s/%s due to time elapsed or missing task",
             month,
             year,
         )
+    return queued, None
 
 
 @calendar_bp.route("/check-updates/<int:year>/<int:month>")
@@ -513,7 +540,14 @@ def check_updates(year: int, month: int):
     chores_task_status, chores_changed = _check_chores_task_status(TASKS_TASK_ID)
     updates_available = events_changed or chores_changed
 
-    _trigger_calendar_refresh_if_needed(should_trigger_refresh, month, year)
+    # What was reported here used to be the pre-trigger staleness read, so the
+    # client could be told a refresh was coming when the trigger had in fact
+    # declined (or failed). calendar.js waits 3s and re-polls on
+    # refresh_triggered, so an optimistic True costs a wasted round trip and a
+    # sync that never arrives.
+    refresh_triggered, refresh_error = _trigger_calendar_refresh_if_needed(
+        should_trigger_refresh, month, year
+    )
 
     return jsonify(
         {
@@ -522,6 +556,10 @@ def check_updates(year: int, month: int):
             "updates_available": updates_available,
             "events_changed": events_changed,
             "chores_changed": chores_changed,
-            "refresh_triggered": should_trigger_refresh,
+            "refresh_triggered": refresh_triggered,
+            # Null on the happy path. An extra field the frontend ignores is
+            # how the failure stays visible (to /health, to a curl, to logs)
+            # without the endpoint having to fail.
+            "refresh_error": refresh_error,
         }
     )

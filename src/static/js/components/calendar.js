@@ -6,6 +6,7 @@ import Modal from "./modal.js";
 import DailyView from "./dailyView.js";
 import LoadingIndicator from "./loadingIndicator.js";
 import { swapFragment } from "./liveUpdates.js";
+import { loadAppConfig } from "./appConfig.js";
 
 const Calendar = (function () {
   // Private variables
@@ -423,8 +424,7 @@ const Calendar = (function () {
   // Load configuration from server
   async function loadConfig() {
     try {
-      const response = await fetch("/api/config");
-      const config = await response.json();
+      const config = await loadAppConfig();
 
       // Update sync intervals from config
       const syncIntervalMinutes = config.google?.sync_interval_minutes || 5;

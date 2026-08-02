@@ -61,7 +61,9 @@ class PIRSensor:
         self.simulation_mode = config.get("pir_sensor.simulation_mode", False)
         self.last_detection_time = 0
         self.is_monitoring = False
-        self._sensor: Optional[MotionSensor] = None if HAS_GPIO else None
+        # Quoted annotation: ``MotionSensor`` is undefined when gpiozero is
+        # missing, so the name must never be evaluated at runtime.
+        self._sensor: Optional["MotionSensor"] = None
         self.gpio_available = HAS_GPIO and not self.simulation_mode
 
         # Validate GPIO pin
@@ -180,6 +182,41 @@ class PIRSensor:
 _pir_sensor: Optional[PIRSensor] = None
 _init_lock = threading.Lock()
 
+# Shutdown hooks are process-wide and must be installed exactly once. Tracked
+# separately because the SIGTERM hook can legitimately fail to install (see
+# _register_shutdown_hooks) while the atexit hook has already succeeded.
+_atexit_registered = False
+_sigterm_installed = False
+
+
+def _register_shutdown_hooks() -> None:
+    """Install the atexit/SIGTERM cleanup hooks once per process.
+
+    ``atexit`` handlers accumulate: registering on every call to
+    :func:`initialize_pir_sensor` would run cleanup once per call at shutdown.
+
+    ``signal.signal`` raises ``ValueError`` off the main thread, so a caller on
+    a worker thread still gets a working sensor -- it just does not get to own
+    the SIGTERM hook. The flag is left unset in that case so a later main-thread
+    call can still install it.
+    """
+    global _atexit_registered, _sigterm_installed
+
+    if not _atexit_registered:
+        atexit.register(_cleanup_on_exit)
+        _atexit_registered = True
+
+    if not _sigterm_installed:
+        try:
+            signal.signal(signal.SIGTERM, _signal_handler)
+            _sigterm_installed = True
+        except ValueError:
+            # Not the main thread; atexit still releases the GPIO on a clean
+            # interpreter shutdown.
+            logging.debug(
+                "PIR sensor SIGTERM handler not installed (not on main thread)"
+            )
+
 
 def initialize_pir_sensor(
     pin: int = 18, callback: Optional[Callable] = None
@@ -187,11 +224,15 @@ def initialize_pir_sensor(
     """Initialize the global PIR sensor instance (thread-safe)."""
     global _pir_sensor
     with _init_lock:
+        # Release any sensor we are about to drop, or a re-initialisation
+        # leaks the previous gpiozero handle and leaves the pin claimed.
+        if _pir_sensor is not None:
+            _pir_sensor.cleanup()
+
         _pir_sensor = PIRSensor(pin=pin, callback=callback)
 
-    # Register cleanup for graceful shutdown so GPIO is always released
-    atexit.register(_cleanup_on_exit)
-    signal.signal(signal.SIGTERM, _signal_handler)
+        # Register cleanup for graceful shutdown so GPIO is always released
+        _register_shutdown_hooks()
 
     return _pir_sensor
 
@@ -202,7 +243,7 @@ def _cleanup_on_exit():
         _pir_sensor.cleanup()
 
 
-def _signal_handler(signum, frame):  # noqa: ARG001
+def _signal_handler(_signum, _frame):
     """Handle SIGTERM to ensure GPIO cleanup before exit."""
     _cleanup_on_exit()
     raise SystemExit(0)

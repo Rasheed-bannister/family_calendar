@@ -289,3 +289,30 @@ class TestListPhotosPagination:
         ).get_json()
         assert data["photos"] == []
         assert data["total"] == 5
+
+
+class TestQrCodeTokenMinting:
+    """/upload/qrcode mints a live upload token on every call.
+
+    It cannot require a token (it is how a phone gets its first one), so the
+    rate limit is the only thing bounding the token table. Without it, any LAN
+    client could grow that table without limit on a Raspberry Pi.
+    """
+
+    def test_qrcode_minting_is_rate_limited(self, client):
+        from src.photo_upload import auth as auth_module
+
+        before = len(auth_module.token_manager.active_tokens)
+        statuses = [client.get("/upload/qrcode").status_code for _ in range(200)]
+        minted = len(auth_module.token_manager.active_tokens) - before
+
+        allowed = statuses.count(200)
+        assert 429 in statuses, "unbounded token minting is possible"
+        assert minted == allowed, "a token was minted without a 200 response"
+        assert minted <= auth_module.rate_limiter.upload_limits["per_minute"]
+
+    def test_a_normal_single_request_still_works(self, client):
+        """The UI fetches this on a button press; it must not be throttled."""
+        response = client.get("/upload/qrcode")
+        assert response.status_code == 200
+        assert response.get_json()["success"] is True
