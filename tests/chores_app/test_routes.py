@@ -194,6 +194,99 @@ class TestRefreshChores:
         assert registry.status(TASKS_TASK_ID) == sync_state.ERROR
 
 
+SAMPLE_CHORES = [
+    {
+        "id": "chore-1",
+        "title": "Alice",
+        "notes": "Do dishes",
+        "status": "needsAction",
+    },
+    {
+        "id": "chore-2",
+        "title": "Bob",
+        "notes": "Take out trash",
+        "status": "completed",
+    },
+]
+
+
+class TestChoresFragment:
+    """Tests for the /chores/fragment HTML fragment endpoint.
+
+    The fragment exists so the client can swap the chores list in place
+    instead of calling location.reload(), which on a wall display resets the
+    background slideshow position, scroll state and any open UI.
+    """
+
+    @patch("src.chores_app.routes.db")
+    def test_returns_html_fragment(self, mock_db, client):
+        mock_db.get_chores.return_value = SAMPLE_CHORES
+
+        response = client.get("/chores/fragment")
+
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+        assert response.headers["Cache-Control"] == "no-store"
+        body = response.get_data(as_text=True)
+        assert '<div class="chores-list">' in body
+        assert "Do dishes" in body
+        # A fragment, not a page: no document chrome.
+        assert "<!DOCTYPE html>" not in body
+
+    @patch("src.calendar_app.routes.db")
+    @patch("src.chores_app.routes.db")
+    @patch(
+        "src.weather_integration.api.weather_cache_needs_refresh", return_value=False
+    )
+    @patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+    def test_markup_matches_full_page(
+        self,
+        mock_display,
+        mock_needs_refresh,
+        mock_db,
+        mock_calendar_db,
+        client,
+        tasks_state,
+    ):
+        """Anti-drift guarantee: the fragment is exactly the page's chores region.
+
+        Both render components/chores.html from one shared context builder. If
+        they diverge, the chores list changes appearance the moment it
+        live-updates.
+        """
+        mock_db.get_chores.return_value = SAMPLE_CHORES
+        mock_calendar_db.get_all_events_for_month_range.return_value = []
+
+        executor = MagicMock()
+        with patch.object(registry, "executor", executor):
+            fragment = client.get("/chores/fragment").get_data(as_text=True)
+            page = client.get("/calendar/2025/5").get_data(as_text=True)
+
+        # Meaningful markup, not just "both contain a <div>".
+        assert "<h3>Alice</h3>" in fragment
+        assert 'data-chore-id="chore-2"' in fragment
+        assert '<li class="chore-item completed"' in fragment
+        # The whole rendered fragment appears verbatim inside the full page.
+        assert fragment in page
+
+    @patch("src.chores_app.routes.db")
+    def test_starts_no_background_sync(self, mock_db, client, tasks_state):
+        """The fragment must be read-only.
+
+        The client fetches it on every data-change notification, so a Google
+        Tasks sync started here would be a feedback loop.
+        """
+        mock_db.get_chores.return_value = SAMPLE_CHORES
+
+        executor = MagicMock()
+        with patch.object(registry, "executor", executor):
+            response = client.get("/chores/fragment")
+
+        assert response.status_code == 200
+        executor.submit.assert_not_called()
+        assert tasks_state == {}
+
+
 class TestAddChoreRoute:
     """Tests for the add_chore_route."""
 

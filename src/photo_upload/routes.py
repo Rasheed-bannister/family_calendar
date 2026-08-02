@@ -16,6 +16,9 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
+from src import events
+from src.events import broker
+
 from ..slideshow import database as slideshow_db
 from .auth import generate_upload_url, rate_limit_upload, require_upload_token
 
@@ -302,6 +305,10 @@ def upload_photos():
     # Sync database with new photos
     try:
         slideshow_db.sync_photos(current_app.static_folder)
+        # Tell connected displays so a photo sent from a phone appears in the
+        # slideshow rotation without waiting for the next 10-minute rescan.
+        if uploaded_files:
+            broker.publish(events.PHOTOS_CHANGED, count=len(uploaded_files))
     except Exception as e:
         logger.error(f"Failed to sync photo database: {e}")
         errors.append("Failed to update photo database")
@@ -444,6 +451,9 @@ def delete_photo(filename):
 
         # Sync database
         slideshow_db.sync_photos(current_app.static_folder)
+        # A deleted photo must leave the rotation promptly, or the display
+        # keeps serving a file that no longer exists.
+        broker.publish(events.PHOTOS_CHANGED, deleted=filename)
 
         logger.info(f"Deleted photo: {filename}")
         return jsonify({"success": True, "message": f"Photo {filename} deleted"})

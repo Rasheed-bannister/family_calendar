@@ -1,27 +1,28 @@
 /**
  * PIR Sensor Component
  * Handles PIR sensor integration and activity detection for the calendar application
+ *
+ * Motion arrives over the shared event stream owned by LiveUpdates rather than
+ * a connection of this component's own; see startEventStream below.
  */
+import LiveUpdates from "./liveUpdates.js";
+
 const PIRSensor = (function () {
   // Private variables
   let isInitialized = false;
   let isMonitoring = false;
   let statusCheckInterval = null;
   let activityCallback = null;
-  let eventSource = null;
+  let unsubscribeMotion = null;
   let visualIndicator = null;
   let statusIndicator = null;
   let motionFeedbackTimeout = null;
   let config = null;
-  let reconnectTimeout = null;
-  let reconnectAttempts = 0;
-  const MAX_RECONNECT_ATTEMPTS = 10;
 
   const STATUS_CHECK_INTERVAL = 5000; // Check status every 5 seconds
   const STATUS_ENDPOINT = "/pir/status";
   const START_ENDPOINT = "/pir/start";
   const STOP_ENDPOINT = "/pir/stop";
-  const EVENTS_ENDPOINT = "/pir/events";
   const TEST_ENDPOINT = "/pir/trigger_test";
 
   // Private methods
@@ -235,85 +236,30 @@ const PIRSensor = (function () {
   }
 
   function startEventStream() {
-    // Clean up any existing connection first
+    // Motion now arrives on the shared /events stream owned by
+    // liveUpdates.js, rather than this component opening its own connection
+    // to /pir/events. Flask's threaded server holds a thread per open SSE
+    // stream, so two streams per display cost a thread and a browser
+    // connection slot for no benefit. LiveUpdates owns reconnection.
     stopEventStream();
 
-    // Reset reconnect attempts when starting fresh
-    reconnectAttempts = 0;
-
-    eventSource = new EventSource(EVENTS_ENDPOINT);
-
-    eventSource.onmessage = function (event) {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === "motion_detected") {
-          // PIR motion detected via SSE
-
-          // Show visual feedback
-          showMotionFeedback();
-
-          // Trigger the activity callback
-          if (activityCallback && typeof activityCallback === "function") {
-            activityCallback("motion");
-          }
-        } else if (data.type === "heartbeat") {
-          // Heartbeat to keep connection alive
-          reconnectAttempts = 0; // Reset on successful message
-        }
-      } catch (error) {
-        console.error("Error parsing PIR SSE event:", error);
+    unsubscribeMotion = LiveUpdates.on("motion_detected", () => {
+      showMotionFeedback();
+      if (activityCallback && typeof activityCallback === "function") {
+        activityCallback("motion");
       }
-    };
+    });
 
-    eventSource.onerror = function (error) {
-      console.error("PIR SSE connection error:", error);
-
-      // Close the failed connection
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-
-      // Try to reconnect with exponential backoff
-      if (isInitialized && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts++;
-        const delay = Math.min(5000 * Math.pow(1.5, reconnectAttempts - 1), 60000); // Max 60 seconds
-
-        // Clear any existing reconnect timeout
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-        }
-
-        reconnectTimeout = setTimeout(() => {
-          reconnectTimeout = null;
-          if (isInitialized) {
-            startEventStream();
-          }
-        }, delay);
-      } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.error("PIR SSE: Max reconnection attempts reached. Stopping.");
-      }
-    };
-
-    // PIR sensor event stream started
+    // Ensure the shared stream is running; init() is idempotent, so it is
+    // safe whether or not app.js got there first.
+    LiveUpdates.init();
   }
 
   function stopEventStream() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-      // PIR sensor event stream stopped
+    if (unsubscribeMotion) {
+      unsubscribeMotion();
+      unsubscribeMotion = null;
     }
-
-    // Clear reconnect timeout if exists
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-      reconnectTimeout = null;
-    }
-
-    // Reset reconnect attempts
-    reconnectAttempts = 0;
   }
 
   // Public methods

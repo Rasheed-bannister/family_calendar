@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 from src.google_integration import tasks_api
 
@@ -9,6 +9,35 @@ from . import database as db
 logger = logging.getLogger(__name__)
 
 chores_bp = Blueprint("chores", __name__, url_prefix="/chores")
+
+
+def build_chores_context() -> dict:
+    """Template context for components/chores.html.
+
+    Owned here rather than at each call site so the full page render and the
+    fragment endpoint feed the partial exactly the same data; if they drifted,
+    the chores list would change appearance the moment it live-updated.
+
+    Read-only: reads the local database and never triggers a Google Tasks sync.
+    """
+    return {"chores": db.get_chores()}
+
+
+@chores_bp.route("/fragment")
+def fragment():
+    """Render just the chores component, for in-place client updates.
+
+    Lets the client swap the chores list instead of calling location.reload(),
+    which on a wall display resets the slideshow position and any open UI.
+
+    Read-only: fetched on every change notification, so starting a sync here
+    would be a feedback loop.
+    """
+    from src.calendar_app.routes import html_fragment_response
+
+    return html_fragment_response(
+        render_template("components/chores.html", **build_chores_context())
+    )
 
 
 @chores_bp.route("/update_status/<chore_id>", methods=["POST"])

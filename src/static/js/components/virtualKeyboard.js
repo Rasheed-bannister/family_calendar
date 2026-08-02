@@ -682,14 +682,16 @@ const VirtualKeyboard = (function () {
         keyboardContainer = null;
       }
 
-      // Clear references
+      // Clear references.
+      //
+      // `keyMap`, `isShifted`, `isCapsLock` and `isSymbols` were assigned
+      // here but none of them is declared anywhere in this module --
+      // leftovers from removed code. Modules run in strict mode, so the
+      // first bare assignment threw ReferenceError and aborted the rest of
+      // cleanup, leaking the keyboard's listeners and container.
       currentInput = null;
       config = null;
-      keyMap = null;
       currentLayout = "default";
-      isShifted = false;
-      isCapsLock = false;
-      isSymbols = false;
       isOpen = false;
     },
   };

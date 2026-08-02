@@ -282,6 +282,25 @@ def create_app():
         now = datetime.datetime.now(tz=get_local_timezone())
         return redirect(url_for("calendar.view", year=now.year, month=now.month))
 
+    @app.route("/events")
+    def events_stream():
+        """Single SSE stream carrying motion and data-change notifications.
+
+        Replaces the browser's polling loop. The client re-fetches the
+        affected fragment when it sees an event, rather than reloading the
+        whole page and resetting the slideshow.
+        """
+        from flask import Response
+
+        from src import events as events_mod
+        from src.events import broker
+
+        return Response(
+            broker.stream(),
+            mimetype="text/event-stream",
+            headers=events_mod.sse_headers(),
+        )
+
     @app.route("/api/config")
     def get_config_api():
         """API endpoint exposing the browser-safe subset of configuration.

@@ -4,13 +4,14 @@ from flask import jsonify
 
 # Shared sync state. Imported from src.sync_state rather than src.main so this
 # module does not participate in an import cycle with the app factory.
-from src import sync_state
+from src import events, sync_state
 from src.calendar_app import database as calendar_db
 from src.calendar_app import utils as calendar_utils
 from src.calendar_app.models import CalendarMonth
 from src.chores_app import database as chores_db
 from src.chores_app import utils as chores_utils
 from src.chores_app.utils import make_chores_comparable
+from src.events import broker
 from src.sync_state import registry
 
 from . import api as calendar_api
@@ -104,6 +105,12 @@ def fetch_google_events_background(month, year):
             events_changed=events_changed,
         )
 
+        # Tell connected displays to re-fetch the calendar fragment. Only on
+        # an actual change: a notification per sync would make every display
+        # re-render every few minutes for nothing.
+        if events_changed:
+            broker.publish(events.CALENDAR_CHANGED, month=month, year=year)
+
     except Exception as e:
         logger.error("Error in calendar fetch background task %s: %s", task_id, e)
         registry.update(
@@ -165,6 +172,9 @@ def fetch_google_tasks_background():
 
         # --- Update Task Status ---
         registry.update(task_id, updated=chores_changed, chores_changed=chores_changed)
+
+        if chores_changed:
+            broker.publish(events.CHORES_CHANGED)
 
     except Exception as e:
         logger.error(

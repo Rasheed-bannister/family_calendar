@@ -3,13 +3,12 @@ PIR Sensor Routes for Calendar Application
 Provides endpoints for PIR sensor status and activity reporting
 """
 
-import json
 import logging
-import threading
-import time
-from queue import Empty, Full, Queue
 
 from flask import Blueprint, Response, jsonify
+
+from src import events
+from src.events import broker
 
 from .sensor import (
     add_motion_callback,
@@ -20,47 +19,10 @@ from .sensor import (
 
 pir_bp = Blueprint("pir", __name__, url_prefix="/pir")
 
-# Per-client SSE queues with bounded size
-_sse_clients: list[Queue] = []
-_sse_clients_lock = threading.Lock()
-_MAX_QUEUE_SIZE = 50
-
-
-def _add_sse_client() -> Queue:
-    """Register a new SSE client and return its event queue."""
-    q: Queue = Queue(maxsize=_MAX_QUEUE_SIZE)
-    with _sse_clients_lock:
-        _sse_clients.append(q)
-    return q
-
-
-def _remove_sse_client(q: Queue) -> None:
-    """Unregister an SSE client."""
-    with _sse_clients_lock:
-        try:
-            _sse_clients.remove(q)
-        except ValueError:
-            pass
-
 
 def motion_detected_sse():
-    """Callback function: broadcast motion event to all connected SSE clients."""
-    event_data = {
-        "type": "motion_detected",
-        "timestamp": time.time(),
-        "data": "Motion detected by PIR sensor",
-    }
-    with _sse_clients_lock:
-        for q in _sse_clients:
-            try:
-                q.put_nowait(event_data)
-            except Full:
-                # Client is too slow — drop oldest event and enqueue new one
-                try:
-                    q.get_nowait()
-                    q.put_nowait(event_data)
-                except (Empty, Full):
-                    pass
+    """Callback function: broadcast motion to every connected client."""
+    broker.publish(events.MOTION_DETECTED, data="Motion detected by PIR sensor")
 
 
 # Register the SSE callback
@@ -124,29 +86,17 @@ def stop_monitoring():
 
 @pir_bp.route("/events")
 def pir_events():
-    """Server-Sent Events endpoint for real-time PIR sensor events"""
-    client_queue = _add_sse_client()
+    """Legacy motion-only SSE stream.
 
-    def event_stream():
-        try:
-            while True:
-                try:
-                    event = client_queue.get(timeout=30)
-                    yield f"data: {json.dumps(event)}\n\n"
-                except Empty:
-                    # Send heartbeat to keep connection alive
-                    heartbeat = {"type": "heartbeat", "timestamp": time.time()}
-                    yield f"data: {json.dumps(heartbeat)}\n\n"
-                except Exception as e:
-                    logging.error(f"Error in PIR SSE stream: {e}")
-                    break
-        finally:
-            _remove_sse_client(client_queue)
-
+    Superseded by ``GET /events``, which carries motion plus data-change
+    notifications on a single connection. Kept because Flask's threaded
+    server holds a thread per open stream, so any client still on this
+    endpoint should be moved rather than left to open a second one.
+    """
     return Response(
-        event_stream(),
+        broker.stream(only=(events.MOTION_DETECTED,)),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        headers=events.sse_headers(),
     )
 
 

@@ -3,7 +3,7 @@ import datetime
 import logging
 import threading
 
-from flask import Blueprint, current_app, jsonify, render_template
+from flask import Blueprint, Response, current_app, jsonify, render_template
 
 # Shared sync state. Imported from src.sync_state rather than src.main so this
 # module does not participate in an import cycle with the app factory.
@@ -271,16 +271,85 @@ def _filter_events_for_day(events: list, target_date: datetime.date) -> list:
     return day_events
 
 
+def html_fragment_response(html: str) -> Response:
+    """Wrap rendered partial markup in the fragment response contract.
+
+    One helper for every fragment endpoint so the headers cannot drift apart:
+    HTML with an explicit charset, and never cached - fragments exist precisely
+    because the data behind them just changed.
+    """
+    response = Response(html, mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def build_calendar_context(
+    current_year: int, current_month: int, today_date: datetime.date
+) -> dict:
+    """Assemble the template context shared by the full page and the fragments.
+
+    The full page and the fragment endpoints must render the partials from an
+    identical context: if they drift, the display visibly changes appearance
+    the moment it live-updates. Sharing one builder is what guarantees they
+    cannot.
+
+    Deliberately read-only. Nothing here starts a background sync, so a
+    fragment fetched on every data-change notification cannot feed back into
+    starting more syncs. The sync triggers stay in `view`, which runs once per
+    real page load.
+    """
+    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
+        current_year, current_month
+    )
+
+    db_events = db.get_all_events_for_month_range(current_year, current_month)
+    weeks_data = _build_calendar_weeks_data(
+        current_year, current_month, today_date, db_events
+    )
+    today_events = _filter_events_for_day(db_events, today_date)
+
+    from src.chores_app.routes import build_chores_context
+    from src.config import get_config
+
+    config = get_config()
+
+    return {
+        "weeks": weeks_data,
+        "today_events": today_events,
+        "month_name": calendar.month_name[current_month],
+        "month_number": current_month,
+        "year": current_year,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+        "today_actual_day": today_date.day,
+        "today_actual_month": today_date.month,
+        "today_actual_year": today_date.year,
+        "debug_enabled": config.get("app.debug", False),
+        "show_pir_feedback": config.get("ui.show_pir_feedback", False),
+        "family_name": config.get("app.family_name", "Family"),
+        **build_chores_context(),
+    }
+
+
+def _local_now() -> datetime.datetime:
+    """Now in the configured local timezone.
+
+    Local time, not UTC: this drives both the default month and which cell is
+    highlighted as "today". Under UTC the highlight jumped to tomorrow at
+    local evening (8pm in America/New_York) on a display that is on all night.
+    """
+    from src.config import get_local_timezone
+
+    return datetime.datetime.now(tz=get_local_timezone())
+
+
 @calendar_bp.route("/")
 @calendar_bp.route("/<int:year>/<int:month>")
 def view(year: int = None, month: int = None):
     """Renders the calendar view for a specific month and year."""
-    # Local time, not UTC: this drives both the default month and which cell is
-    # highlighted as "today". Under UTC the highlight jumped to tomorrow at
-    # local evening (8pm in America/New_York) on a display that is on all night.
-    from src.config import get_local_timezone
-
-    now = datetime.datetime.now(tz=get_local_timezone())
+    now = _local_now()
 
     # Set defaults and validate input
     if year is None:
@@ -293,11 +362,6 @@ def view(year: int = None, month: int = None):
     current_year = year
     current_month = month
     today_date = now.date()
-
-    # Calculate navigation dates
-    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
-        current_year, current_month
-    )
 
     # Register current month in database
     current_calendar_month = CalendarMonth(year=current_year, month=current_month)
@@ -312,45 +376,36 @@ def view(year: int = None, month: int = None):
     if _should_start_chores_background_task():
         _start_chores_background_sync()
 
-    # Get calendar events data
-    db_events = db.get_all_events_for_month_range(current_year, current_month)
-    weeks_data = _build_calendar_weeks_data(
-        current_year, current_month, today_date, db_events
-    )
-    today_events = _filter_events_for_day(db_events, today_date)
-
-    # Get additional data for template
-    weather_data = _get_weather_data_safe()
-
-    from src.chores_app import database as chores_db
-
-    chores_to_display = chores_db.get_chores()
-
-    month_name = calendar.month_name[current_month]
-
-    from src.config import get_config
-
-    config = get_config()
+    # Sync triggering lives here, in the full page render, and not in the
+    # shared context builder: the fragment endpoints reuse the builder and must
+    # stay read-only.
+    context = build_calendar_context(current_year, current_month, today_date)
 
     return render_template(
         "index.html",
-        weeks=weeks_data,
-        today_events=today_events,
-        chores=chores_to_display,
-        weather=weather_data,
-        month_name=month_name,
-        month_number=current_month,
-        year=current_year,
-        prev_year=prev_year,
-        prev_month=prev_month,
-        next_year=next_year,
-        next_month=next_month,
-        today_actual_day=today_date.day,
-        today_actual_month=today_date.month,
-        today_actual_year=today_date.year,
-        debug_enabled=config.get("app.debug", False),
-        show_pir_feedback=config.get("ui.show_pir_feedback", False),
-        family_name=config.get("app.family_name", "Family"),
+        weather=_get_weather_data_safe(),
+        **context,
+    )
+
+
+@calendar_bp.route("/fragment/<int:year>/<int:month>")
+def fragment(year: int, month: int):
+    """Render just the calendar component, for in-place client updates.
+
+    Returns the same markup the full page carries for this month, so the client
+    can swap one region instead of calling location.reload() - a full reload on
+    a wall display resets the slideshow position, scroll state and any open UI.
+
+    Read-only: no calendar, chores or weather sync is started here. The client
+    fetches this on every change notification, so a sync trigger would be a
+    feedback loop.
+    """
+    if not 1 <= month <= 12:
+        return "Invalid month", 404
+
+    context = build_calendar_context(year, month, _local_now().date())
+    return html_fragment_response(
+        render_template("components/calendar.html", **context)
     )
 
 

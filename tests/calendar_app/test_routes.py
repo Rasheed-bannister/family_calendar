@@ -442,6 +442,102 @@ def test_view_route_invalid_month(client):
     assert b"Invalid month" in response.data
 
 
+# --- Tests for the calendar fragment route ---
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+def test_calendar_fragment_returns_html(
+    mock_display,
+    mock_needs_refresh,
+    mock_db,
+    client,
+    tasks_state,
+    mock_executor,
+):
+    """The fragment endpoint serves uncacheable HTML, not a full document."""
+    mock_db.get_all_events_for_month_range.return_value = []
+
+    response = client.get("/calendar/fragment/2025/5")
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+    assert response.headers["Cache-Control"] == "no-store"
+    body = response.get_data(as_text=True)
+    assert '<div id="main-calendar-area">' in body
+    # A fragment, not a page: no document chrome.
+    assert "<!DOCTYPE html>" not in body
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+def test_calendar_fragment_markup_matches_full_page(
+    mock_display,
+    mock_needs_refresh,
+    mock_db,
+    client,
+    tasks_state,
+    mock_executor,
+):
+    """Anti-drift guarantee: the fragment is exactly the page's calendar region.
+
+    Both must come from one context builder. If they diverge, the display
+    silently changes appearance the moment it live-updates - a nasty bug to
+    chase from a wall-mounted screen.
+    """
+    mock_db.get_all_events_for_month_range.return_value = []
+
+    fragment = client.get("/calendar/fragment/2025/5").get_data(as_text=True)
+    page = client.get("/calendar/2025/5").get_data(as_text=True)
+
+    # Meaningful, month-specific markup - not just "both contain a <div>".
+    assert '<table class="calendar" data-month="5" data-year="2025">' in fragment
+    assert "May 2025" in fragment
+    # The whole rendered fragment appears verbatim inside the full page.
+    assert fragment in page
+
+
+def test_calendar_fragment_invalid_month_returns_404(client):
+    """Month validation matches the full view route exactly."""
+    response = client.get("/calendar/fragment/2024/13")
+    assert response.status_code == 404
+    assert b"Invalid month" in response.data
+
+    assert client.get("/calendar/fragment/2024/0").status_code == 404
+
+
+@patch("src.calendar_app.routes.db")
+@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
+@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
+def test_calendar_fragment_starts_no_background_sync(
+    mock_display,
+    mock_needs_refresh,
+    mock_db,
+    client,
+    tasks_state,
+    mock_executor,
+):
+    """The fragment must be read-only.
+
+    The client fetches it on every data-change notification, so any sync
+    started here would be a feedback loop: sync -> change -> fragment -> sync.
+    """
+    mock_db.get_all_events_for_month_range.return_value = []
+
+    response = client.get("/calendar/fragment/2025/5")
+
+    assert response.status_code == 200
+    # Nothing was queued on the shared pool, and no task was registered.
+    mock_executor.submit.assert_not_called()
+    assert tasks_state == {}
+    # The weather path is not entered at all, so it cannot queue a refresh.
+    mock_needs_refresh.assert_not_called()
+    # Nor does the fragment write to the calendar database.
+    mock_db.add_month.assert_not_called()
+
+
 # --- Tests for check_updates route ---
 
 

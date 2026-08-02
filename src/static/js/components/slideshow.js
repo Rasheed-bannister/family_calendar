@@ -470,6 +470,35 @@ const Slideshow = (function () {
       cyclePhoto(); // Trigger the cycle logic immediately
     },
 
+    /**
+     * Called when the server reports that the photo library changed.
+     *
+     * Each cycle already asks the server for a random photo, so new uploads
+     * enter the rotation on their own. The case that needs clearing is the
+     * empty-library latch: once photosAvailable goes false the slideshow
+     * stops asking and waits on a recheck timer, so the first photo uploaded
+     * to an empty library would otherwise not appear until that timer fired.
+     */
+    refreshPool: function () {
+      const wasEmpty = !photosAvailable;
+      photosAvailable = true;
+
+      if (emptyRecheckTimer) {
+        clearTimeout(emptyRecheckTimer);
+        emptyRecheckTimer = null;
+      }
+
+      // Only force a cycle if we had actually stopped; otherwise let the
+      // normal interval run so a photo upload does not cut the current
+      // image short.
+      if (wasEmpty && isRunning) {
+        cyclePhoto();
+        if (!slideshowInterval) {
+          slideshowInterval = setInterval(cyclePhoto, SLIDESHOW_INTERVAL_MS);
+        }
+      }
+    },
+
     cleanup: function () {
       cleanup();
     },
