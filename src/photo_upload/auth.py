@@ -316,6 +316,12 @@ def require_upload_token(f):
         else:
             arrived_via = "none"
 
+        # The rule matches on "token" appearing in the message. The only values
+        # interpolated are the transport name ("query"/"header"/"form"/"none")
+        # and the client IP -- the token itself is never logged, which
+        # TestTokenNeverLogged in tests/photo_upload/test_auth.py asserts
+        # against captured log records rather than by inspection.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure -- logs the transport and client IP, not credential material
         logger.debug(
             "Upload token presented via %s from %s", arrived_via, request.remote_addr
         )

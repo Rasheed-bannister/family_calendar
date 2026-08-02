@@ -50,8 +50,7 @@ def create_all():
     """
     with db_connection() as cursor:
         # Create Chores table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS Chores (
                 id TEXT PRIMARY KEY,
                 assigned_to TEXT NOT NULL,
@@ -59,8 +58,7 @@ def create_all():
                 status TEXT,
                 due TEXT
             )
-        """
-        )
+        """)
 
 
 def update_chore_status(chore_id: str, new_status: str):

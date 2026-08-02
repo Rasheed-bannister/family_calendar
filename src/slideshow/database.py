@@ -63,14 +63,12 @@ def db_connection(commit: bool = True):
 def init_db():
     """Initializes the slideshow database and creates the table if it doesn't exist."""
     with db_connection() as cursor:
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS background_photos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT UNIQUE NOT NULL
             )
-        """
-        )
+        """)
     logger.info("Slideshow database initialized.")
 
 

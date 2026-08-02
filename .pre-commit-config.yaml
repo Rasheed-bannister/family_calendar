@@ -1,5 +1,14 @@
 # See https://pre-commit.com for more information
 # This config auto-fixes what it can and only fails on unfixable issues
+#
+# IMPORTANT: the `rev` pins below must track the versions resolved from
+# pyproject.toml's dev dependencies, because CI runs those tools from the uv
+# environment (`uv run black --check .` and friends) rather than through
+# pre-commit. When the two drift, the hooks pass locally and CI fails on the
+# same files -- black was pinned here at 24.3.0 while CI installed 26.5.1, two
+# years of formatting-style difference, so "all hooks pass" locally was
+# checking a toolchain nobody deploys. Dependabot bumps pyproject; these need
+# bumping with it.
 
 fail_fast: false  # Run all hooks even if some fail
 
@@ -23,7 +32,7 @@ repos:
 
   # Python code formatting with Black
   - repo: https://github.com/psf/black
-    rev: 24.3.0
+    rev: 26.5.1
     hooks:
       - id: black
         language_version: python3.13
@@ -31,21 +40,21 @@ repos:
 
   # Import sorting with isort
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 8.0.1
     hooks:
       - id: isort
         args: ['--profile', 'black', '--line-length', '88']
 
   # Python linting with Ruff (fast Python linter) - formatting handled by Black
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.4
+    rev: v0.15.21
     hooks:
       - id: ruff
         args: ['--fix']  # Auto-fix issues but don't fail commit
 
   # Security checks with Bandit
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.8
+    rev: 1.9.4
     hooks:
       - id: bandit
         args: ['-ll', '--skip', 'B101']  # Skip assert_used test
@@ -53,7 +62,7 @@ repos:
 
   # Type checking with mypy (optional but recommended)
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
+    rev: v2.1.0
     hooks:
       - id: mypy
         additional_dependencies: [types-requests, types-Flask]
@@ -62,7 +71,7 @@ repos:
 
   # Dead code detection with vulture
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.11
+    rev: v2.16
     hooks:
       - id: vulture
         args: ['--min-confidence', '80', '--exclude', '*/tests/*,*/migrations/*']

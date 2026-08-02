@@ -178,31 +178,26 @@ def create_all():
     """
     with db_connection() as cursor:
         # Create Calendar table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS Calendar (
                 calendar_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 display_name TEXT,
                 color TEXT
             )
-        """
-        )
+        """)
 
         # Create CalendarMonth table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS CalendarMonth (
                 id TEXT PRIMARY KEY,
                 year INTEGER NOT NULL,
                 month INTEGER NOT NULL
             )
-        """
-        )
+        """)
 
         # Create CalendarEvent table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS CalendarEvent (
                 id TEXT PRIMARY KEY,
                 calendar_id TEXT NOT NULL,
@@ -216,28 +211,23 @@ def create_all():
                 FOREIGN KEY (calendar_id) REFERENCES Calendar(calendar_id),
                 FOREIGN KEY (month_id) REFERENCES CalendarMonth(id)
             )
-        """
-        )
+        """)
 
         # Create DefaultColors table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS DefaultColors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 hex_code TEXT NOT NULL UNIQUE
             )
-        """
-        )
+        """)
 
         # Create ColorIndex table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS ColorIndex (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 current_index INTEGER NOT NULL DEFAULT 0
             )
-        """
-        )
+        """)
 
         _create_indexes(cursor)
 
@@ -303,12 +293,10 @@ def _repair_unparseable_event_timestamps(cursor) -> int:
     dropped or guessed at: an unrecoverable value is logged and left untouched.
     """
     try:
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT id, start_datetime, end_datetime FROM CalendarEvent
             WHERE datetime(start_datetime) IS NULL OR datetime(end_datetime) IS NULL
-        """
-        )
+        """)
         broken_rows = cursor.fetchall()
     except sqlite3.Error as e:
         logger.warning("Could not scan for unparseable event timestamps: %s", e)

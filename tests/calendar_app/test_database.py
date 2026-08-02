@@ -502,15 +502,13 @@ class TestRunMigrations:
         # Create DB without display_name column
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE Calendar (
                 calendar_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 color TEXT
             )
-        """
-        )
+        """)
         conn.commit()
         conn.close()
 
@@ -897,15 +895,13 @@ class TestRunMigrationsErrorHandling:
         """Steps commit independently, so one failure cannot undo the others."""
         db_path = tmp_path / "migrate_steps.db"
         conn = sqlite3.connect(db_path)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE Calendar (
                 calendar_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 color TEXT
             )
-            """
-        )
+            """)
         conn.commit()
         conn.close()
 
