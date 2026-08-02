@@ -4,18 +4,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import sync_state
 from src.google_integration import routes as google_routes
-from src.main import background_tasks
+from src.sync_state import registry
 
 
 @pytest.fixture
 def tasks_state():
-    """Isolate the module-global background_tasks dict for a single test."""
-    snapshot = dict(background_tasks)
-    background_tasks.clear()
-    yield background_tasks
-    background_tasks.clear()
-    background_tasks.update(snapshot)
+    """Isolate the registry's task state for a single test.
+
+    Swapping the attribute (rather than mutating the shared dict) means the
+    registry's own methods read the isolated copy, and the real state is
+    restored automatically even if the test fails.
+    """
+    with patch.object(registry, "tasks", {}) as tasks:
+        yield tasks
 
 
 @pytest.fixture
@@ -23,17 +26,17 @@ def inline_executor():
     """Replace the shared thread pool with one that runs work synchronously."""
     executor = MagicMock()
     executor.submit.side_effect = lambda fn, *args, **kwargs: fn(*args, **kwargs)
-    with patch("src.main.sync_executor", executor):
+    with patch.object(registry, "executor", executor):
         yield executor
 
 
 class TestFetchGoogleEventsBackgroundResilience:
     """Regression tests: the worker must survive its task entry disappearing.
 
-    `clear_stale_background_tasks()` wipes `background_tasks` wholesale, which
-    can happen while a worker is mid-flight. Indexing the entry unconditionally
-    used to raise KeyError from inside the try body, the except block *and* the
-    finally block, killing the worker thread.
+    `registry.clear()` (via `clear_stale_background_tasks()`) wipes the task
+    state wholesale, which can happen while a worker is mid-flight. Indexing
+    the entry unconditionally used to raise KeyError from inside the try body,
+    the except block *and* the finally block, killing the worker thread.
     """
 
     @patch("src.google_integration.routes.calendar_api")
@@ -42,7 +45,7 @@ class TestFetchGoogleEventsBackgroundResilience:
         self, mock_calendar_db, mock_calendar_api, tasks_state
     ):
         def fetch_and_wipe(month, year):
-            background_tasks.clear()  # simulate clear_stale_background_tasks()
+            registry.clear()  # simulate clear_stale_background_tasks()
             return []
 
         mock_calendar_api.fetch_and_process_google_events.side_effect = fetch_and_wipe
@@ -50,7 +53,7 @@ class TestFetchGoogleEventsBackgroundResilience:
         google_routes.fetch_google_events_background(5, 2025)
 
         # No exception, and the entry was recreated rather than lost
-        assert tasks_state["calendar.5.2025"]["status"] == "complete"
+        assert registry.status("calendar.5.2025") == sync_state.COMPLETE
 
     @patch("src.google_integration.routes.calendar_api")
     @patch("src.google_integration.routes.calendar_db")
@@ -58,7 +61,7 @@ class TestFetchGoogleEventsBackgroundResilience:
         self, mock_calendar_db, mock_calendar_api, tasks_state
     ):
         def blow_up_and_wipe(month, year):
-            background_tasks.clear()  # simulate clear_stale_background_tasks()
+            registry.clear()  # simulate clear_stale_background_tasks()
             raise RuntimeError("google exploded")
 
         mock_calendar_api.fetch_and_process_google_events.side_effect = blow_up_and_wipe
@@ -66,8 +69,9 @@ class TestFetchGoogleEventsBackgroundResilience:
         # The error handler itself must not raise
         google_routes.fetch_google_events_background(5, 2025)
 
-        assert tasks_state["calendar.5.2025"]["status"] == "error"
-        assert tasks_state["calendar.5.2025"]["events_changed"] is False
+        entry = registry.snapshot("calendar.5.2025")
+        assert entry["status"] == sync_state.ERROR
+        assert entry["events_changed"] is False
 
     @patch("src.google_integration.routes.calendar_api")
     @patch("src.google_integration.routes.calendar_db")
@@ -78,19 +82,19 @@ class TestFetchGoogleEventsBackgroundResilience:
 
         google_routes.fetch_google_events_background(5, 2025)
 
-        entry = tasks_state["calendar.5.2025"]
-        assert entry["status"] == "complete"
+        entry = registry.snapshot("calendar.5.2025")
+        assert entry["status"] == sync_state.COMPLETE
         assert entry["events_changed"] is False
         assert "last_update_time" in entry
 
     def test_skips_when_already_running(self, tasks_state):
-        tasks_state["calendar.5.2025"] = {"status": "running", "updated": False}
+        registry.update("calendar.5.2025", status=sync_state.RUNNING, updated=False)
 
         with patch("src.google_integration.routes.calendar_api") as mock_calendar_api:
             google_routes.fetch_google_events_background(5, 2025)
 
         mock_calendar_api.fetch_and_process_google_events.assert_not_called()
-        assert tasks_state["calendar.5.2025"]["status"] == "running"
+        assert registry.status("calendar.5.2025") == sync_state.RUNNING
 
 
 class TestStartTasksSync:
@@ -109,46 +113,52 @@ class TestStartTasksSync:
 
         inline_executor.submit.assert_called_once()
         mock_tasks_api.get_chores.assert_called_once()
-        assert tasks_state["tasks"]["status"] == "complete"
+        assert registry.status(google_routes.TASKS_TASK_ID) == sync_state.COMPLETE
 
     def test_skips_when_already_pending(self, tasks_state):
-        tasks_state["tasks"] = {"status": "pending", "updated": False}
+        registry.update(
+            google_routes.TASKS_TASK_ID, status=sync_state.PENDING, updated=False
+        )
 
         executor = MagicMock()
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             assert google_routes.start_tasks_sync() is False
 
         executor.submit.assert_not_called()
 
     def test_skips_when_already_running(self, tasks_state):
-        tasks_state["tasks"] = {"status": "running", "updated": False}
+        registry.update(
+            google_routes.TASKS_TASK_ID, status=sync_state.RUNNING, updated=False
+        )
 
         executor = MagicMock()
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             assert google_routes.start_tasks_sync() is False
 
         executor.submit.assert_not_called()
 
     def test_restarts_after_error(self, tasks_state):
-        tasks_state["tasks"] = {"status": "error", "updated": False}
+        registry.update(
+            google_routes.TASKS_TASK_ID, status=sync_state.ERROR, updated=False
+        )
 
         executor = MagicMock()
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             assert google_routes.start_tasks_sync() is True
 
         executor.submit.assert_called_once()
-        assert tasks_state["tasks"]["status"] == "pending"
+        assert registry.status(google_routes.TASKS_TASK_ID) == sync_state.PENDING
 
     def test_submit_failure_marks_error(self, tasks_state):
         executor = MagicMock()
         executor.submit.side_effect = RuntimeError("pool is shut down")
 
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             with pytest.raises(RuntimeError):
                 google_routes.start_tasks_sync()
 
         # Status must not stay latched at pending, or nothing can sync again
-        assert tasks_state["tasks"]["status"] == "error"
+        assert registry.status(google_routes.TASKS_TASK_ID) == sync_state.ERROR
 
 
 class TestFetchGoogleTasksBackgroundResilience:
@@ -158,7 +168,7 @@ class TestFetchGoogleTasksBackgroundResilience:
         self, mock_tasks_api, mock_chores_db, tasks_state
     ):
         def fetch_and_wipe():
-            background_tasks.clear()
+            registry.clear()
             return []
 
         mock_tasks_api.get_chores.side_effect = fetch_and_wipe
@@ -166,4 +176,4 @@ class TestFetchGoogleTasksBackgroundResilience:
 
         google_routes.fetch_google_tasks_background()
 
-        assert tasks_state["tasks"]["status"] == "complete"
+        assert registry.status(google_routes.TASKS_TASK_ID) == sync_state.COMPLETE

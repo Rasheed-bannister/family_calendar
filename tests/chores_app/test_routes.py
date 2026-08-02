@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.main import background_tasks, create_app
+from src import sync_state
+from src.google_integration.routes import TASKS_TASK_ID
+from src.main import create_app
+from src.sync_state import registry
 
 
 @pytest.fixture
@@ -21,12 +24,14 @@ def client():
 
 @pytest.fixture
 def tasks_state():
-    """Isolate the module-global background_tasks dict for a single test."""
-    snapshot = dict(background_tasks)
-    background_tasks.clear()
-    yield background_tasks
-    background_tasks.clear()
-    background_tasks.update(snapshot)
+    """Isolate the registry's task state for a single test.
+
+    Swapping the attribute (rather than mutating the shared dict) means the
+    registry's own methods read the isolated copy, and the real state is
+    restored automatically even if the test fails.
+    """
+    with patch.object(registry, "tasks", {}) as tasks:
+        yield tasks
 
 
 @pytest.fixture
@@ -34,7 +39,7 @@ def inline_executor():
     """Replace the shared thread pool with one that runs work synchronously."""
     executor = MagicMock()
     executor.submit.side_effect = lambda fn, *args, **kwargs: fn(*args, **kwargs)
-    with patch("src.main.sync_executor", executor):
+    with patch.object(registry, "executor", executor):
         yield executor
 
 
@@ -103,10 +108,10 @@ class TestUpdateStatus:
 class TestRefreshChores:
     """Regression tests for the /chores/refresh wedge.
 
-    The route used to set background_tasks["tasks"]["status"] = "running" and
-    then call the worker, whose first action is to bail out when the status is
-    already "running". The sync never ran, the route reported success, and the
-    status stayed "running" forever - blocking every later chores sync.
+    The route used to set the "tasks" entry's status to "running" and then call
+    the worker, whose first action is to bail out when the status is already
+    "running". The sync never ran, the route reported success, and the status
+    stayed "running" forever - blocking every later chores sync.
     """
 
     @patch("src.google_integration.routes.chores_db")
@@ -122,7 +127,7 @@ class TestRefreshChores:
         # app.js only requires response.ok
         assert response.status_code < 400
         mock_tasks_api.get_chores.assert_called_once()
-        assert tasks_state["tasks"]["status"] == "complete"
+        assert registry.status(TASKS_TASK_ID) == sync_state.COMPLETE
 
     @patch("src.google_integration.routes.chores_db")
     @patch("src.google_integration.routes.tasks_api")
@@ -136,12 +141,17 @@ class TestRefreshChores:
         client.post("/chores/refresh")
 
         assert mock_tasks_api.get_chores.call_count == 2
-        assert tasks_state["tasks"]["status"] == "complete"
+        assert registry.status(TASKS_TASK_ID) == sync_state.COMPLETE
 
-        # The calendar view's gate must also allow a later sync through
+        # The calendar view's gate must also allow a later sync through. It is
+        # staleness-based now: quiet while the result is fresh, open again once
+        # the sync interval has elapsed. It used to refuse for any task that had
+        # ever completed, so after the first successful chores sync the render
+        # path never re-triggered one for the life of the process.
         from src.calendar_app.routes import _should_start_chores_background_task
 
-        tasks_state["tasks"]["status"] = "error"
+        assert _should_start_chores_background_task() is False
+        registry.update(TASKS_TASK_ID, last_update_time=0)
         assert _should_start_chores_background_task() is True
 
     @patch("src.google_integration.routes.chores_db")
@@ -149,10 +159,10 @@ class TestRefreshChores:
     def test_refresh_reports_in_progress_without_starting_a_second_sync(
         self, mock_tasks_api, mock_chores_db, client, tasks_state
     ):
-        tasks_state["tasks"] = {"status": "running", "updated": False}
+        registry.update(TASKS_TASK_ID, status=sync_state.RUNNING, updated=False)
 
         executor = MagicMock()
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             response = client.post("/chores/refresh")
 
         assert response.status_code == 202
@@ -171,17 +181,17 @@ class TestRefreshChores:
 
         assert response.status_code < 400
         # Client polls /calendar/check-updates and needs a terminal status
-        assert tasks_state["tasks"]["status"] == "error"
+        assert registry.status(TASKS_TASK_ID) == sync_state.ERROR
 
     def test_refresh_returns_500_when_sync_cannot_be_queued(self, client, tasks_state):
         executor = MagicMock()
         executor.submit.side_effect = RuntimeError("pool is shut down")
 
-        with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "executor", executor):
             response = client.post("/chores/refresh")
 
         assert response.status_code == 500
-        assert tasks_state["tasks"]["status"] == "error"
+        assert registry.status(TASKS_TASK_ID) == sync_state.ERROR
 
 
 class TestAddChoreRoute:

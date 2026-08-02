@@ -2,6 +2,7 @@
 
 import datetime
 import sqlite3
+from contextlib import contextmanager
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,62 @@ def local_tz():
     """Pin the app's display timezone so month bounds are deterministic."""
     with patch("src.config.get_local_timezone", return_value=NEW_YORK):
         yield NEW_YORK
+
+
+class _TrackedConnection:
+    """Proxy around a real sqlite3 connection that records whether it was closed."""
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+        self.closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+    def close(self):
+        self.closed = True
+        self._wrapped.close()
+
+
+@contextmanager
+def track_connections():
+    """Wrap sqlite3.connect so tests can assert no connection is leaked."""
+    opened = []
+    real_connect = sqlite3.connect
+
+    def fake_connect(*args, **kwargs):
+        conn = _TrackedConnection(real_connect(*args, **kwargs))
+        opened.append(conn)
+        return conn
+
+    with patch("src.calendar_app.database.sqlite3.connect", fake_connect):
+        yield opened
+
+
+def _drop_table(db_path, table):
+    """Drop a table so the next operation against it raises mid-flight."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(f"DROP TABLE {table}")
+    conn.commit()
+    conn.close()
+
+
+def _pragma(db_path, name):
+    """Read a pragma over an independent connection."""
+    conn = sqlite3.connect(db_path)
+    value = conn.execute(f"PRAGMA {name}").fetchone()[0]
+    conn.close()
+    return value
+
+
+def _index_names(db_path):
+    conn = sqlite3.connect(db_path)
+    names = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+    }
+    conn.close()
+    return names
 
 
 def _insert_raw_event(db_path, event_id, start, end, month_id="8.2026", all_day=0):
@@ -523,3 +580,340 @@ class TestRunMigrations:
         ).fetchone()
         conn.close()
         assert row == ("not-a-timestamp", "also-garbage")
+
+
+def _raising_step(cursor):
+    """A migration step that always fails, for step-isolation tests."""
+    raise sqlite3.OperationalError("boom")
+
+
+@db.db_connection
+def _count_calendars(cursor):
+    """Decorator user standing in for the ones in src/calendar_app/utils.py."""
+    cursor.execute("SELECT COUNT(*) FROM Calendar")
+    return cursor.fetchone()[0]
+
+
+@db.db_connection
+def _insert_then_fail(cursor):
+    """Writes a row and then blows up, to prove the transaction is rolled back."""
+    cursor.execute(
+        "INSERT INTO Calendar (calendar_id, name, color) VALUES ('half-written', 'x', '#000')"
+    )
+    cursor.execute("SELECT * FROM NoSuchTable")
+
+
+class TestErrorContract:
+    """A database failure must not be reported as an empty result.
+
+    The old decorator logged every ``sqlite3.Error`` and returned ``[]`` from
+    whichever function raised it. ``get_calendar`` therefore answered "no such
+    calendar" when the database was unreachable, and
+    ``create_calendar_events_from_google_data`` - which branches on
+    ``if not calendar_obj`` - created a duplicate calendar in response.
+    """
+
+    def test_get_calendar_raises_instead_of_returning_a_falsy_value(self, temp_db):
+        _drop_table(temp_db, "Calendar")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.get_calendar("cal-1")
+
+    def test_get_calendar_returns_none_only_when_the_row_is_missing(self, temp_db):
+        """The other half of the contract: absence still reads as None."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            assert db.get_calendar("never-stored") is None
+
+    def test_get_month_raises_on_database_error(self, temp_db):
+        _drop_table(temp_db, "CalendarMonth")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.get_month("5.2025")
+
+    def test_add_month_raises_on_database_error(self, temp_db):
+        _drop_table(temp_db, "CalendarMonth")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.add_month(CalendarMonth(year=2025, month=5))
+
+    def test_add_calendar_raises_on_database_error(self, temp_db):
+        _drop_table(temp_db, "Calendar")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.add_calendar(Calendar(calendar_id="c", name="n", color_hex="#fff"))
+
+    def test_add_event_raises_on_database_error(self, temp_db):
+        _drop_table(temp_db, "CalendarEvent")
+        cal = Calendar(calendar_id="cal-1", name="Test Cal", color_hex="#FF0000")
+        month = CalendarMonth(year=2025, month=5)
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.add_event(
+                    CalendarEvent(
+                        id="evt-1",
+                        calendar=cal,
+                        month=month,
+                        title="T",
+                        start_datetime=datetime.datetime(
+                            2025, 5, 15, 10, 0, tzinfo=datetime.timezone.utc
+                        ),
+                        end_datetime=datetime.datetime(
+                            2025, 5, 15, 11, 0, tzinfo=datetime.timezone.utc
+                        ),
+                        all_day=False,
+                    )
+                )
+
+    def test_get_all_events_raises_instead_of_returning_an_empty_list(self, temp_db):
+        _drop_table(temp_db, "CalendarEvent")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.get_all_events(CalendarMonth(year=2025, month=5))
+
+    def test_get_all_events_for_month_range_raises_on_database_error(
+        self, temp_db, local_tz
+    ):
+        _drop_table(temp_db, "CalendarEvent")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                db.get_all_events_for_month_range(2025, 5)
+
+    def test_decorated_function_propagates_database_error(self, temp_db):
+        """utils.py's @db_connection users get the same contract."""
+        _drop_table(temp_db, "Calendar")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                _count_calendars()
+
+
+class TestDecoratorCompatibility:
+    """src/calendar_app/utils.py applies @db_connection to its own functions."""
+
+    def test_decorator_injects_cursor_and_returns_value(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_calendar(Calendar(calendar_id="c1", name="One", color_hex="#fff"))
+            assert _count_calendars() == 1
+
+    def test_decorator_commits_on_success(self, temp_db):
+        @db.db_connection
+        def insert(cursor):
+            cursor.execute(
+                "INSERT INTO Calendar (calendar_id, name, color) VALUES (?, ?, ?)",
+                ("committed", "Committed", "#fff"),
+            )
+
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            insert()
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT name FROM Calendar WHERE calendar_id = 'committed'"
+        ).fetchone()
+        conn.close()
+        assert row == ("Committed",)
+
+    def test_get_next_color_accepts_cursor_as_keyword(self, temp_db):
+        """utils.add_events calls get_next_color(cursor=cursor)."""
+        conn = sqlite3.connect(temp_db)
+        color = db.get_next_color(cursor=conn.cursor())
+        conn.commit()
+        conn.close()
+        assert color == db.DEFAULT_COLORS[0]
+
+
+class TestConnectionLifecycle:
+    """Connections must be closed and transactions rolled back on failure."""
+
+    def test_connection_closed_when_a_read_fails(self, temp_db):
+        _drop_table(temp_db, "Calendar")
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with track_connections() as opened:
+                with pytest.raises(sqlite3.Error):
+                    db.get_calendar("cal-1")
+
+        assert opened, "expected the operation to open a connection"
+        assert all(conn.closed for conn in opened)
+
+    def test_connection_closed_when_a_decorated_function_raises(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with track_connections() as opened:
+                with pytest.raises(sqlite3.Error):
+                    _insert_then_fail()
+
+        assert opened
+        assert all(conn.closed for conn in opened)
+
+    def test_failed_write_is_rolled_back(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with pytest.raises(sqlite3.Error):
+                _insert_then_fail()
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT calendar_id FROM Calendar WHERE calendar_id = 'half-written'"
+        ).fetchone()
+        conn.close()
+        assert row is None
+
+
+class TestCreateAllIsNonDestructive:
+    """create_all used to open DATABASE_FILE with mode "w" before connecting."""
+
+    def test_does_not_truncate_an_existing_database(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_calendar(
+                Calendar(calendar_id="keep-1", name="Keep", color_hex="#f0f")
+            )
+
+            db.create_all()
+
+            survivor = db.get_calendar("keep-1")
+
+        assert survivor is not None
+        assert survivor.name == "Keep"
+
+    def test_is_idempotent(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.create_all()
+            db.create_all()
+
+        conn = sqlite3.connect(temp_db)
+        count = conn.execute("SELECT COUNT(*) FROM DefaultColors").fetchone()[0]
+        conn.close()
+        assert count == len(db.DEFAULT_COLORS)
+
+
+class TestPragmas:
+    """WAL and a busy timeout, for a background writer on an SD card."""
+
+    def test_wal_mode_enabled(self, temp_db):
+        assert _pragma(temp_db, "journal_mode") == "wal"
+
+    def test_busy_timeout_applied(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with db.db_connection(commit=False) as cursor:
+                cursor.execute("PRAGMA busy_timeout")
+                assert cursor.fetchone()[0] == db.BUSY_TIMEOUT_MS
+
+    def test_synchronous_is_normal(self, temp_db):
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with db.db_connection(commit=False) as cursor:
+                cursor.execute("PRAGMA synchronous")
+                assert cursor.fetchone()[0] == 1  # NORMAL
+
+    def test_committed_writes_are_visible_to_other_connections(self, temp_db):
+        """WAL must not hide committed rows from the tests that read tmp DBs raw."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.add_calendar(Calendar(calendar_id="visible", name="V", color_hex="#fff"))
+
+        conn = sqlite3.connect(temp_db)
+        row = conn.execute(
+            "SELECT name FROM Calendar WHERE calendar_id = 'visible'"
+        ).fetchone()
+        conn.close()
+        assert row == ("V",)
+
+    def test_foreign_key_enforcement_stays_off(self, temp_db):
+        """get_all_events LEFT JOINs Calendar because orphaned events exist."""
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            with db.db_connection(commit=False) as cursor:
+                cursor.execute("PRAGMA foreign_keys")
+                assert cursor.fetchone()[0] == 0
+
+
+class TestIndexes:
+    """Indexes exist for the columns the queries actually filter and sort on."""
+
+    def test_create_all_creates_indexes(self, temp_db):
+        names = _index_names(temp_db)
+        assert "idx_calendarevent_month_id" in names
+        assert "idx_calendarevent_start_datetime" in names
+
+    def test_run_migrations_adds_indexes_to_an_existing_database(self, temp_db):
+        """Databases that predate the indexes must pick them up too."""
+        conn = sqlite3.connect(temp_db)
+        conn.execute("DROP INDEX idx_calendarevent_month_id")
+        conn.execute("DROP INDEX idx_calendarevent_start_datetime")
+        conn.commit()
+        conn.close()
+
+        with patch.object(db, "DATABASE_FILE", temp_db):
+            db.run_migrations()
+
+        names = _index_names(temp_db)
+        assert "idx_calendarevent_month_id" in names
+        assert "idx_calendarevent_start_datetime" in names
+
+    def test_month_id_lookup_uses_index(self, temp_db):
+        """cleanup_deleted_events and get_all_events filter on month_id."""
+        conn = sqlite3.connect(temp_db)
+        plan = " ".join(
+            str(row)
+            for row in conn.execute(
+                "EXPLAIN QUERY PLAN SELECT id FROM CalendarEvent WHERE month_id = ?",
+                ("8.2026",),
+            )
+        )
+        conn.close()
+        assert "idx_calendarevent_month_id" in plan
+
+    def test_month_range_query_uses_index_and_avoids_a_sort(self, temp_db):
+        """get_all_events_for_month_range filters and orders by datetime(start)."""
+        conn = sqlite3.connect(temp_db)
+        plan = " ".join(
+            str(row)
+            for row in conn.execute(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT ev.id
+                FROM CalendarEvent ev
+                LEFT JOIN Calendar cal ON ev.calendar_id = cal.calendar_id
+                WHERE
+                    datetime(ev.start_datetime) <= datetime(?)
+                    AND datetime(ev.end_datetime) >= datetime(?)
+                ORDER BY datetime(ev.start_datetime)
+                """,
+                ("2026-09-01T00:00:00+00:00", "2026-08-01T00:00:00+00:00"),
+            )
+        )
+        conn.close()
+        assert "idx_calendarevent_start_datetime" in plan
+        assert "TEMP B-TREE" not in plan.upper()
+
+
+class TestRunMigrationsErrorHandling:
+    """A failed migration must not take app startup down with it."""
+
+    def test_database_error_does_not_propagate(self, tmp_path):
+        db_path = tmp_path / "unreachable.db"
+        with patch.object(db, "DATABASE_FILE", db_path):
+            with patch(
+                "src.calendar_app.database.sqlite3.connect",
+                side_effect=sqlite3.OperationalError("unable to open database file"),
+            ):
+                db.run_migrations()  # must not raise
+
+    def test_earlier_step_survives_a_later_failure(self, tmp_path):
+        """Steps commit independently, so one failure cannot undo the others."""
+        db_path = tmp_path / "migrate_steps.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """
+            CREATE TABLE Calendar (
+                calendar_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        with patch.object(db, "DATABASE_FILE", db_path):
+            with patch.object(db, "_create_indexes", _raising_step):
+                db.run_migrations()
+
+        conn = sqlite3.connect(db_path)
+        columns = [col[1] for col in conn.execute("PRAGMA table_info(Calendar)")]
+        conn.close()
+        assert "display_name" in columns

@@ -1,13 +1,23 @@
 import datetime
-from unittest.mock import patch
+import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import sync_state
+
 # Import the functions/blueprint to test
 from src.calendar_app import routes as calendar_routes
+from src.google_integration.routes import TASKS_TASK_ID
 
 # Import the app factory function
 from src.main import create_app
+
+# Background sync state lives in the registry; it is the single seam the tests
+# patch, so production code and assertions can never read different dicts.
+from src.sync_state import registry
+
+CALENDAR_TASK_ID = "calendar.5.2025"
 
 
 @pytest.fixture
@@ -25,6 +35,39 @@ def client():
         yield client
         # Clean up after tests if necessary
         # e.g., db.drop_all()
+
+
+@pytest.fixture
+def tasks_state():
+    """Isolate the registry's task state for a single test.
+
+    Swapping the attribute (rather than mutating the shared dict) means the
+    registry's own methods read the isolated copy, and the real state is
+    restored automatically even if the test fails.
+    """
+    with patch.object(registry, "tasks", {}) as tasks:
+        yield tasks
+
+
+@pytest.fixture
+def mock_executor():
+    """Replace the shared thread pool so no sync actually runs."""
+    executor = MagicMock()
+    with patch.object(registry, "executor", executor):
+        yield executor
+
+
+@pytest.fixture
+def photo_sync_due():
+    """Reset the photo-sync rate limiter so /check-updates performs a scan.
+
+    The timestamp is a plain module global (it is a rate limit, not a task with
+    a status lifecycle, so it deliberately does not live in the registry), which
+    means one test's poll would otherwise suppress the next test's for the
+    10-minute interval.
+    """
+    with patch.object(calendar_routes, "_last_photo_sync", 0.0):
+        yield
 
 
 # --- Tests for _filter_events_for_day ---
@@ -176,19 +219,13 @@ def test_filter_events_naive_datetime():
 @patch("src.calendar_app.routes.db")
 @patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
 @patch("src.weather_integration.api.get_weather_for_display")
-@patch("src.main.sync_executor")
-@patch("src.google_integration.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_default(
-    mock_tasks,
-    mock_lock,
-    mock_google_tasks,
-    mock_executor,
     mock_get_weather,
     mock_needs_refresh,
     mock_db,
     client,
+    tasks_state,
+    mock_executor,
 ):
     """Test the default calendar view route (current month/year)."""
     mock_db.get_all_events.return_value = []
@@ -246,19 +283,13 @@ def test_view_route_default(
 @patch("src.calendar_app.routes.db")
 @patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
 @patch("src.weather_integration.api.get_weather_for_display")
-@patch("src.main.sync_executor")
-@patch("src.google_integration.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_route_specific_month(
-    mock_tasks,
-    mock_lock,
-    mock_google_tasks,
-    mock_executor,
     mock_get_weather,
     mock_needs_refresh,
     mock_db,
     client,
+    tasks_state,
+    mock_executor,
 ):
     """Test the calendar view route for a specific month/year."""
     mock_db.get_all_events.return_value = []
@@ -331,20 +362,14 @@ def test_view_route_specific_month(
 @patch("src.weather_integration.api.get_weather_data")
 @patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
 @patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-@patch("src.main.sync_executor")
-@patch("src.google_integration.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_renders_when_weather_unavailable(
-    mock_tasks,
-    mock_lock,
-    mock_google_tasks,
-    mock_executor,
     mock_display,
     mock_needs_refresh,
     mock_live_fetch,
     mock_db,
     client,
+    tasks_state,
+    mock_executor,
 ):
     """The page still renders - and says so honestly - with no weather data."""
     mock_db.get_all_events.return_value = []
@@ -363,20 +388,14 @@ def test_view_renders_when_weather_unavailable(
 @patch("src.weather_integration.api.get_weather_data")
 @patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
 @patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-@patch("src.main.sync_executor")
-@patch("src.google_integration.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_queues_weather_refresh_instead_of_blocking(
-    mock_tasks,
-    mock_lock,
-    mock_google_tasks,
-    mock_executor,
     mock_display,
     mock_needs_refresh,
     mock_live_fetch,
     mock_db,
     client,
+    tasks_state,
+    mock_executor,
 ):
     """A stale/missing cache queues the fetch on the pool, never inline."""
     mock_db.get_all_events.return_value = []
@@ -392,21 +411,15 @@ def test_view_queues_weather_refresh_instead_of_blocking(
 @patch("src.calendar_app.routes.db")
 @patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
 @patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-@patch("src.main.sync_executor")
 @patch("src.google_integration.routes.fetch_google_tasks_background")
-@patch("src.google_integration.routes.background_tasks", new_callable=dict)
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_view_dispatches_chores_sync_via_executor(
-    mock_tasks,
-    mock_lock,
-    mock_google_tasks,
     mock_fetch_tasks,
-    mock_executor,
     mock_display,
     mock_needs_refresh,
     mock_db,
     client,
+    tasks_state,
+    mock_executor,
 ):
     """The Google Tasks round-trip is queued on the pool, not run inline."""
     mock_db.get_all_events.return_value = []
@@ -417,7 +430,9 @@ def test_view_dispatches_chores_sync_via_executor(
     mock_fetch_tasks.assert_not_called()  # never executed in the request thread
     submitted = [call[0][0] for call in mock_executor.submit.call_args_list]
     assert mock_fetch_tasks in submitted
-    assert mock_google_tasks["tasks"]["status"] == "pending"
+    # The registry claimed the slot on the way to the pool; the worker owns
+    # every status transition from here.
+    assert registry.status(TASKS_TASK_ID) == sync_state.PENDING
 
 
 def test_view_route_invalid_month(client):
@@ -431,10 +446,8 @@ def test_view_route_invalid_month(client):
 
 
 @patch("src.slideshow.database.sync_photos")  # Corrected patch target
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks", new_callable=dict)
 def test_check_updates_no_task(
-    mock_tasks, mock_lock, mock_sync_photos, client
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
 ):  # Updated mock name
     """Test check_updates when the background task is not tracked."""
     response = client.get("/calendar/check-updates/2025/5")
@@ -442,39 +455,51 @@ def test_check_updates_no_task(
     json_data = response.get_json()
     assert json_data["calendar_status"] == "not_tracked"
     assert not json_data["updates_available"]
+    # An untracked month has never synced, so the poll kicks one off
+    assert json_data["refresh_triggered"]
+    mock_executor.submit.assert_called_once()
     mock_sync_photos.assert_called_once()  # Check slideshow sync is called using updated mock name
 
 
 @patch("src.slideshow.database.sync_photos")  # Corrected patch target
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks")
 def test_check_updates_task_running(
-    mock_tasks, mock_lock, mock_sync_photos, client
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
 ):  # Updated mock name
     """Test check_updates when the background task is running."""
-    mock_tasks.get.return_value = {"status": "running", "updated": False}
+    registry.update(CALENDAR_TASK_ID, status=sync_state.RUNNING, updated=False)
+
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data["calendar_status"] == "running"
     assert not json_data["updates_available"]
+    # A sync already in flight is never stale, so the poll must not pile a
+    # duplicate on top of it
+    assert not json_data["refresh_triggered"]
+    mock_executor.submit.assert_not_called()
     mock_sync_photos.assert_called_once()  # Use updated mock name
 
 
 @patch("src.slideshow.database.sync_photos")  # Corrected patch target
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks")
 def test_check_updates_task_complete_with_updates(
-    mock_tasks, mock_lock, mock_sync_photos, client
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
 ):  # Updated mock name
     """Test check_updates when the task is complete and updates are available."""
-    task_info = {
-        "status": "complete",
-        "updated": True,
-        "events_changed": True,
-        "chores_changed": False,
-    }
-    mock_tasks.get.return_value = task_info
+    now = time.time()
+    registry.update(
+        CALENDAR_TASK_ID,
+        status=sync_state.COMPLETE,
+        updated=True,
+        events_changed=True,
+        last_update_time=now,
+    )
+    registry.update(
+        TASKS_TASK_ID,
+        status=sync_state.COMPLETE,
+        updated=False,
+        chores_changed=False,
+        last_update_time=now,
+    )
 
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200
@@ -484,27 +509,35 @@ def test_check_updates_task_complete_with_updates(
     assert json_data["events_changed"]
     assert not json_data["chores_changed"]
 
-    # Verify flags were reset after reading
-    assert not task_info["updated"]
-    assert not task_info["events_changed"]
-    assert not task_info["chores_changed"]
+    # Verify flags were reset after reading, so the change is reported exactly
+    # once and the browser does not reload on every poll
+    calendar_entry = registry.snapshot(CALENDAR_TASK_ID)
+    assert not calendar_entry["updated"]
+    assert not calendar_entry["events_changed"]
+    assert not registry.snapshot(TASKS_TASK_ID)["chores_changed"]
     mock_sync_photos.assert_called_once()
 
 
 @patch("src.slideshow.database.sync_photos")  # Corrected patch target
-@patch("src.calendar_app.routes.google_fetch_lock")
-@patch("src.calendar_app.routes.background_tasks")
 def test_check_updates_task_complete_no_updates(
-    mock_tasks, mock_lock, mock_sync_photos, client
+    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
 ):  # Updated mock name
     """Test check_updates when the task is complete but no updates were found."""
-    task_info = {
-        "status": "complete",
-        "updated": False,
-        "events_changed": False,
-        "chores_changed": False,
-    }
-    mock_tasks.get.return_value = task_info
+    now = time.time()
+    registry.update(
+        CALENDAR_TASK_ID,
+        status=sync_state.COMPLETE,
+        updated=False,
+        events_changed=False,
+        last_update_time=now,
+    )
+    registry.update(
+        TASKS_TASK_ID,
+        status=sync_state.COMPLETE,
+        updated=False,
+        chores_changed=False,
+        last_update_time=now,
+    )
 
     response = client.get("/calendar/check-updates/2025/5")
     assert response.status_code == 200

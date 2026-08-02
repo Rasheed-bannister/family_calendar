@@ -4,6 +4,7 @@ import datetime
 import time
 from unittest.mock import MagicMock, patch
 
+from src import sync_state
 from src.calendar_app.routes import (
     WEATHER_TASK_ID,
     _build_calendar_weeks_data,
@@ -18,6 +19,7 @@ from src.calendar_app.routes import (
     _should_start_weather_refresh,
     _start_weather_background_refresh,
 )
+from src.sync_state import registry
 
 
 class TestCalculateNavigationDates:
@@ -245,26 +247,38 @@ class TestBuildCalendarWeeksData:
 class TestWeatherRefreshGate:
     """The render path must delegate the live fetch and never hammer it."""
 
-    def test_claims_slot_when_no_task_tracked(self):
-        with patch("src.calendar_app.routes.background_tasks", {}) as tasks:
+    def test_starts_refresh_when_no_task_tracked(self):
+        with patch.object(registry, "tasks", {}):
             assert _should_start_weather_refresh() is True
-            assert tasks[WEATHER_TASK_ID]["status"] == "pending"
+            # The gate is read-only: the claim belongs to registry.submit(), so
+            # a render that decides "yes" cannot latch a status the worker
+            # would then refuse to take over.
+            assert registry.status(WEATHER_TASK_ID) is None
 
-    def test_does_not_claim_when_already_in_flight(self):
-        for status in ("pending", "running"):
-            tasks = {WEATHER_TASK_ID: {"status": status, "last_attempt": 0}}
-            with patch("src.calendar_app.routes.background_tasks", tasks):
+    def test_does_not_start_when_already_in_flight(self):
+        for status in sync_state.IN_FLIGHT:
+            tasks = {WEATHER_TASK_ID: {"status": status, "last_update_time": 0}}
+            with patch.object(registry, "tasks", tasks):
                 assert _should_start_weather_refresh() is False
 
     def test_does_not_retry_within_cooldown(self):
-        """A failing API must not be retried on every single page render."""
-        tasks = {WEATHER_TASK_ID: {"status": "error", "last_attempt": time.time()}}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
+        """A failing API must not be retried on every single page render.
+
+        registry.finalize() stamps last_update_time on the error path too, so
+        the backoff applies to failed attempts, not just successful ones.
+        """
+        tasks = {
+            WEATHER_TASK_ID: {
+                "status": sync_state.ERROR,
+                "last_update_time": time.time(),
+            }
+        }
+        with patch.object(registry, "tasks", tasks):
             assert _should_start_weather_refresh() is False
 
     def test_retries_after_cooldown_elapsed(self):
-        tasks = {WEATHER_TASK_ID: {"status": "error", "last_attempt": 0}}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
+        tasks = {WEATHER_TASK_ID: {"status": sync_state.ERROR, "last_update_time": 0}}
+        with patch.object(registry, "tasks", tasks):
             assert _should_start_weather_refresh() is True
 
 
@@ -273,8 +287,8 @@ class TestWeatherBackgroundRefresh:
 
     def test_refresh_is_submitted_to_executor(self):
         executor = MagicMock()
-        with patch("src.calendar_app.routes.background_tasks", {}):
-            with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
                 _start_weather_background_refresh()
 
         executor.submit.assert_called_once_with(_refresh_weather_background)
@@ -282,44 +296,40 @@ class TestWeatherBackgroundRefresh:
     def test_executor_failure_is_swallowed_and_recorded(self):
         executor = MagicMock()
         executor.submit.side_effect = RuntimeError("pool is shut down")
-        tasks = {}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
-            with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
                 _start_weather_background_refresh()
 
-        assert tasks[WEATHER_TASK_ID]["status"] == "error"
+                assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
 
     def test_worker_marks_complete_on_success(self):
-        tasks = {}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
+        with patch.object(registry, "tasks", {}):
             with patch(
                 "src.weather_integration.api.get_weather_data",
                 return_value={"current": {}, "daily": []},
             ):
                 _refresh_weather_background()
 
-        assert tasks[WEATHER_TASK_ID]["status"] == "complete"
+            assert registry.status(WEATHER_TASK_ID) == sync_state.COMPLETE
 
     def test_worker_marks_error_when_no_data_available(self):
-        tasks = {}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
+        with patch.object(registry, "tasks", {}):
             with patch(
                 "src.weather_integration.api.get_weather_data", return_value=None
             ):
                 _refresh_weather_background()
 
-        assert tasks[WEATHER_TASK_ID]["status"] == "error"
+            assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
 
     def test_worker_marks_error_when_fetch_raises(self):
-        tasks = {}
-        with patch("src.calendar_app.routes.background_tasks", tasks):
+        with patch.object(registry, "tasks", {}):
             with patch(
                 "src.weather_integration.api.get_weather_data",
                 side_effect=RuntimeError("network down"),
             ):
                 _refresh_weather_background()
 
-        assert tasks[WEATHER_TASK_ID]["status"] == "error"
+            assert registry.status(WEATHER_TASK_ID) == sync_state.ERROR
 
 
 class TestGetWeatherDataSafe:
@@ -327,7 +337,7 @@ class TestGetWeatherDataSafe:
 
     def test_returns_cached_reading_without_fetching(self):
         cached = {"current": {"apparent_temperature": 55}, "daily": [], "stale": False}
-        with patch("src.calendar_app.routes.background_tasks", {}):
+        with patch.object(registry, "tasks", {}):
             with patch(
                 "src.weather_integration.api.weather_cache_needs_refresh",
                 return_value=False,
@@ -347,8 +357,8 @@ class TestGetWeatherDataSafe:
     def test_stale_cache_queues_refresh_and_still_returns_data(self):
         executor = MagicMock()
         cached = {"current": {"apparent_temperature": 55}, "daily": [], "stale": True}
-        with patch("src.calendar_app.routes.background_tasks", {}):
-            with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
                 with patch(
                     "src.weather_integration.api.weather_cache_needs_refresh",
                     return_value=True,
@@ -364,8 +374,8 @@ class TestGetWeatherDataSafe:
 
     def test_returns_none_when_no_reading_available(self):
         executor = MagicMock()
-        with patch("src.calendar_app.routes.background_tasks", {}):
-            with patch("src.main.sync_executor", executor):
+        with patch.object(registry, "tasks", {}):
+            with patch.object(registry, "executor", executor):
                 with patch(
                     "src.weather_integration.api.weather_cache_needs_refresh",
                     return_value=True,

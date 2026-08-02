@@ -1,26 +1,34 @@
 import datetime
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, redirect, request, url_for
 
 # Import configuration
 from src.config import get_config
 
+# Background sync state. Lives in its own module so blueprints can import it
+# without importing src.main, which would be an import cycle.
+from src.sync_state import registry
+
 # Import utility functions
 from src.weather_integration.utils import get_weather_icon
 
 logger = logging.getLogger(__name__)
 
-# Shared resources across components
-google_fetch_lock = threading.Lock()  # Global lock for Google API fetching
-background_tasks: dict[str, dict] = (
-    {}
-)  # Dict to track background task status by month/year
-
-# Thread pool for background sync tasks (caps concurrency, reuses threads)
-sync_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="sync")
+# Backwards-compatible aliases, bound to the *same* objects the registry uses.
+#
+# Read-only. Never patch these, and never write through them:
+#   * writing to the task dict directly is what caused the sync wedges the
+#     registry now prevents by construction;
+#   * these names are bound once at import, so patching them (or patching
+#     ``registry.tasks``) makes the two views diverge silently -- the alias
+#     keeps pointing at the original object while production code reads the
+#     replacement.
+# Use ``src.sync_state.registry`` and its methods instead, in both application
+# code and tests.
+background_tasks: dict[str, dict] = registry.tasks
+google_fetch_lock = registry.lock
+sync_executor = registry.executor
 
 
 # Allowlist of configuration values exposed to the browser via /api/config.
@@ -77,11 +85,7 @@ def _build_public_config(config) -> dict[str, dict]:
 
 def clear_stale_background_tasks():
     """Clear any stale background tasks from previous runs."""
-    global background_tasks
-    with google_fetch_lock:
-        # Clear all background tasks on startup to prevent stuck states
-        background_tasks.clear()
-        logger.info("Cleared stale background tasks")
+    registry.clear()
 
 
 def create_app():
