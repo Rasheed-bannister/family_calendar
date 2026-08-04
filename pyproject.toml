@@ -54,7 +54,9 @@ dev = [
 # Force patched versions of transitive dependencies to resolve security advisories:
 # - pyasn1 (via google-auth): unbounded recursion DoS CVE, plus quadratic OID /
 #   long-form tag parsing and float-precision Real decoding (<0.6.4)
-# - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels (<48.0.1)
+# - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels
+#   (<48.0.1), plus Bleichenbacher oracle in PKCS#7 decryption via distinguishable
+#   RecipientInfo failure modes CVE-2026-69247 (<50.0.0)
 # - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
 # - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2)
 # - click (via black/flask): command injection in click.edit() (<8.3.3); not
@@ -66,7 +68,7 @@ dev = [
 #   (<83.0.0)
 constraint-dependencies = [
     "pyasn1>=0.6.4",
-    "cryptography>=48.0.1",
+    "cryptography>=50.0.0",
     "msgpack>=1.2.1",
     "pip>=26.1.2",
     "click>=8.3.3",
