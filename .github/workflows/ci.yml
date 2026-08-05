@@ -30,11 +30,14 @@ jobs:
     - name: Verify uv.lock is in sync with pyproject.toml
       run: uv lock --check
 
+    # The lint tools come from the dev dependency group in uv.lock, so `uv run`
+    # provides them. Do not add `uv pip install <tool>` here: `uv run` re-syncs the
+    # project environment from the lock before running, discarding anything
+    # installed ad-hoc -- the same unsoundness documented on the build job below.
     - name: Install dependencies
       run: |
         uv venv
         uv pip install -e ".[dev]"
-        uv pip install black isort ruff bandit[toml] mypy types-requests types-Flask
 
     - name: Lint with black
       run: |
