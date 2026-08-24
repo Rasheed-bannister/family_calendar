@@ -22,6 +22,11 @@ src/static/photos/*
 
 .DS_Store
 
+# Coverage artifacts, written by the `--cov` run in ci.yml's test job
+.coverage
+coverage.xml
+htmlcov/
+
 # Code quality reports
 complexity.json
 maintainability.json

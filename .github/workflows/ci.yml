@@ -89,16 +89,30 @@ jobs:
         CALENDAR_WEATHER_LONGITUDE: "-74.0060"
         CALENDAR_TIMEZONE: "America/New_York"
 
+    # pytest-cov is in the dev dependency group, so uv.lock supplies it -- see the
+    # note on the lint job. It used to be installed here with `uv pip install`,
+    # which `uv run` discarded on its re-sync, so `--cov` was an unrecognised
+    # argument and this step failed on every run. `continue-on-error` hid that,
+    # coverage.xml was never written, and the upload below had nothing to send.
+    # Left gating for that reason: if coverage tooling breaks again, CI should say
+    # so rather than silently stop reporting.
+    #
+    # Same env as the test step above -- this re-runs the same suite.
     - name: Generate test coverage report
       run: |
-        uv pip install pytest-cov
         uv run pytest --cov=src --cov-report=xml --cov-report=term-missing
-      continue-on-error: true
+      env:
+        CALENDAR_WEATHER_LATITUDE: "40.7128"
+        CALENDAR_WEATHER_LONGITUDE: "-74.0060"
+        CALENDAR_TIMEZONE: "America/New_York"
 
+    # `files:` (plural). v7 of this action dropped the singular `file:`, which was
+    # reported as `Unexpected input(s) 'file'` on every run and ignored -- so the
+    # action fell back to searching for reports itself.
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v7
       with:
-        file: ./coverage.xml
+        files: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false

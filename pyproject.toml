@@ -28,6 +28,9 @@ dependencies = [
 dev = [
     # Testing
     "pytest>=9.1.1",
+    # Supplies pytest's --cov flags in CI. Must be locked rather than installed
+    # ad-hoc in the workflow: `uv run` re-syncs from uv.lock and would discard it.
+    "pytest-cov>=7.1.0",
 
     # Code formatting
     "black>=26.5.1",

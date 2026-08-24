@@ -22,11 +22,14 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
 
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -e ".[dev]"
-
+    # No install step: `uv run` below creates the environment and syncs it from
+    # uv.lock, which supplies pytest via the dev dependency group. The install this
+    # replaces was doubly inert -- `uv run` re-syncs over anything staged ad-hoc
+    # (see the lint job in ci.yml and the pip-audit step in security.yml), and
+    # `.[dev]` named an *extra* while `dev` is a dependency-group, so uv skipped it
+    # with `does not have an extra named 'dev'` on every release run. The tests have
+    # always been running against the locked versions, which is what a release
+    # should validate anyway.
     - name: Run tests
       run: |
         uv run pytest -v --tb=short
