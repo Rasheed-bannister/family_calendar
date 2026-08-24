@@ -25,20 +25,21 @@ jobs:
       uses: astral-sh/setup-uv@v7
 
     # Dependabot bumps version floors in pyproject.toml without re-locking, which can
-    # leave uv.lock pinned below its own declared minimums. Nothing else catches that:
-    # the install steps resolve fresh rather than installing from the lock.
+    # leave uv.lock pinned below its own declared minimums. Every step in this file
+    # now runs through `uv run`, which installs straight from the lock -- nothing
+    # resolves fresh any more, so nothing else would ever notice the drift. This
+    # guard is the only thing that catches it.
     - name: Verify uv.lock is in sync with pyproject.toml
       run: uv lock --check
 
-    # The lint tools come from the dev dependency group in uv.lock, so `uv run`
-    # provides them. Do not add `uv pip install <tool>` here: `uv run` re-syncs the
-    # project environment from the lock before running, discarding anything
-    # installed ad-hoc -- the same unsoundness documented on the build job below.
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -e ".[dev]"
-
+    # No install step: `uv run` creates the environment and syncs it from uv.lock,
+    # which supplies every tool below via the dev dependency group. Do not add
+    # `uv pip install <tool>` here -- `uv run` re-syncs before running and discards
+    # anything installed ad-hoc, the same unsoundness documented on the build job
+    # below. The `uv pip install -e ".[dev]"` that used to sit here was inert twice
+    # over: discarded by the re-sync, and naming `dev` as an *extra* when it is a
+    # dependency-group, so uv skipped that half with `does not have an extra named
+    # 'dev'` on every run.
     - name: Lint with black
       run: |
         uv run black --check src tests
@@ -76,11 +77,8 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
 
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -e ".[dev]"
-
+    # No install step -- see the note on the lint job. pytest comes from the dev
+    # dependency group via `uv run`.
     - name: Run tests with pytest
       run: |
         uv run pytest -v --tb=short
