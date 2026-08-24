@@ -30,16 +30,23 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
 
-    - name: Install dependencies
-      run: |
-        uv venv
-        uv pip install -e .
-
+    # No install step. `uv run` below syncs the environment from uv.lock before it
+    # runs, so the audit covers exactly the locked versions -- which is what ships.
+    # pip-audit itself is in the dev dependency group, so the lock supplies it.
+    #
+    # Do not add `uv pip install <pkg>` here expecting it to affect the audit: for
+    # anything uv manages, the re-sync discards the ad-hoc install first (the same
+    # unsoundness documented on the lint and build jobs in ci.yml). The dropped
+    # `uv pip install -e .` was the one exception -- this project declares no
+    # [build-system], so uv treats it as virtual and never installs it, letting the
+    # editable install survive the sync. All it contributed was the project's own
+    # entry, which pip-audit skips as unauditable ("not found on PyPI"). The report
+    # is one skipped line shorter (104 -> 103); findings and the gate are unchanged.
+    #
     # Writes the report for the artifact, then re-runs to gate. The first run is
     # allowed to fail so a finding still produces an uploadable report.
     - name: Run pip-audit
       run: |
-        uv pip install pip-audit
         uv run pip-audit --desc --format json --output audit-report.json || true
         uv run pip-audit --desc
 
