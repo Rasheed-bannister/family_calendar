@@ -16,8 +16,6 @@ updates:
     labels:
       - "dependencies"
       - "python"
-    reviewers:
-      - "rasheed.bannister"
     commit-message:
       prefix: "chore"
       prefix-development: "chore"
