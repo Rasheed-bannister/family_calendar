@@ -58,7 +58,9 @@ dev = [
 #   (<48.0.1), plus Bleichenbacher oracle in PKCS#7 decryption via distinguishable
 #   RecipientInfo failure modes CVE-2026-69247 (<50.0.0)
 # - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
-# - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2)
+# - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2),
+#   plus arbitrary-location file writes from doubly-encoded package URLs served by
+#   a malicious index CVE-2026-13346 (<26.2)
 # - click (via black/flask): command injection in click.edit() (<8.3.3); not
 #   reachable from this codebase, constrained to keep pip-audit clean
 # - httplib2 (via google-auth-httplib2): unbounded decompression of gzip/deflate
@@ -70,7 +72,7 @@ constraint-dependencies = [
     "pyasn1>=0.6.4",
     "cryptography>=50.0.0",
     "msgpack>=1.2.1",
-    "pip>=26.1.2",
+    "pip>=26.2",
     "click>=8.3.3",
     "httplib2>=0.32.0",
     "setuptools>=83.0.0",
