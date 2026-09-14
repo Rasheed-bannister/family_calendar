@@ -203,23 +203,27 @@ class TestRunUpgrade:
     def setup_method(self):
         _set_status("idle", "")
 
-    @patch("shutil.which", return_value="/usr/bin/uv")
+    @patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}")
     @patch("src.version.subprocess.Popen")
     @patch("src.version.subprocess.run")
     def test_successful_upgrade_flow(self, mock_run, mock_popen, mock_which):
-        """Test that _run_upgrade calls git fetch, checkout, uv sync, and restart."""
+        """git fetch, checkout, uv sync, frontend build, then restart."""
         from src.version import _run_upgrade
 
         mock_run.return_value = MagicMock(stdout="ok", returncode=0)
 
         _run_upgrade("v2.0.0")
 
-        # Should have called: git fetch, git checkout --, git checkout tag, uv sync
-        assert mock_run.call_count == 4
-        calls = [str(c) for c in mock_run.call_args_list]
-        assert any("fetch" in c for c in calls)
-        assert any("checkout" in c for c in calls)
-        assert any("uv" in c for c in calls)
+        # git fetch, git checkout --, git checkout tag, uv sync, npm ci, npm build
+        assert mock_run.call_count == 6
+        argvs = [c.args[0] for c in mock_run.call_args_list]
+        assert argvs[0][:2] == ["git", "fetch"]
+        assert argvs[2] == ["git", "checkout", "v2.0.0"]
+        assert argvs[3][:2] == ["uv", "sync"]
+        assert argvs[4][1] == "ci" and argvs[4][0].endswith("npm")
+        assert argvs[5][1:] == ["run", "build"]
+        # The frontend commands run in frontend/, not the project root.
+        assert mock_run.call_args_list[5].kwargs["cwd"].name == "frontend"
 
         # Should attempt systemd restart
         mock_popen.assert_called_once()
@@ -317,3 +321,25 @@ class TestVersionAPI:
         assert response.status_code == 200
         data = response.get_json()
         assert data["state"] == "idle"
+
+
+class TestUpgradeNeedsNpm:
+    def setup_method(self):
+        _set_status("idle", "")
+
+    @patch(
+        "shutil.which", side_effect=lambda name: "/usr/bin/uv" if name == "uv" else None
+    )
+    @patch("src.version.subprocess.Popen")
+    @patch("src.version.subprocess.run")
+    def test_missing_npm_fails_loudly_before_restart(
+        self, mock_run, mock_popen, mock_which
+    ):
+        from src.version import _run_upgrade
+
+        mock_run.return_value = MagicMock(stdout="ok", returncode=0)
+        _run_upgrade("v2.0.0")
+        status = get_upgrade_status()
+        assert status["state"] == "error"
+        assert "npm is not installed" in status["message"]
+        mock_popen.assert_not_called()

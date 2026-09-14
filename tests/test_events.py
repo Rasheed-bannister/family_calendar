@@ -193,17 +193,24 @@ class TestEndpoints:
         assert resp.mimetype == "text/event-stream"
         assert resp.headers["Cache-Control"] == "no-cache"
         assert resp.headers["X-Accel-Buffering"] == "no"
+        # Hop-by-hop; PEP 3333 forbids it and waitress answers 500 if set.
+        assert "Connection" not in resp.headers
         resp.close()
 
-    def test_pir_events_endpoint_still_works(self):
-        """The legacy motion-only stream must keep its contract."""
+    def test_sse_headers_have_no_hop_by_hop_fields(self):
+        headers = events.sse_headers()
+        assert headers == {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+    def test_legacy_pir_stream_is_gone(self):
+        """One stream per display: the motion-only endpoint no longer exists."""
         from src.main import create_app
 
         client = create_app().test_client()
-        resp = client.get("/pir/events", buffered=False)
-        assert resp.status_code == 200
-        assert resp.mimetype == "text/event-stream"
-        resp.close()
+        assert client.get("/pir/events").status_code == 404
+
+    def test_display_and_weather_event_types_exist(self):
+        assert events.DISPLAY_CHANGED == "display_changed"
+        assert events.WEATHER_CHANGED == "weather_changed"
 
     def test_both_endpoints_share_one_broker(self):
         """Two client lists would mean two threads held per browser tab."""

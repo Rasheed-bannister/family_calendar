@@ -210,81 +210,134 @@ SAMPLE_CHORES = [
 ]
 
 
-class TestChoresFragment:
-    """Tests for the /chores/fragment HTML fragment endpoint.
-
-    The fragment exists so the client can swap the chores list in place
-    instead of calling location.reload(), which on a wall display resets the
-    background slideshow position, scroll state and any open UI.
-    """
+class TestListChores:
+    """The JSON list the display renders from."""
 
     @patch("src.chores_app.routes.db")
-    def test_returns_html_fragment(self, mock_db, client):
+    def test_returns_serialized_chores(self, mock_db, client):
         mock_db.get_chores.return_value = SAMPLE_CHORES
 
-        response = client.get("/chores/fragment")
+        response = client.get("/api/chores")
 
         assert response.status_code == 200
-        assert response.headers["Content-Type"] == "text/html; charset=utf-8"
-        assert response.headers["Cache-Control"] == "no-store"
-        body = response.get_data(as_text=True)
-        assert '<div class="chores-list">' in body
-        assert "Do dishes" in body
-        # A fragment, not a page: no document chrome.
-        assert "<!DOCTYPE html>" not in body
+        assert response.get_json() == {
+            "chores": [
+                {
+                    "id": "chore-1",
+                    "person": "Alice",
+                    "text": "Do dishes",
+                    "status": "needsAction",
+                    "due": None,
+                },
+                {
+                    "id": "chore-2",
+                    "person": "Bob",
+                    "text": "Take out trash",
+                    "status": "completed",
+                    "due": None,
+                },
+            ]
+        }
+        mock_db.get_chores.assert_called_once_with()
 
-    @patch("src.calendar_app.routes.db")
     @patch("src.chores_app.routes.db")
-    @patch(
-        "src.weather_integration.api.weather_cache_needs_refresh", return_value=False
-    )
-    @patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-    def test_markup_matches_full_page(
-        self,
-        mock_display,
-        mock_needs_refresh,
-        mock_db,
-        mock_calendar_db,
-        client,
-        tasks_state,
-    ):
-        """Anti-drift guarantee: the fragment is exactly the page's chores region.
+    def test_sorted_by_person_then_pending_first(self, mock_db, client):
+        mock_db.get_chores.return_value = [
+            {"id": "3", "title": "bob", "notes": "c", "status": "completed"},
+            {"id": "1", "title": "Alice", "notes": "a", "status": "completed"},
+            {"id": "2", "title": "Bob", "notes": "b", "status": "needsAction"},
+            {"id": "4", "title": "alice", "notes": "d", "status": None},
+        ]
+        ids = [c["id"] for c in client.get("/api/chores").get_json()["chores"]]
+        assert ids == ["4", "1", "2", "3"]
 
-        Both render components/chores.html from one shared context builder. If
-        they diverge, the chores list changes appearance the moment it
-        live-updates.
-        """
-        mock_db.get_chores.return_value = SAMPLE_CHORES
-        mock_calendar_db.get_all_events_for_month_range.return_value = []
-
-        executor = MagicMock()
-        with patch.object(registry, "executor", executor):
-            fragment = client.get("/chores/fragment").get_data(as_text=True)
-            page = client.get("/calendar/2025/5").get_data(as_text=True)
-
-        # Meaningful markup, not just "both contain a <div>".
-        assert "<h3>Alice</h3>" in fragment
-        assert 'data-chore-id="chore-2"' in fragment
-        assert '<li class="chore-item completed"' in fragment
-        # The whole rendered fragment appears verbatim inside the full page.
-        assert fragment in page
+    @patch("src.chores_app.routes.db")
+    def test_missing_fields_get_defaults(self, mock_db, client):
+        mock_db.get_chores.return_value = [
+            {"id": "x", "title": None, "notes": None, "status": None}
+        ]
+        chore = client.get("/api/chores").get_json()["chores"][0]
+        assert chore == {
+            "id": "x",
+            "person": "",
+            "text": "",
+            "status": "needsAction",
+            "due": None,
+        }
 
     @patch("src.chores_app.routes.db")
     def test_starts_no_background_sync(self, mock_db, client, tasks_state):
-        """The fragment must be read-only.
-
-        The client fetches it on every data-change notification, so a Google
-        Tasks sync started here would be a feedback loop.
-        """
+        """Read-only: fetched on every change notification, so a sync here
+        would be a feedback loop."""
         mock_db.get_chores.return_value = SAMPLE_CHORES
-
         executor = MagicMock()
         with patch.object(registry, "executor", executor):
-            response = client.get("/chores/fragment")
-
+            response = client.get("/api/chores")
         assert response.status_code == 200
         executor.submit.assert_not_called()
         assert tasks_state == {}
+
+    def test_html_fragment_is_gone(self, client):
+        assert client.get("/chores/fragment").status_code == 404
+
+
+class TestChangeNotifications:
+    """Local writes tell every display straight away, not on the next sync."""
+
+    @pytest.fixture
+    def subscription(self):
+        from src.events import broker
+
+        queue = broker.subscribe()
+        yield queue
+        broker.unsubscribe(queue)
+
+    @staticmethod
+    def _types(queue):
+        out = []
+        while not queue.empty():
+            out.append(queue.get_nowait()["type"])
+        return out
+
+    @patch("src.chores_app.routes.tasks_api")
+    @patch("src.chores_app.routes.db")
+    def test_status_update_publishes(
+        self, mock_db, mock_tasks_api, client, subscription
+    ):
+        client.post(
+            "/chores/update_status/chore-1",
+            data=json.dumps({"status": "completed"}),
+            content_type="application/json",
+        )
+        assert self._types(subscription) == ["chores_changed"]
+
+    @patch("src.chores_app.routes.tasks_api")
+    @patch("src.chores_app.routes.db")
+    def test_add_publishes(self, mock_db, mock_tasks_api, client, subscription):
+        mock_chore = MagicMock()
+        mock_chore.id = "local-1"
+        mock_db.add_chore.return_value = mock_chore
+        mock_tasks_api.create_chore.return_value = {"id": "g-1"}
+        client.post(
+            "/chores/add",
+            data=json.dumps({"title": "Alice", "notes": "Do dishes"}),
+            content_type="application/json",
+        )
+        assert self._types(subscription) == ["chores_changed"]
+
+    @patch("src.chores_app.routes.tasks_api")
+    @patch("src.chores_app.routes.db")
+    def test_failed_update_publishes_nothing(
+        self, mock_db, mock_tasks_api, client, subscription
+    ):
+        mock_db.update_chore_status.side_effect = RuntimeError("locked")
+        response = client.post(
+            "/chores/update_status/chore-1",
+            data=json.dumps({"status": "completed"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 500
+        assert self._types(subscription) == []
 
 
 class TestAddChoreRoute:

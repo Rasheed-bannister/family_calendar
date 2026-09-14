@@ -194,3 +194,103 @@ class TestEnableDisableMonitoring:
     def test_disable(self, monitor):
         monitor.disable_monitoring()
         assert monitor.monitoring_enabled is False
+
+
+class TestHardwareStatus:
+    """A PIR that was expected and is not working must show up in /health/."""
+
+    SYSTEM = {
+        "system": {"cpu_percent": 20, "memory_percent": 40, "disk_percent": 50},
+        "process": {"memory_mb": 100, "cpu_percent": 5},
+    }
+
+    @pytest.fixture(autouse=True)
+    def isolate_singletons(self):
+        from src.display.service import get_display_service, set_display_service
+        from src.pir_sensor.sensor import get_pir_sensor, set_pir_sensor
+
+        saved_pir, saved_display = get_pir_sensor(), get_display_service()
+        yield
+        set_pir_sensor(saved_pir)
+        set_display_service(saved_display)
+
+    @patch.object(HealthMonitor, "get_system_info")
+    def test_no_sensor_no_service(self, mock_info, monitor):
+        from src.display.service import set_display_service
+        from src.pir_sensor.sensor import set_pir_sensor
+
+        mock_info.return_value = self.SYSTEM
+        set_pir_sensor(None)
+        set_display_service(None)
+        result = monitor.check_health()
+        assert result["status"] == "healthy"
+        assert result["hardware"]["pir"] == {
+            "expected": False,
+            "ok": True,
+            "error": None,
+        }
+        assert result["hardware"]["display"] == {"running": False}
+
+    @patch.object(HealthMonitor, "get_system_info")
+    def test_broken_pir_is_a_warning(self, mock_info, monitor):
+        from src.pir_sensor.sensor import PIRSensor, set_pir_sensor
+
+        mock_info.return_value = self.SYSTEM
+        broken = PIRSensor(pin=18)
+        broken.error = "RuntimeError: EPERM"
+        set_pir_sensor(broken)
+        result = monitor.check_health()
+        assert result["status"] == "warning"
+        assert result["issues"] == ["PIR sensor not working: RuntimeError: EPERM"]
+        assert result["hardware"]["pir"]["expected"] is True
+        assert result["hardware"]["pir"]["ok"] is False
+
+    @patch.object(HealthMonitor, "get_system_info")
+    def test_simulation_pir_is_not_an_issue(self, mock_info, monitor):
+        from src.pir_sensor.sensor import PIRSensor, set_pir_sensor
+
+        mock_info.return_value = self.SYSTEM
+        set_pir_sensor(PIRSensor(pin=18, simulation=True))
+        result = monitor.check_health()
+        assert result["status"] == "healthy"
+        assert result["hardware"]["pir"]["expected"] is False
+
+    @patch.object(HealthMonitor, "get_system_info")
+    def test_critical_stays_critical(self, mock_info, monitor):
+        from src.pir_sensor.sensor import PIRSensor, set_pir_sensor
+
+        mock_info.return_value = {
+            "system": {"cpu_percent": 20, "memory_percent": 40, "disk_percent": 95},
+            "process": {"memory_mb": 100, "cpu_percent": 5},
+        }
+        broken = PIRSensor(pin=18)
+        broken.error = "nope"
+        set_pir_sensor(broken)
+        result = monitor.check_health()
+        assert result["status"] == "critical"
+        assert len(result["issues"]) == 2
+
+    @patch.object(HealthMonitor, "get_system_info")
+    def test_display_service_is_reported(self, mock_info, monitor):
+        from src.display.service import set_display_service
+
+        mock_info.return_value = self.SYSTEM
+
+        class FakeService:
+            running = True
+
+            def snapshot(self):
+                return {
+                    "mode": "dimmed",
+                    "brightness": 0.6,
+                    "backlight": {"backend": "sysfs", "available": True},
+                }
+
+        set_display_service(FakeService())
+        display = monitor.check_health()["hardware"]["display"]
+        assert display == {
+            "running": True,
+            "mode": "dimmed",
+            "brightness": 0.6,
+            "backlight": {"backend": "sysfs", "available": True},
+        }

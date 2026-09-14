@@ -408,3 +408,73 @@ class TestConfigLogging:
         handler = _file_handlers(logging.getLogger())[0]
         assert handler.maxBytes == 2048
         assert handler.backupCount == 3
+
+
+class TestLegacyInactivityMigration:
+    """A pre-overhaul config.json keeps behaving the way it was configured."""
+
+    @staticmethod
+    def _write(tmp_path, extra):
+        data = {
+            "app": {"secret_key": "k", "port": 5000, "environment": "testing"},
+            "paths": {
+                "photos_dir": str(tmp_path / "p"),
+                "credentials_dir": str(tmp_path / "c"),
+            },
+            "logging": {"file": str(tmp_path / "t.log"), "level": "WARN"},
+        }
+        data.update(extra)
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(data))
+        return str(path)
+
+    def test_inactivity_is_translated_into_display(self, tmp_path):
+        path = self._write(
+            tmp_path,
+            {
+                "inactivity": {
+                    "day_timeout_minutes": 60,
+                    "night_timeout_seconds": 5,
+                    "day_brightness_reduction": 0.6,
+                    "night_brightness_reduction": 0.2,
+                    "night_start_hour": 22,
+                    "night_end_hour": 7,
+                    "slideshow_delay_seconds": 5,
+                }
+            },
+        )
+        config = Config(path)
+        assert config.get("display.day.dim_after_seconds") == 3600
+        assert config.get("display.day.hide_ui_after_seconds") == 3605
+        assert config.get("display.day.brightness") == 0.6
+        assert config.get("display.night.dim_after_seconds") == 5
+        assert config.get("display.night.hide_ui_after_seconds") == 10
+        assert config.get("display.night.brightness") == 0.2
+        assert config.get("display.night_start_hour") == 22
+        assert config.get("display.night_end_hour") == 7
+        # Defaults still fill in what the legacy section never described.
+        assert config.get("display.backlight.backend") == "auto"
+
+    def test_explicit_display_wins_over_legacy(self, tmp_path):
+        path = self._write(
+            tmp_path,
+            {
+                "inactivity": {"day_timeout_minutes": 60},
+                "display": {"day": {"dim_after_seconds": 120}},
+            },
+        )
+        config = Config(path)
+        assert config.get("display.day.dim_after_seconds") == 120
+        assert config.get("display.day.hide_ui_after_seconds") == 3605  # default
+
+    def test_neither_section_uses_defaults(self, tmp_path):
+        config = Config(self._write(tmp_path, {}))
+        assert config.get("display.day.dim_after_seconds") == 3600
+        assert config.get("display.night.hide_ui_after_seconds") == 10
+        assert config.get("slideshow.interval_seconds") == 30
+        assert config.get("inactivity") is None
+
+    def test_garbage_legacy_values_fall_back(self, tmp_path):
+        path = self._write(tmp_path, {"inactivity": {"day_timeout_minutes": "soon"}})
+        config = Config(path)
+        assert config.get("display.day.dim_after_seconds") == 3600
