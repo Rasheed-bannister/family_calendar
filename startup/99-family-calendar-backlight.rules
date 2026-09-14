@@ -1,0 +1,6 @@
+# Let members of the "video" group set the backlight brightness, so the
+# family-calendar service can dim the official touchscreen (or any panel that
+# exposes a backlight) without running as root.
+#
+# Installed by deploy_raspberry_pi.sh to /etc/udev/rules.d/.
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
