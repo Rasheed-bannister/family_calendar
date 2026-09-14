@@ -126,7 +126,10 @@ repos:
     hooks:
       - id: prettier
         types_or: [javascript, css, json]
-        exclude: '^src/static/js/lib/'  # Exclude third-party libraries
+        # frontend/ is formatted by its own prettier (with the Svelte plugin)
+        # via `npm run format`; this hook's environment lacks that plugin.
+        exclude: '^frontend/'
+
 
   # Check for secrets
   # Keep in sync with the pinned version in .github/workflows/security.yml —

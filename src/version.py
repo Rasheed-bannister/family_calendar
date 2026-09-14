@@ -123,7 +123,7 @@ def _run_upgrade(target_tag: str) -> None:
         if shutil.which("uv"):
             # Point uv at the project's venv Python so it doesn't use system Python
             _run_cmd(
-                ["uv", "sync", "--python", str(venv_python)],
+                ["uv", "sync", "--no-dev", "--python", str(venv_python)],
                 cwd=project_root,
             )
         elif venv_python.exists():
@@ -135,6 +135,17 @@ def _run_upgrade(target_tag: str) -> None:
             raise RuntimeError(
                 "No package manager found. Install uv or create a virtualenv."
             )
+
+        # Step 6: Rebuild the frontend so the served app matches the release
+        _set_status("running", "Building frontend...")
+        npm = shutil.which("npm")
+        if npm is None:
+            raise RuntimeError(
+                "npm is not installed; run deploy_raspberry_pi.sh to install Node.js"
+            )
+        frontend_dir = project_root / "frontend"
+        _run_cmd([npm, "ci", "--no-audit", "--no-fund"], cwd=frontend_dir)
+        _run_cmd([npm, "run", "build"], cwd=frontend_dir)
 
         _set_status("restarting", "Upgrade complete. Restarting service...")
 

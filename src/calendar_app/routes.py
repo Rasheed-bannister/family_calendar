@@ -1,14 +1,12 @@
 import calendar
 import datetime
 import logging
-import threading
 from typing import Optional
 
-from flask import Blueprint, Response, current_app, jsonify, render_template
+from flask import Blueprint, jsonify, request
 
 # Shared sync state. Imported from src.sync_state rather than src.main so this
 # module does not participate in an import cycle with the app factory.
-from src import sync_state
 from src.sync_state import registry
 
 from . import database as db
@@ -16,7 +14,7 @@ from .models import CalendarMonth
 
 logger = logging.getLogger(__name__)
 
-calendar_bp = Blueprint("calendar", __name__, url_prefix="/calendar")
+calendar_bp = Blueprint("calendar", __name__)
 
 
 def _calculate_navigation_dates(
@@ -130,76 +128,6 @@ def _build_calendar_weeks_data(
     return weeks_data
 
 
-WEATHER_TASK_ID = "weather"
-
-
-def _should_start_weather_refresh() -> bool:
-    """Atomically claim the weather refresh slot, if a refresh is due.
-
-    Returns False when a refresh is already in flight or when the last
-    attempt was too recent (a failing API must not be retried once per page
-    render while the Pi is offline).
-    """
-    from src.config import get_config
-
-    # The registry treats an in-flight task as not stale, so this covers both
-    # "already queued" and "attempted too recently". finalize() stamps the
-    # completion time on the error path too, so a failing fetch backs off
-    # instead of retrying on every render while the Pi is offline.
-    cooldown_seconds = get_config().get("weather.cache_duration", 600)
-    return registry.is_stale(WEATHER_TASK_ID, cooldown_seconds)
-
-
-def _refresh_weather_background() -> None:
-    """Fetch weather in a worker thread and refresh the on-disk cache."""
-    if not registry.mark_running(WEATHER_TASK_ID):
-        return
-
-    try:
-        from src.weather_integration.api import get_weather_data
-
-        if get_weather_data() is None:
-            registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
-    except Exception as e:
-        logger.error("Error refreshing weather data: %s", e)
-        registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
-    finally:
-        registry.finalize(WEATHER_TASK_ID)
-
-
-def _start_weather_background_refresh() -> None:
-    """Queue a weather refresh on the shared thread pool."""
-    if not _should_start_weather_refresh():
-        return
-
-    try:
-        registry.submit(WEATHER_TASK_ID, _refresh_weather_background)
-    except Exception as e:
-        logger.error("Could not queue weather refresh: %s", e)
-        registry.update(WEATHER_TASK_ID, status=sync_state.ERROR)
-
-
-def _get_weather_data_safe():
-    """Return weather for the page render without blocking on the network.
-
-    Reads only the on-disk cache; the live fetch happens on the shared sync
-    executor. Returns None when no usable reading exists, which the template
-    renders as "Weather data unavailable" - never invented values.
-    """
-    try:
-        from src.weather_integration.api import (
-            get_weather_for_display,
-            weather_cache_needs_refresh,
-        )
-
-        if weather_cache_needs_refresh():
-            _start_weather_background_refresh()
-        return get_weather_for_display()
-    except Exception as e:
-        logger.error("Error preparing weather data for render: %s", e)
-        return None
-
-
 def _normalize_event_timezone(
     event: dict,
 ) -> tuple[datetime.datetime, datetime.datetime]:
@@ -272,294 +200,125 @@ def _filter_events_for_day(events: list, target_date: datetime.date) -> list:
     return day_events
 
 
-def html_fragment_response(html: str) -> Response:
-    """Wrap rendered partial markup in the fragment response contract.
-
-    One helper for every fragment endpoint so the headers cannot drift apart:
-    HTML with an explicit charset, and never cached - fragments exist precisely
-    because the data behind them just changed.
-    """
-    response = Response(html, mimetype="text/html")
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def build_calendar_context(
-    current_year: int, current_month: int, today_date: datetime.date
-) -> dict:
-    """Assemble the template context shared by the full page and the fragments.
-
-    The full page and the fragment endpoints must render the partials from an
-    identical context: if they drift, the display visibly changes appearance
-    the moment it live-updates. Sharing one builder is what guarantees they
-    cannot.
-
-    Deliberately read-only. Nothing here starts a background sync, so a
-    fragment fetched on every data-change notification cannot feed back into
-    starting more syncs. The sync triggers stay in `view`, which runs once per
-    real page load.
-    """
-    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
-        current_year, current_month
-    )
-
-    db_events = db.get_all_events_for_month_range(current_year, current_month)
-    weeks_data = _build_calendar_weeks_data(
-        current_year, current_month, today_date, db_events
-    )
-    today_events = _filter_events_for_day(db_events, today_date)
-
-    from src.chores_app.routes import build_chores_context
-    from src.config import get_config
-
-    config = get_config()
-
-    return {
-        "weeks": weeks_data,
-        "today_events": today_events,
-        "month_name": calendar.month_name[current_month],
-        "month_number": current_month,
-        "year": current_year,
-        "prev_year": prev_year,
-        "prev_month": prev_month,
-        "next_year": next_year,
-        "next_month": next_month,
-        "today_actual_day": today_date.day,
-        "today_actual_month": today_date.month,
-        "today_actual_year": today_date.year,
-        "debug_enabled": config.get("app.debug", False),
-        "show_pir_feedback": config.get("ui.show_pir_feedback", False),
-        "family_name": config.get("app.family_name", "Family"),
-        **build_chores_context(),
-    }
-
-
 def _local_now() -> datetime.datetime:
     """Now in the configured local timezone.
 
     Local time, not UTC: this drives both the default month and which cell is
     highlighted as "today". Under UTC the highlight jumped to tomorrow at
-    local evening (8pm in America/New_York) on a display that is on all night.
+    local evening on a display that is on all night.
     """
     from src.config import get_local_timezone
 
     return datetime.datetime.now(tz=get_local_timezone())
 
 
-@calendar_bp.route("/")
-@calendar_bp.route("/<int:year>/<int:month>")
-def view(year: int = None, month: int = None):
-    """Renders the calendar view for a specific month and year."""
-    now = _local_now()
+def serialize_event(event: dict, tz) -> dict:
+    """JSON shape of one event, with instants expressed in the display timezone."""
+    start_dt, end_dt = _normalize_event_timezone(event)
+    return {
+        "id": event.get("google_event_id") or event.get("id"),
+        "title": event.get("title") or "",
+        "calendar_name": event.get("calendar_name") or "Unknown Calendar",
+        "color": event.get("calendar_color") or "#808080",
+        "all_day": bool(event.get("all_day")),
+        "start": start_dt.astimezone(tz).isoformat(),
+        "end": end_dt.astimezone(tz).isoformat(),
+        "location": event.get("location") or "",
+        "description": event.get("description") or "",
+    }
 
-    # Set defaults and validate input
-    if year is None:
-        year = now.year
-    if month is None:
-        month = now.month
-    if not 1 <= month <= 12:
-        return "Invalid month", 404
 
-    current_year = year
-    current_month = month
-    today_date = now.date()
+def build_month_payload(
+    year: int, month: int, today_date: datetime.date, db_events: list, tz
+) -> dict:
+    """Assemble the JSON the calendar grid renders from.
 
-    # Register current month in database
-    current_calendar_month = CalendarMonth(year=current_year, month=current_month)
-    db.add_month(current_calendar_month)
+    Per-day event lists are computed here, with the same relevance rules the
+    server has always used, so the client never re-implements the multi-day
+    and midnight-end edge cases.
+    """
+    weeks_data = _build_calendar_weeks_data(year, month, today_date, db_events)
+    weeks: list[list[Optional[dict]]] = []
+    for week in weeks_data:
+        row: list[Optional[dict]] = []
+        for day in week:
+            if not day["is_current_month"]:
+                row.append(None)
+                continue
+            date = datetime.date(year, month, day["day_number"])
+            row.append(
+                {
+                    "date": date.isoformat(),
+                    "day": day["day_number"],
+                    "is_today": day["is_today"],
+                    "events": [serialize_event(e, tz) for e in day["events"]],
+                }
+            )
+        weeks.append(row)
 
-    # Handle calendar background sync
-    task_id = f"calendar.{current_month}.{current_year}"
-    if _should_start_calendar_background_task(task_id):
-        _start_calendar_background_sync(current_month, current_year)
-
-    # Handle chores background sync
-    if _should_start_chores_background_task():
-        _start_chores_background_sync()
-
-    # Sync triggering lives here, in the full page render, and not in the
-    # shared context builder: the fragment endpoints reuse the builder and must
-    # stay read-only.
-    context = build_calendar_context(current_year, current_month, today_date)
-
-    return render_template(
-        "index.html",
-        weather=_get_weather_data_safe(),
-        **context,
+    prev_year, prev_month, next_year, next_month = _calculate_navigation_dates(
+        year, month
     )
+    return {
+        "year": year,
+        "month": month,
+        "month_name": calendar.month_name[month],
+        "today": today_date.isoformat(),
+        "weeks": weeks,
+        "prev": {"year": prev_year, "month": prev_month},
+        "next": {"year": next_year, "month": next_month},
+    }
 
 
-@calendar_bp.route("/fragment/<int:year>/<int:month>")
-def fragment(year: int, month: int):
-    """Render just the calendar component, for in-place client updates.
+@calendar_bp.route("/api/calendar/<int:year>/<int:month>")
+def month_api(year: int, month: int):
+    """Events for a month, grouped by day, plus navigation metadata.
 
-    Returns the same markup the full page carries for this month, so the client
-    can swap one region instead of calling location.reload() - a full reload on
-    a wall display resets the slideshow position, scroll state and any open UI.
-
-    Read-only: no calendar, chores or weather sync is started here. The client
-    fetches this on every change notification, so a sync trigger would be a
-    feedback loop.
+    Also queues a Google sync for the month when the cached copy is stale.
+    That is safe against feedback loops: the sync only publishes
+    ``calendar_changed`` when the data actually differs, and the registry
+    deduplicates by staleness, so a client re-fetching on every change
+    notification cannot cause a second sync.
     """
-    if not 1 <= month <= 12:
-        return "Invalid month", 404
+    if not 1 <= month <= 12 or not 1970 <= year <= 9999:
+        return jsonify({"error": "Invalid month"}), 404
 
-    context = build_calendar_context(year, month, _local_now().date())
-    return html_fragment_response(
-        render_template("components/calendar.html", **context)
-    )
+    from src.config import get_local_timezone
 
+    tz = get_local_timezone()
+    now = datetime.datetime.now(tz=tz)
 
-PHOTO_SYNC_INTERVAL_SECONDS = 600
+    db.add_month(CalendarMonth(year=year, month=month))
 
-# Guarded by _photo_sync_lock rather than stored in the sync registry: this is
-# a plain rate-limit timestamp, not a background task with a status lifecycle,
-# and keeping it out of the registry stops it showing up in task lookups.
-_last_photo_sync = 0.0
-_photo_sync_lock = threading.Lock()
+    if request.args.get("sync", "1") != "0":
+        task_id = f"calendar.{month}.{year}"
+        if _should_start_calendar_background_task(task_id):
+            _start_calendar_background_sync(month, year)
 
-
-def _sync_photos_if_needed() -> None:
-    """Sync photos occasionally (every 10 minutes) to avoid excessive operations."""
-    global _last_photo_sync
-    import time
-
-    from src.slideshow import database as slideshow_db
-
-    now = time.time()
-    with _photo_sync_lock:
-        if now - _last_photo_sync <= PHOTO_SYNC_INTERVAL_SECONDS:
-            return
-        # Claim the slot before the scan so concurrent pollers do not all
-        # stat the photos directory at once.
-        _last_photo_sync = now
-
-    slideshow_db.sync_photos(current_app.static_folder)
+    db_events = db.get_all_events_for_month_range(year, month)
+    payload = build_month_payload(year, month, now.date(), db_events, tz)
+    payload["sync_status"] = registry.status(f"calendar.{month}.{year}")
+    return jsonify(payload)
 
 
-def _check_calendar_task_status(calendar_task_id: str) -> tuple[str, bool, bool]:
-    """Check calendar task status and return status info.
-
-    Returns:
-        tuple: (task_status, events_changed, should_trigger_refresh)
-    """
-    status = registry.status(calendar_task_id)
-    if status is None:
-        return "not_tracked", False, True
-
-    events_changed = False
-    if status == sync_state.COMPLETE:
-        events_changed = registry.consume_flag(calendar_task_id, "events_changed")
-
-    # is_stale() reports False while a sync is in flight, so this never
-    # queues a duplicate on top of one that is already running.
-    should_trigger_refresh = registry.is_stale(
-        calendar_task_id, _sync_interval_seconds()
-    )
-
-    return status, events_changed, should_trigger_refresh
-
-
-def _check_chores_task_status(chores_task_id: str) -> tuple[str, bool]:
-    """Check chores task status and return status info.
-
-    Returns:
-        tuple: (task_status, chores_changed)
-    """
-    status = registry.status(chores_task_id)
-    if status is None:
-        return "not_tracked", False
-
-    chores_changed = False
-    if status == sync_state.COMPLETE:
-        chores_changed = registry.consume_flag(chores_task_id, "chores_changed")
-
-    return status, chores_changed
-
-
-def _trigger_calendar_refresh_if_needed(
-    should_trigger_refresh: bool, month: int, year: int
-) -> tuple[bool, Optional[str]]:
-    """Queue a background calendar refresh if one is due.
-
-    Returns ``(queued, error)`` describing what actually happened, not what was
-    intended. Both parts matter to the caller:
-
-    * ``queued`` is False when ``start_calendar_sync`` declined because another
-      poller claimed the slot between the staleness read and this call. The
-      staleness read is necessarily stale by the time we act on it, so it must
-      not be reported to the client as if it were the outcome.
-    * ``error`` is set when the work could not be queued at all. The registry
-      re-raises if the pool rejects the submission, which is what a
-      ThreadPoolExecutor does for the entire duration of shutdown. Letting that
-      escape would be a failure of the *endpoint*, which is polled by every
-      connected display every few seconds and whose exceptions are recorded by
-      the catch-all handler as critical errors counting towards the health
-      monitor's restart threshold. Failing to start a refresh does not stop the
-      endpoint reporting the task status it just read, so it degrades instead.
-    """
-    if not should_trigger_refresh:
-        return False, None
-
-    from src.google_integration.routes import start_calendar_sync
-
+@calendar_bp.route("/api/calendar/day/<date_str>")
+def day_api(date_str: str):
+    """Events for a single day (used by the day panel for today)."""
     try:
-        queued = start_calendar_sync(month, year)
-    except Exception as e:
-        logger.error(
-            "Could not queue background calendar refresh for %s/%s: %s", month, year, e
-        )
-        return False, str(e)
+        target = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({"error": "Invalid date"}), 404
 
-    if queued:
-        logger.info(
-            "Triggered background refresh for %s/%s due to time elapsed or missing task",
-            month,
-            year,
-        )
-    return queued, None
+    from src.config import get_local_timezone
 
-
-@calendar_bp.route("/check-updates/<int:year>/<int:month>")
-def check_updates(year: int, month: int):
-    """API endpoint to check if the background task detected calendar or chore updates."""
-    from src.google_integration.routes import TASKS_TASK_ID, calendar_task_id
-
-    cal_task_id = calendar_task_id(month, year)
-
-    # Sync photos occasionally
-    _sync_photos_if_needed()
-
-    # No lock held here: each registry call takes the lock itself, and the
-    # flag reads are atomic read-and-clear. Holding one lock across all of
-    # them bought nothing -- these are independent tasks -- and the old code
-    # called the refresh trigger outside it anyway.
-    calendar_task_status, events_changed, should_trigger_refresh = (
-        _check_calendar_task_status(cal_task_id)
-    )
-    chores_task_status, chores_changed = _check_chores_task_status(TASKS_TASK_ID)
-    updates_available = events_changed or chores_changed
-
-    # What was reported here used to be the pre-trigger staleness read, so the
-    # client could be told a refresh was coming when the trigger had in fact
-    # declined (or failed). calendar.js waits 3s and re-polls on
-    # refresh_triggered, so an optimistic True costs a wasted round trip and a
-    # sync that never arrives.
-    refresh_triggered, refresh_error = _trigger_calendar_refresh_if_needed(
-        should_trigger_refresh, month, year
-    )
-
+    tz = get_local_timezone()
+    db_events = db.get_all_events_for_month_range(target.year, target.month)
     return jsonify(
         {
-            "calendar_status": calendar_task_status,
-            "chores_status": chores_task_status,
-            "updates_available": updates_available,
-            "events_changed": events_changed,
-            "chores_changed": chores_changed,
-            "refresh_triggered": refresh_triggered,
-            # Null on the happy path. An extra field the frontend ignores is
-            # how the failure stays visible (to /health, to a curl, to logs)
-            # without the endpoint having to fail.
-            "refresh_error": refresh_error,
+            "date": target.isoformat(),
+            "events": [
+                serialize_event(e, tz)
+                for e in _filter_events_for_day(db_events, target)
+            ],
         }
     )

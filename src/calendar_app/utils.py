@@ -19,8 +19,8 @@ _alias_cache_signature: object = object()
 @db_connection
 def add_events(cursor, events: list[CalendarEvent]) -> bool:
     """
-    Adds or updates events in the database using INSERT OR REPLACE.
-    Returns True if any events were successfully inserted or replaced.
+    Adds or updates events in the database.
+    Returns True only if at least one event was actually inserted or changed.
     """
     changes_made = False
     # Keep track of processed IDs to avoid redundant operations if duplicates exist in input
@@ -49,6 +49,43 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
                     ),
                 )
 
+            row = (
+                event.id,
+                event.calendar.calendar_id,
+                event.month.id,
+                event.title,
+                serialize_datetime(event.start),
+                serialize_datetime(event.end),
+                int(bool(event.all_day)),
+                event.location,
+                event.description,
+            )
+
+            # Only write when something differs. The previous unconditional
+            # INSERT OR REPLACE reported a change on every sync, which made
+            # every display re-render (and reset its idle clock) once a
+            # minute for nothing.
+            cursor.execute(
+                "SELECT calendar_id, month_id, title, start_datetime, end_datetime, "
+                "all_day, location, description FROM CalendarEvent WHERE id = ?",
+                (event.id,),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                current = (
+                    existing[0],
+                    existing[1],
+                    existing[2],
+                    existing[3],
+                    existing[4],
+                    int(bool(existing[5])),
+                    existing[6],
+                    existing[7],
+                )
+                if current == row[1:]:
+                    processed_ids.add(event.id)
+                    continue
+
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO CalendarEvent (
@@ -58,17 +95,7 @@ def add_events(cursor, events: list[CalendarEvent]) -> bool:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    event.id,
-                    event.calendar.calendar_id,
-                    event.month.id,
-                    event.title,
-                    serialize_datetime(event.start),
-                    serialize_datetime(event.end),
-                    event.all_day,
-                    event.location,
-                    event.description,
-                ),
+                row,
             )
 
             changes_made = True

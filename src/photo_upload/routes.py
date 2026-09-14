@@ -26,7 +26,7 @@ from .auth import generate_upload_url, rate_limit_upload, require_upload_token
 logger = logging.getLogger(__name__)
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     PIL_AVAILABLE = True
 except ImportError:
@@ -66,6 +66,9 @@ def after_request(response):
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif"}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB, per individual photo
 THUMBNAIL_SIZE = (300, 300)
+# Long edge kept for the stored original; the slideshow makes its own
+# display-sized variant from it (see src/slideshow/ingest.py).
+MAX_ORIGINAL_DIMENSION = 4096
 
 # A single upload request may carry several photos (the form posts every
 # selected file at once), so the app-wide body limit has to cover a whole
@@ -133,17 +136,25 @@ def optimize_image(image_path):
             return None
 
         with Image.open(image_path) as img:
+            source_format = img.format
+            # Bake the EXIF rotation into the pixels. Re-saving without this
+            # dropped the orientation tag, so portrait phone photos came out
+            # sideways.
+            img = ImageOps.exif_transpose(img) or img
+
             # Always convert HEIC/HEIF to JPEG for browser compatibility
-            if is_heic or img.format in ["HEIC", "HEIF"]:
-                # Convert to RGB if necessary
+            if is_heic or source_format in ["HEIC", "HEIF"]:
                 if img.mode != "RGB":
                     img = img.convert("RGB")
+                if max(img.size) > MAX_ORIGINAL_DIMENSION:
+                    img.thumbnail(
+                        (MAX_ORIGINAL_DIMENSION, MAX_ORIGINAL_DIMENSION),
+                        Image.Resampling.LANCZOS,
+                    )
 
-                # Save as JPEG with a new filename
                 new_path = image_path.rsplit(".", 1)[0] + ".jpg"
-                img.save(new_path, "JPEG", quality=85, optimize=True)
+                img.save(new_path, "JPEG", quality=88, optimize=True)
 
-                # Remove original HEIC/HEIF file
                 try:
                     os.remove(image_path)
                     logger.info(f"Converted HEIC to JPEG: {os.path.basename(new_path)}")
@@ -152,14 +163,15 @@ def optimize_image(image_path):
 
                 return new_path
 
-            # Optimize existing formats
-            elif img.format in ["JPEG", "PNG", "WEBP"]:
-                # Resize if too large (max 2000px on longest side)
-                max_size = 2000
-                if max(img.size) > max_size:
-                    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-
-                img.save(image_path, img.format, quality=85, optimize=True)
+            elif source_format in ["JPEG", "PNG", "WEBP"]:
+                if max(img.size) > MAX_ORIGINAL_DIMENSION:
+                    img.thumbnail(
+                        (MAX_ORIGINAL_DIMENSION, MAX_ORIGINAL_DIMENSION),
+                        Image.Resampling.LANCZOS,
+                    )
+                if source_format == "JPEG" and img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(image_path, source_format, quality=88, optimize=True)
 
             return image_path
 

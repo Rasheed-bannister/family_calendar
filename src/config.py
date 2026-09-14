@@ -58,14 +58,33 @@ class Config:
             "debounce_time": 2.0,
             "simulation_mode": False,
         },
-        "inactivity": {
-            "day_timeout_minutes": 60,
-            "night_timeout_seconds": 5,
-            "day_brightness_reduction": 0.6,
-            "night_brightness_reduction": 0.2,
+        # Server-owned display state. Idle thresholds are seconds since the
+        # last real activity (touch, keyboard or PIR motion). ``brightness``
+        # is the backlight level while dimmed/asleep, 0..1.
+        "display": {
+            "day": {
+                "dim_after_seconds": 3600,
+                "hide_ui_after_seconds": 3605,
+                "brightness": 0.6,
+            },
+            "night": {
+                "dim_after_seconds": 5,
+                "hide_ui_after_seconds": 10,
+                "brightness": 0.2,
+            },
             "night_start_hour": 21,
             "night_end_hour": 6,
-            "slideshow_delay_seconds": 5,
+            # auto | sysfs | ddcutil | none. ``device`` names a sysfs backlight
+            # or a ddcutil display number; null lets the backend pick.
+            "backlight": {"backend": "auto", "device": None},
+            "tick_seconds": 1.0,
+        },
+        "slideshow": {
+            "interval_seconds": 30,
+            "transition_seconds": 2,
+            "ken_burns": True,
+            # Long edge of the processed display variant, in pixels.
+            "max_dimension": 2048,
         },
         "google": {"sync_interval_minutes": 3, "max_retry_attempts": 3},
         "scheduler": {
@@ -170,6 +189,7 @@ class Config:
             try:
                 with open(self.config_file, "r") as f:
                     file_config = json.load(f)
+                    self._migrate_legacy_sections(file_config)
                     # Deep merge with defaults
                     config = self._deep_merge(config, file_config)
                     self._early_messages.append(
@@ -183,6 +203,47 @@ class Config:
         self._apply_env_overrides(config)
 
         return config
+
+    def _migrate_legacy_sections(self, file_config: Dict) -> None:
+        """Translate a pre-overhaul ``inactivity`` section into ``display``.
+
+        Older config files describe dimming as ``day_timeout_minutes`` /
+        ``night_timeout_seconds`` plus a ``slideshow_delay_seconds`` after
+        which the UI hid. Those semantics map directly onto the day/night
+        thresholds, so an upgraded install keeps behaving the way it was
+        configured. Runs only when the file has no ``display`` section of
+        its own; an explicit ``display`` always wins.
+        """
+        legacy = file_config.get("inactivity")
+        if not isinstance(legacy, dict) or "display" in file_config:
+            return
+
+        def number(key: str, default: float) -> float:
+            try:
+                return float(legacy.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        day_dim = number("day_timeout_minutes", 60) * 60
+        night_dim = number("night_timeout_seconds", 5)
+        delay = number("slideshow_delay_seconds", 5)
+        file_config["display"] = {
+            "day": {
+                "dim_after_seconds": day_dim,
+                "hide_ui_after_seconds": day_dim + delay,
+                "brightness": number("day_brightness_reduction", 0.6),
+            },
+            "night": {
+                "dim_after_seconds": night_dim,
+                "hide_ui_after_seconds": night_dim + delay,
+                "brightness": number("night_brightness_reduction", 0.2),
+            },
+            "night_start_hour": int(number("night_start_hour", 21)),
+            "night_end_hour": int(number("night_end_hour", 6)),
+        }
+        self._early_messages.append(
+            "Migrated legacy 'inactivity' settings to the 'display' section"
+        )
 
     def _deep_merge(self, base: Dict, override: Dict) -> Dict:
         """Deep merge two dictionaries."""
