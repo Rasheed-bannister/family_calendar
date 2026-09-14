@@ -1,0 +1,207 @@
+/* Global styles: reset, design tokens, and the fixed stacking order.
+ *
+ * Stacking (bottom to top). Nothing else may set a z-index outside its
+ * band; the dim overlay must always be above every piece of UI, including
+ * modals, toasts and the keyboard, or it does not dim the screen.
+ *
+ *   0    slideshow           (position: fixed, full screen)
+ *   10   glass UI panels
+ *   100  modals + virtual keyboard
+ *   200  toasts, motion badge
+ *   1000 dim overlay
+ */
+
+:root {
+  --font:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-mono: "SF Mono", Menlo, Monaco, Consolas, "Roboto Mono", monospace;
+
+  --glass-bg: rgba(0, 0, 0, 0.18);
+  --glass-bg-strong: rgba(0, 0, 0, 0.32);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --glass-blur: 8px;
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  --text: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.62);
+  --text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+
+  --accent: #4fc3f7;
+  --success: #81c784;
+  --warn: #ffb74d;
+  --danger: #e57373;
+  --hot: #ff6b35;
+  --cold: #4a9eff;
+
+  --panel-bg: rgba(20, 20, 30, 0.95);
+
+  --z-ui: 10;
+  --z-modal: 100;
+  --z-toast: 200;
+  --z-dim: 1000;
+
+  --gap: 10px;
+  --ui-fade: 900ms;
+  font-size: 14px;
+}
+
+@media (min-width: 1200px) {
+  :root {
+    font-size: 16px;
+    --gap: 14px;
+  }
+}
+@media (min-width: 1500px) {
+  :root {
+    font-size: 18px;
+    --gap: 18px;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+body.kiosk {
+  cursor: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+/* Shared building blocks -------------------------------------------------- */
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+  color: var(--text);
+  text-shadow: var(--text-shadow);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1.2em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95em;
+  text-shadow: var(--text-shadow);
+  backdrop-filter: blur(6px);
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+.btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-primary {
+  background: rgba(0, 123, 255, 0.7);
+  border-color: rgba(0, 123, 255, 0.9);
+}
+.btn-primary:hover {
+  background: rgba(0, 123, 255, 0.9);
+}
+.btn-danger {
+  background: rgba(229, 115, 115, 0.5);
+  border-color: rgba(229, 115, 115, 0.8);
+}
+
+.field {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 1em;
+}
+.field:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+select.field option {
+  background: #2a2a3a;
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
