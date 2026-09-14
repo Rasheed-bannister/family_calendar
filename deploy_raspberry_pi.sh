@@ -177,6 +177,10 @@ install_kiosk() {
   local autostart_dir="$APP_HOME/.config/autostart"
   sudo -u "$APP_USER" mkdir -p "$autostart_dir" "$APP_HOME/.config/labwc"
 
+  # Installs before 0.4.0 launched startup/launch.sh from this entry; that
+  # script no longer exists, so the stale entry would just log an error.
+  rm -f "$autostart_dir/calendar-kiosk.desktop"
+
   cat > "$autostart_dir/family-calendar-kiosk.desktop" <<EOF
 [Desktop Entry]
 Type=Application
