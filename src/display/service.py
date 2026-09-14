@@ -22,6 +22,9 @@ from .state import DisplayStateMachine, Schedule
 
 logger = logging.getLogger(__name__)
 
+# Lowest brightness the browser-side overlay fallback will go to.
+DEFAULT_OVERLAY_MIN_BRIGHTNESS = 0.35
+
 
 class DisplayService:
     def __init__(
@@ -30,11 +33,13 @@ class DisplayService:
         backlight: Optional[Backlight] = None,
         publish: Optional[Callable[..., int]] = None,
         tick_seconds: float = 1.0,
+        overlay_min_brightness: float = DEFAULT_OVERLAY_MIN_BRIGHTNESS,
     ):
         self._machine = machine
         self._backlight = backlight or NullBacklight()
         self._publish = publish or broker.publish
         self._tick = max(0.1, float(tick_seconds))
+        self._overlay_floor = min(1.0, max(0.0, float(overlay_min_brightness)))
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -110,8 +115,13 @@ class DisplayService:
         snap = self._machine.snapshot()
         hardware = self._backlight.available
         # The browser only dims with CSS when there is no hardware backlight;
-        # otherwise it would dim twice.
-        snap["overlay_brightness"] = 1.0 if hardware else snap["brightness"]
+        # otherwise it would dim twice. The CSS overlay is floored: a black
+        # overlay saves no power, so a night brightness meant for a real
+        # backlight must not turn the photos into a black screen.
+        if hardware:
+            snap["overlay_brightness"] = 1.0
+        else:
+            snap["overlay_brightness"] = max(self._overlay_floor, snap["brightness"])
         snap["backlight"] = self._backlight.describe()
         return snap
 
@@ -155,6 +165,9 @@ def build_service(config) -> DisplayService:
         machine,
         backlight=create_backlight(config),
         tick_seconds=config.get("display.tick_seconds", 1.0),
+        overlay_min_brightness=config.get(
+            "display.overlay_min_brightness", DEFAULT_OVERLAY_MIN_BRIGHTNESS
+        ),
     )
 
 

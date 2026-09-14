@@ -78,6 +78,9 @@ class Config:
             # or a ddcutil display number; null lets the backend pick.
             "backlight": {"backend": "auto", "device": None},
             "tick_seconds": 1.0,
+            # Floor for the browser overlay used when no hardware backlight is
+            # available (a black overlay saves nothing).
+            "overlay_min_brightness": 0.35,
         },
         "slideshow": {
             "interval_seconds": 30,

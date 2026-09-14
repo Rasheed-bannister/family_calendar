@@ -40,7 +40,8 @@
       "backend": "auto",
       "device": null
     },
-    "tick_seconds": 1.0
+    "tick_seconds": 1.0,
+    "overlay_min_brightness": 0.35
   },
   "slideshow": {
     "interval_seconds": 30,

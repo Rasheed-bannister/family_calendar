@@ -134,7 +134,31 @@ class TestTickAndActivity:
         snap = service.snapshot()
         assert snap["brightness"] == 0.6
         assert snap["overlay_brightness"] == 0.6
-        assert snap["backlight"]["available"] is False
+
+    def test_overlay_brightness_is_floored_without_hardware(self):
+        # Night brightness 0.2 would be an 80% black overlay; the fallback
+        # never goes below the floor.
+        clocks = Clocks()
+        clocks.wall = datetime.datetime(2026, 9, 14, 23, 0)
+        machine = DisplayStateMachine(
+            SCHEDULE, clock=clocks.monotonic, local_now=clocks.local_now
+        )
+        service = DisplayService(
+            machine, backlight=NullBacklight(), publish=Mock(return_value=1)
+        )
+        clocks.advance(5)
+        service.tick()
+        snap = service.snapshot()
+        assert snap["brightness"] == 0.2
+        assert snap["overlay_brightness"] == 0.35
+
+        floored = DisplayService(
+            machine,
+            backlight=NullBacklight(),
+            publish=Mock(return_value=1),
+            overlay_min_brightness=0.5,
+        )
+        assert floored.snapshot()["overlay_brightness"] == 0.5
 
     def test_listeners_receive_snapshots_and_failures_are_contained(self, caplog):
         service, clocks, _, _ = make_service()

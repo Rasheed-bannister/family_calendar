@@ -75,6 +75,17 @@ sudo systemctl stop family-calendar && .venv/bin/python scripts/pir_smoke_test.p
 The settings panel (gear, bottom-left of the display) shows the same
 information and can run the full diagnostics.
 
+### Stopping the kiosk to work on the Pi
+
+The kiosk browser relaunches itself only after a crash; closing it with
+Alt+F4 leaves the desktop free. From a terminal or over SSH:
+
+```bash
+startup/launch-browser.sh stop      # close it until the next login
+startup/launch-browser.sh disable   # and keep it from starting at login
+startup/launch-browser.sh enable    # undo
+```
+
 ### Upgrading
 
 Use **Check for updates** in the settings panel, or on the Pi:
@@ -111,8 +122,9 @@ you are most likely to touch:
   level while idle (0 to 1).
 - `display.backlight.backend`: `auto` picks a sysfs backlight (the official
   touchscreen) or `ddcutil` (HDMI monitors with DDC/CI); `none` dims with a
-  translucent overlay in the browser instead. With `none`, a low night
-  brightness makes the photos very dark, so consider `0.5` or so.
+  translucent overlay in the browser instead. The overlay never goes below
+  `display.overlay_min_brightness` (default 0.35), because a black overlay
+  saves no power.
 - An older `inactivity` section is migrated to `display` automatically.
 - Environment variables `CALENDAR_WEATHER_LATITUDE`, `CALENDAR_WEATHER_LONGITUDE`,
   `CALENDAR_TIMEZONE`, `CALENDAR_PORT`, `CALENDAR_DEBUG`, `CALENDAR_ENV`
