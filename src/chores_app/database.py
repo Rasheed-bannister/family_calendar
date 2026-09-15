@@ -4,6 +4,8 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+from src.log_safe import log_safe
+
 from .models import Chore
 
 logger = logging.getLogger(__name__)
@@ -161,12 +163,12 @@ def add_chore(
         return None  # Or raise e to indicate a more critical failure
 
     logger.info(
-        # %r, not %s: description and assignee are typed by users, and repr
-        # escapes newlines so they cannot forge extra log lines.
-        "Chore %r for %r added to local DB with ID: %s",
-        new_chore.description,
-        new_chore.assigned_to,
-        new_chore.id,
+        # Description and assignee are typed by users; log_safe escapes line
+        # breaks so they cannot forge extra log lines.
+        "Chore '%s' for '%s' added to local DB with ID: %s",
+        log_safe(new_chore.description),
+        log_safe(new_chore.assigned_to),
+        log_safe(new_chore.id),
     )
     return new_chore
 

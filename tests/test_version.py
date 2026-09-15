@@ -223,14 +223,27 @@ class TestUpgradeStatus:
         assert not status_file.exists()
         assert get_upgrade_status()["state"] == "running"
 
-    def test_launch_failure_is_reported(self, status_file):
+    def test_launch_failure_is_logged_but_not_returned(self, status_file, caplog):
         with patch(
             "src.version._launch_upgrade", side_effect=RuntimeError("polkit said no")
         ):
             result = start_upgrade("v2.0.0")
         assert result["success"] is False
-        assert "polkit said no" in result["message"]
+        assert "polkit said no" not in result["message"]
+        assert "service log" in result["message"]
         assert get_upgrade_status()["state"] == "error"
+        assert "polkit said no" not in get_upgrade_status()["message"]
+        assert "polkit said no" in caplog.text
+
+    @pytest.mark.parametrize(
+        "tag", ["", "1.0.0", "v1.0", "v1.0.0\nforged", "v1.0.0; rm"]
+    )
+    def test_rejects_malformed_tags_before_launching(self, status_file, tag):
+        with patch("src.version._launch_upgrade") as launch:
+            result = start_upgrade(tag)
+        assert result["success"] is False
+        assert "Invalid tag" in result["message"]
+        launch.assert_not_called()
 
 
 # --- _launch_upgrade ---
@@ -365,6 +378,13 @@ class TestVersionAPI:
         data = response.get_json()
         assert data["success"] is False
         assert "Invalid tag format" in data["message"]
+
+    def test_upgrade_status_is_localhost_only(self, client, status_file):
+        response = client.get(
+            "/api/upgrade/status", environ_base={"REMOTE_ADDR": "192.168.1.50"}
+        )
+        assert response.status_code == 403
+        assert response.get_json()["state"] == "unavailable"
 
     def test_upgrade_status_endpoint(self, client, status_file):
         response = client.get("/api/upgrade/status")
