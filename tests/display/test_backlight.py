@@ -83,6 +83,18 @@ class TestSysfsBacklight:
 
 
 class TestDdcutilBacklight:
+    @pytest.fixture(autouse=True)
+    def no_worker_thread(self):
+        """Run the drain only inline, where the test calls it.
+
+        set_brightness() normally starts a background thread. Left running,
+        it races the inline _drain() for the pending value; when it wins, the
+        inline call has nothing to do and the assertion can run before the
+        thread records its result (seen under the slower coverage run in CI).
+        """
+        with patch.object(bl.threading, "Thread"):
+            yield
+
     def test_unavailable_without_binary(self):
         with patch.object(bl.shutil, "which", return_value=None):
             b = bl.DdcutilBacklight()
