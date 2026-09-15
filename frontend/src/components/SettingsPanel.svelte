@@ -82,6 +82,19 @@
           location.reload();
           return;
         }
+        // Back up on the same version: the upgrade either has not reached the
+        // restart yet, or it failed and rolled back. The script's status says which.
+        const status = await api.upgradeStatus();
+        if (status.state === "error") {
+          upgradeMessage = status.message;
+          upgrading = false;
+          toasts.show("Upgrade failed; the previous version is still running", "error");
+          return;
+        }
+        if (status.state === "done") {
+          location.reload();
+          return;
+        }
       } catch {
         // Server still down; keep waiting.
       }

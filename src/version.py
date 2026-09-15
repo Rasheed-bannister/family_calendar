@@ -1,9 +1,18 @@
-"""Version management for Family Calendar application."""
+"""Version checks and the in-app upgrade launcher.
 
+The upgrade itself is ``upgrade.sh``; this module only starts it and reports
+its progress, so the terminal and the settings panel run exactly the same
+procedure (preflight, backup, checkout, rebuild, restart, rollback on failure).
+"""
+
+import json
 import logging
-import subprocess
+import shutil
+import subprocess  # nosec B404 - fixed argv only
 import threading
+import time
 from pathlib import Path
+from typing import Optional
 
 import requests
 
@@ -13,14 +22,32 @@ logger = logging.getLogger(__name__)
 GITHUB_REPO = "Rasheed-bannister/family_calendar"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
-# Upgrade state (in-memory, reset on restart)
-_upgrade_status = {"state": "idle", "message": ""}
+PROJECT_ROOT = Path(__file__).parent.parent
+UPGRADE_SCRIPT = PROJECT_ROOT / "upgrade.sh"
+
+# Written by upgrade.sh (--status-file) so progress survives the service being
+# stopped and restarted part-way through. Gitignored.
+STATUS_FILE = PROJECT_ROOT / ".upgrade-status.json"
+
+# Installed by deploy_raspberry_pi.sh. The service runs sandboxed
+# (NoNewPrivileges, read-only home), which blocks sudo and the uv/npm caches,
+# and stopping the service kills any child process it spawned. So the upgrade
+# runs in its own unit, started over D-Bus; a polkit rule lets the service
+# user do that without sudo.
+UPGRADE_UNIT_TEMPLATE = "family-calendar-upgrade@.service"
+
+# A "running" status older than this is treated as abandoned (the upgrade was
+# killed), so it cannot block every future upgrade.
+STALE_RUNNING_SECONDS = 30 * 60
+
+# Launch-phase state, before upgrade.sh has written its status file.
+_upgrade_status: dict = {"state": "idle", "message": "", "updated_at": 0.0}
 _upgrade_lock = threading.Lock()
 
 
 def get_current_version() -> str:
     """Read the current version from the VERSION file."""
-    version_file = Path(__file__).parent.parent / "VERSION"
+    version_file = PROJECT_ROOT / "VERSION"
     try:
         return version_file.read_text().strip()
     except FileNotFoundError:
@@ -63,132 +90,144 @@ def check_for_update() -> dict:
     return result
 
 
-def get_upgrade_status() -> dict:
-    """Return current upgrade status."""
-    with _upgrade_lock:
-        return dict(_upgrade_status)
+# --- upgrade status ---------------------------------------------------------
 
 
-def start_upgrade(target_tag: str) -> dict:
-    """Start an upgrade to the given tag in a background thread.
-
-    Returns immediately with status. The upgrade runs asynchronously.
-    After completion, the service should be restarted externally
-    (systemd will auto-restart if configured).
-    """
-    with _upgrade_lock:
-        if _upgrade_status["state"] == "running":
-            return {"success": False, "message": "Upgrade already in progress"}
-        _upgrade_status["state"] = "running"
-        _upgrade_status["message"] = f"Upgrading to {target_tag}..."
-
-    thread = threading.Thread(target=_run_upgrade, args=(target_tag,), daemon=True)
-    thread.start()
-    return {"success": True, "message": f"Upgrade to {target_tag} started"}
-
-
-def _run_upgrade(target_tag: str) -> None:
-    """Execute the upgrade steps in a background thread."""
-    project_root = Path(__file__).parent.parent
-
+def _read_status_file() -> Optional[dict]:
     try:
-        # Step 1: Fetch latest tags
-        _set_status("running", "Fetching latest releases...")
-        _run_cmd(["git", "fetch", "--tags", "--force"], cwd=project_root)
-
-        # Step 2: Discard any local changes to tracked files so checkout succeeds.
-        # User data (config.json, credentials, databases, photos) is gitignored
-        # and unaffected. Tracked files should always match the release.
-        _run_cmd(["git", "checkout", "--", "."], cwd=project_root)
-
-        # Step 3: Checkout the target tag
-        _set_status("running", f"Checking out {target_tag}...")
-        _run_cmd(["git", "checkout", target_tag], cwd=project_root)
-
-        # Step 4: Ensure system build dependencies are available (Pi only)
-        import platform
-        import shutil
-
-        if platform.machine() == "aarch64" and not shutil.which("swig"):
-            _set_status("running", "Installing system build dependencies...")
-            _run_cmd(
-                ["sudo", "-n", "apt-get", "install", "-y", "swig", "liblgpio-dev"],
-                cwd=project_root,
-            )
-
-        # Step 5: Install dependencies into the project's venv
-        _set_status("running", "Installing dependencies...")
-
-        venv_python = project_root / ".venv" / "bin" / "python"
-        if shutil.which("uv"):
-            # Point uv at the project's venv Python so it doesn't use system Python
-            _run_cmd(
-                ["uv", "sync", "--no-dev", "--python", str(venv_python)],
-                cwd=project_root,
-            )
-        elif venv_python.exists():
-            _run_cmd(
-                [str(venv_python), "-m", "pip", "install", "-e", "."],
-                cwd=project_root,
-            )
-        else:
-            raise RuntimeError(
-                "No package manager found. Install uv or create a virtualenv."
-            )
-
-        # Step 6: Rebuild the frontend so the served app matches the release
-        _set_status("running", "Building frontend...")
-        npm = shutil.which("npm")
-        if npm is None:
-            raise RuntimeError(
-                "npm is not installed; run deploy_raspberry_pi.sh to install Node.js"
-            )
-        frontend_dir = project_root / "frontend"
-        _run_cmd([npm, "ci", "--no-audit", "--no-fund"], cwd=frontend_dir)
-        _run_cmd([npm, "run", "build"], cwd=frontend_dir)
-
-        _set_status("restarting", "Upgrade complete. Restarting service...")
-
-        # Step 4: Restart via systemd (if available)
-        # Use a short delay so the status response can be sent first
-        try:
-            subprocess.Popen(  # noqa: S603
-                ["bash", "-c", "sleep 2 && sudo -n systemctl restart family-calendar"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            # Not running under systemd — caller will need to restart manually
-            _set_status(
-                "done",
-                "Upgrade complete. Please restart the application manually.",
-            )
-
-    except subprocess.CalledProcessError as e:
-        logger.error("Upgrade failed: %s", e.stderr)
-        _set_status("error", f"Upgrade failed: {e.stderr or str(e)}")
-    except Exception as e:
-        logger.error("Upgrade failed: %s", e)
-        _set_status("error", f"Upgrade failed: {e}")
-
-
-def _run_cmd(cmd: list[str], cwd: Path) -> str:
-    """Run a subprocess command, raising on failure."""
-    result = subprocess.run(  # noqa: S603
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=300,
-        check=True,
-    )
-    return result.stdout
+        data = json.loads(STATUS_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or "state" not in data:
+        return None
+    return data
 
 
 def _set_status(state: str, message: str) -> None:
     with _upgrade_lock:
         _upgrade_status["state"] = state
         _upgrade_status["message"] = message
+        _upgrade_status["updated_at"] = time.time()
+
+
+def get_upgrade_status() -> dict:
+    """Current upgrade state: whichever of the launcher and the script spoke last."""
+    with _upgrade_lock:
+        status = dict(_upgrade_status)
+    from_script = _read_status_file()
+    if from_script and float(from_script.get("updated_at", 0)) >= float(
+        status.get("updated_at", 0)
+    ):
+        status = from_script
+    return {
+        "state": status.get("state", "idle"),
+        "message": status.get("message", ""),
+    }
+
+
+def _is_fresh_running(status: Optional[dict]) -> bool:
+    return bool(
+        status
+        and status.get("state") == "running"
+        and time.time() - float(status.get("updated_at", 0)) < STALE_RUNNING_SECONDS
+    )
+
+
+def _upgrade_in_progress() -> bool:
+    with _upgrade_lock:
+        launcher = dict(_upgrade_status)
+    return _is_fresh_running(launcher) or _is_fresh_running(_read_status_file())
+
+
+# --- launching --------------------------------------------------------------
+
+
+def start_upgrade(target_tag: str) -> dict:
+    """Start upgrade.sh for ``target_tag`` outside this process.
+
+    Returns immediately. Progress comes from :func:`get_upgrade_status`; the
+    script stops and restarts the service itself.
+    """
+    if _upgrade_in_progress():
+        return {"success": False, "message": "Upgrade already in progress"}
+
+    _set_status("running", f"Starting upgrade to {target_tag}...")
+    try:
+        STATUS_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("Could not clear %s", STATUS_FILE, exc_info=True)
+
+    try:
+        how = _launch_upgrade(target_tag)
+    except Exception as e:
+        message = f"Could not start the upgrade: {e}"
+        logger.error(message)
+        _set_status("error", message)
+        return {"success": False, "message": message}
+
+    logger.info("Upgrade to %s started via %s", target_tag, how)
+    return {"success": True, "message": f"Upgrade to {target_tag} started"}
+
+
+def _upgrade_unit_installed() -> bool:
+    systemctl = shutil.which("systemctl")
+    if systemctl is None:
+        return False
+    try:
+        result = subprocess.run(  # noqa: S603  # nosec B603
+            [systemctl, "cat", UPGRADE_UNIT_TEMPLATE],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _launch_upgrade(target_tag: str) -> str:
+    """Start upgrade.sh and return how: ``"systemd"`` or ``"process"``."""
+    if _upgrade_unit_installed():
+        unit = UPGRADE_UNIT_TEMPLATE.replace("@.", f"@{target_tag}.")
+        try:
+            subprocess.run(  # noqa: S603  # nosec B603
+                [shutil.which("systemctl") or "systemctl", "start", "--no-block", unit],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            detail = (e.stderr or e.stdout or "").strip() or f"exit {e.returncode}"
+            raise RuntimeError(
+                f"systemctl start {unit} failed ({detail}). Re-run "
+                "deploy_raspberry_pi.sh to install the upgrade permissions."
+            ) from e
+        return "systemd"
+
+    # No upgrade unit (a development machine, or an install that predates it):
+    # run the script as a detached process in its own session.
+    if not UPGRADE_SCRIPT.is_file():
+        raise RuntimeError(f"{UPGRADE_SCRIPT} not found")
+    subprocess.Popen(  # noqa: S603  # nosec B603 B607
+        [
+            "bash",
+            str(UPGRADE_SCRIPT),
+            "--yes",
+            "--tag",
+            target_tag,
+            "--status-file",
+            str(STATUS_FILE),
+        ],
+        cwd=PROJECT_ROOT,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return "process"
 
 
 def _is_newer(latest: str, current: str) -> bool:

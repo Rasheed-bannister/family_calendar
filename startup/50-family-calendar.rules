@@ -1,0 +1,24 @@
+// Lets the Family Calendar service user start, stop and restart its own units
+// without sudo. The main service runs with NoNewPrivileges, which disables
+// sudo inside it; systemctl talks to systemd over D-Bus instead, and this rule
+// authorises that. Scoped to the two units and three verbs it needs.
+//
+// Installed by deploy_raspberry_pi.sh to /etc/polkit-1/rules.d/, with the
+// user name substituted for __USER__.
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  if (subject.user !== "__USER__") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  var unit = action.lookup("unit") || "";
+  var verb = action.lookup("verb") || "";
+  var ours =
+    unit === "family-calendar.service" ||
+    /^family-calendar-upgrade@v[0-9]+\.[0-9]+\.[0-9]+\.service$/.test(unit);
+  if (ours && (verb === "start" || verb === "stop" || verb === "restart")) {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});
