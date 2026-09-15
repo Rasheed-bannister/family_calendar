@@ -48,3 +48,4 @@ src/static/app/
 frontend/node_modules/
 # Processed slideshow variants are derived from the originals
 src/static/photos/processed/
+.upgrade-status.json*
