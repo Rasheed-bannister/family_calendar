@@ -49,16 +49,25 @@ def run_all_checks() -> dict:
     if not gpio.get("gpio_group"):
         issues.append(f"User '{gpio.get('username', '?')}' is not in the gpio group")
     sensor = results["sensor"]
-    if sensor.get("status") == "not_initialized":
+    if not sensor.get("initialized"):
         issues.append("PIR sensor has not been initialized")
-    elif not sensor.get("monitoring"):
-        issues.append("PIR sensor is initialized but not monitoring")
-    if not sensor.get("gpio_available") and not cfg.get("simulation_mode"):
+    elif (
+        cfg.get("enabled", True)
+        and not cfg.get("simulation_mode")
+        and not sensor.get("available")
+    ):
         probe = results["gpio_probe"]
-        if probe.get("error"):
-            issues.append(f"GPIO sensor probe failed: {probe['error']}")
+        detail = sensor.get("error") or probe.get("error")
+        if detail:
+            issues.append(f"PIR sensor could not open GPIO: {detail}")
         else:
             issues.append("GPIO is not available to the sensor")
+    chips = gpio.get("chips") or []
+    if chips and not any(c.get("accessible") for c in chips):
+        issues.append(
+            "No /dev/gpiochip* device is writable by this process "
+            "(check the systemd DeviceAllow lines and the gpio group)"
+        )
     pwr = results["power"]
     if pwr.get("under_voltage_now") or pwr.get("under_voltage_occurred"):
         issues.append("Under-voltage detected - use a 5V/5A power supply")
@@ -157,7 +166,11 @@ def _check_gpio_devices() -> dict:
         "user_groups": [],
     }
 
-    # GPIO chip devices
+    # GPIO chip devices, with the kernel label where lgpio can read it. The
+    # header chip is found by label, not number (see sensor.HEADER_CHIP_LABELS).
+    from src.pir_sensor.sensor import detect_header_chip, list_gpio_chips
+
+    labelled = {c["path"]: c for c in list_gpio_chips()}
     chips = sorted(glob.glob("/dev/gpiochip*"))
     for chip in chips:
         try:
@@ -165,11 +178,20 @@ def _check_gpio_devices() -> dict:
             stat = os.stat(chip)
             group = grp.getgrgid(stat.st_gid).gr_name
             mode = oct(stat.st_mode)[-3:]
+            info = labelled.get(chip, {})
             result["chips"].append(
-                {"path": chip, "accessible": accessible, "group": group, "mode": mode}
+                {
+                    "path": chip,
+                    "accessible": accessible,
+                    "group": group,
+                    "mode": mode,
+                    "label": info.get("label"),
+                    "lines": info.get("lines"),
+                }
             )
         except Exception as e:
             result["chips"].append({"path": chip, "accessible": False, "error": str(e)})
+    result["header_chip"] = detect_header_chip(list(labelled.values()))
 
     # /dev/gpiomem
     if os.path.exists("/dev/gpiomem"):
@@ -210,37 +232,23 @@ def _check_sensor_state() -> dict:
 
     sensor = get_pir_sensor()
     if not sensor:
-        return {
-            "status": "not_initialized",
-            "monitoring": False,
-            "gpio_available": False,
-        }
-
-    return {
-        "status": "initialized",
-        "monitoring": sensor.is_monitoring,
-        "gpio_available": sensor.gpio_available,
-        "pin": sensor.pin,
-        "simulation_mode": sensor.simulation_mode,
-        "last_detection_time": sensor.last_detection_time,
-    }
+        return {"initialized": False, "available": False, "error": "not initialized"}
+    return {"initialized": True, **sensor.status()}
 
 
 def _probe_gpio(pin: int) -> dict:
-    """Try to create a MotionSensor on the configured pin.
+    """Read the configured pin.
 
-    If the app's sensor already holds the pin with real GPIO, we read its
-    value directly instead of fighting over the pin. When GPIO init has
-    failed (gpio_available=False), we attempt an independent probe to
-    capture the actual error message.
+    If the app's sensor holds the pin, read through it rather than fighting
+    over the pin. Only when the app failed to open the pin is an independent
+    probe attempted, to surface the real error message.
     """
     result: dict = {"success": False, "pin": pin, "error": None, "value": None}
 
-    # If the running sensor already owns the pin on real GPIO, just read it.
     from src.pir_sensor.sensor import get_pir_sensor
 
     live = get_pir_sensor()
-    if live and live.gpio_available and live._sensor:
+    if live and live.available and live._sensor is not None:
         try:
             result["success"] = True
             result["value"] = live._sensor.value
@@ -248,8 +256,12 @@ def _probe_gpio(pin: int) -> dict:
         except Exception as e:
             result["error"] = f"Could not read live sensor: {e}"
             return result
+    if live and live.error:
+        # The app already tried and recorded why it failed; a second probe
+        # would only return the same error or a misleading "pin in use".
+        result["error"] = live.error
+        return result
 
-    # Otherwise, try an independent probe to surface the real error.
     try:
         from gpiozero import MotionSensor
     except ImportError:

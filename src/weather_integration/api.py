@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import openmeteo_requests
-import pandas as pd
 import requests_cache
 from retry_requests import retry
 
@@ -129,8 +128,6 @@ def _serialize_for_cache(obj):
     """Convert datetime objects and other non-JSON-serializable objects to strings."""
     if isinstance(obj, datetime):
         return obj.isoformat()
-    elif isinstance(obj, (pd.Timestamp, pd.DatetimeIndex)):
-        return obj.isoformat() if hasattr(obj, "isoformat") else str(obj)
     elif isinstance(obj, dict):
         return {key: _serialize_for_cache(value) for key, value in obj.items()}
     elif isinstance(obj, list):
@@ -254,36 +251,57 @@ def get_weather_data() -> Optional[Dict[str, Any]]:
             "weather_code": current.Variables(2).Value(),
         }
 
-        # Process daily data. The order of variables needs to be the same as requested.
+        # Process daily data. The order of variables needs to be the same as
+        # requested. Read the flatbuffer values directly: pandas/numpy were
+        # only ever used to build this list of dicts, and they cost ~100 MB
+        # of RAM on a Pi for the privilege.
         daily = response.Daily()
-        daily_data = {
-            "date": pd.date_range(
-                start=pd.to_datetime(daily.Time(), unit="s", utc=True),
-                end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
-                freq=pd.Timedelta(seconds=daily.Interval()),
-                inclusive="left",
-            )
-        }
-        daily_data["weather_code"] = daily.Variables(0).ValuesAsNumpy()
-        daily_data["apparent_temperature_max"] = daily.Variables(1).ValuesAsNumpy()
-        daily_data["apparent_temperature_min"] = daily.Variables(2).ValuesAsNumpy()
-        # Convert sunrise/sunset timestamps to datetime objects
-        daily_data["sunrise"] = [
-            datetime.fromtimestamp(ts) for ts in daily.Variables(3).ValuesInt64AsNumpy()
-        ]
-        daily_data["sunset"] = [
-            datetime.fromtimestamp(ts) for ts in daily.Variables(4).ValuesInt64AsNumpy()
-        ]
-        daily_data["precipitation_probability_max"] = daily.Variables(5).ValuesAsNumpy()
+        interval = daily.Interval() or 86400
+        count = int((daily.TimeEnd() - daily.Time()) // interval)
 
-        daily_dataframe = pd.DataFrame(data=daily_data)
+        def values(index: int, count: int) -> list:
+            var = daily.Variables(index)
+            n = min(count, var.ValuesLength())
+            return [float(var.Values(i)) for i in range(n)]
+
+        def int64_values(index: int, count: int) -> list:
+            var = daily.Variables(index)
+            n = min(count, var.ValuesInt64Length())
+            return [int(var.ValuesInt64(i)) for i in range(n)]
+
+        codes = values(0, count)
+        highs = values(1, count)
+        lows = values(2, count)
+        sunrises = int64_values(3, count)
+        sunsets = int64_values(4, count)
+        precip = values(5, count)
+
+        daily_records = []
+        for i in range(count):
+            daily_records.append(
+                {
+                    "date": datetime.fromtimestamp(daily.Time() + i * interval),
+                    "weather_code": codes[i] if i < len(codes) else None,
+                    "apparent_temperature_max": highs[i] if i < len(highs) else None,
+                    "apparent_temperature_min": lows[i] if i < len(lows) else None,
+                    "sunrise": (
+                        datetime.fromtimestamp(sunrises[i])
+                        if i < len(sunrises)
+                        else None
+                    ),
+                    "sunset": (
+                        datetime.fromtimestamp(sunsets[i]) if i < len(sunsets) else None
+                    ),
+                    "precipitation_probability_max": (
+                        precip[i] if i < len(precip) else None
+                    ),
+                }
+            )
 
         # Prepare return data
         weather_data = {
             "current": current_data,
-            "daily": daily_dataframe.to_dict(
-                orient="records"
-            ),  # Convert dataframe to list of dicts
+            "daily": daily_records,
         }
 
         # Save to cache for offline use

@@ -316,3 +316,44 @@ class TestQrCodeTokenMinting:
         response = client.get("/upload/qrcode")
         assert response.status_code == 200
         assert response.get_json()["success"] is True
+
+
+class TestOptimizeImage:
+    """Stored originals must be upright and bounded in size."""
+
+    def test_exif_rotation_is_baked_into_the_pixels(self, tmp_path):
+        from src.photo_upload.routes import optimize_image
+
+        path = tmp_path / "sideways.jpg"
+        exif = Image.Exif()
+        exif[0x0112] = 6  # rotate 90 CW on display
+        Image.new("RGB", (40, 20), color=(1, 2, 3)).save(
+            path, "JPEG", exif=exif.tobytes()
+        )
+
+        result = optimize_image(str(path))
+
+        assert result == str(path)
+        with Image.open(path) as img:
+            assert img.size == (20, 40)
+            assert img.getexif().get(0x0112) in (None, 1)
+
+    def test_oversized_original_is_capped(self, tmp_path):
+        from src.photo_upload import routes as upload_routes
+
+        path = tmp_path / "huge.png"
+        Image.new("RGB", (300, 150)).save(path, "PNG")
+        with patch.object(upload_routes, "MAX_ORIGINAL_DIMENSION", 100):
+            upload_routes.optimize_image(str(path))
+        with Image.open(path) as img:
+            assert img.size == (100, 50)
+            assert img.format == "PNG"
+
+    def test_small_original_is_left_alone(self, tmp_path):
+        from src.photo_upload.routes import optimize_image
+
+        path = tmp_path / "ok.webp"
+        Image.new("RGB", (30, 30)).save(path, "WEBP")
+        optimize_image(str(path))
+        with Image.open(path) as img:
+            assert img.size == (30, 30)

@@ -1,475 +1,177 @@
 # Family Calendar & Photo Slideshow
 
-A wall-mounted family calendar and photo slideshow application designed to run on a Raspberry Pi with a touchscreen monitor, built with Flask and JavaScript.
+A wall-mounted family calendar and photo slideshow for a Raspberry Pi with a
+touchscreen. Google Calendar and Google Tasks on a glass UI over an always-on
+photo slideshow, with weather, a PIR motion sensor that wakes the screen, and
+phone photo uploads over a QR code.
 
 ![main view](main_view.png)
 ![modal view](modal_view.png)
 
-## Description
-
-This open source project provides families with an interactive digital calendar and photo slideshow system that can be mounted in common areas of your home. It integrates with Google Calendar and Google Tasks, displays weather information, and transforms into a photo slideshow during periods of inactivity.
-
 ## Features
 
-### Calendar Functionality
-- **Interactive Monthly Calendar**: Displays a full month with color-coded events on the left side of the screen
-- **Daily Schedule View**: Shows hourly breakdown of the current day's activities on the right side
-- **Google Calendar Integration**: 
-  - Automatic background syncing of calendar events
-  - Support for multiple calendars with color coding
-  - Proper handling of all-day events and recurring events
-- **Google Tasks Integration**:
-  - Display of tasks/chores from Google Tasks
-  - Background synchronization to keep tasks up to date
-- **Smart Activity Detection**:
-  - Detects user interaction via touch, mouse, and keyboard
-  - **PIR Motion Sensor Integration**: Automatically detects motion and wakes display
-  - Automatically switches between active and inactive modes
-  - Different timeout settings for day and night
+- **Monthly calendar** with colour-coded events from any number of Google
+  Calendars, a day panel for the selected date, swipe between months, jump
+  to any month, and a "Today" button.
+- **Chores** synced with Google Tasks: tap to complete, swipe to dismiss, add
+  new chores with an on-screen keyboard.
+- **Weather**: current conditions and a three-day forecast from Open-Meteo,
+  cached so the display keeps working offline.
+- **Always-on slideshow** behind the UI: slow pan-and-zoom on every photo,
+  crossfades, portrait photos shown whole over a blurred backdrop instead of
+  cropped, every photo shown once before any repeats.
+- **Presence-aware display**: after a configurable idle time the screen dims,
+  then the UI fades away and only the photos remain. A touch or the PIR
+  sensor brings it back instantly. Separate day and night timings and
+  brightness, with real backlight control where the hardware supports it.
+- **Phone uploads**: a QR code opens a time-limited upload page; HEIC from
+  iPhones is converted, orientation is fixed, photos are resized for the
+  display.
+- **Self-service upgrades** from the settings panel, plus health and
+  diagnostics endpoints.
 
-### Motion Detection & Power Management
-- **PIR Sensor Integration**:
-  - Connects to GPIO pin 18 on Raspberry Pi 5
-  - Real-time motion detection with configurable sensitivity
-  - Automatic display wake-up when people approach
-  - Debounce protection to prevent false triggers
-- **Intelligent Power Saving**:
-  - Automatic dimming during inactivity periods
-  - PIR sensor disrupts inactivity timers instantly
-  - Different brightness levels for day and night modes
-  - Seamless transition between sleep and active states
+## How it works
 
-### Weather Integration
-- **Current Weather Display**: 
-  - Shows current temperature and conditions
-  - Displays appropriate weather icons
-- **Weather Forecast**: 
-  - Multi-day weather forecast
-  - Regular background updates
-- **Offline Support**:
-  - Intelligent caching with 24-hour retention
-  - Graceful degradation when internet is unavailable
-  - Automatic recovery when connection is restored
+The Flask backend on the Pi owns the display state. It watches the PIR
+sensor, the clock, and the touches the page reports, decides whether the
+screen should be active, dimmed or showing the slideshow, sets the backlight,
+and pushes the decision to the browser over a server-sent event stream. The
+browser is a Svelte single-page app that renders that state. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-### Photo Slideshow Functionality
-- **Adaptive Inactivity Modes**:
-  - Day mode with reduced brightness
-  - Night mode with further reduced brightness
-  - Long inactivity mode that activates the slideshow
-- **Smart Photo Management**:
-  - Automatic detection and indexing of photos in the photos directory
-  - Random photo selection for slideshow variety
-  - SQLite database tracking for efficient photo management
-- **Mobile Photo Upload System**:
-  - **Secure QR Code Access**: Generate time-limited QR codes for mobile photo uploads
-  - **Token-Based Security**: HMAC-SHA256 signed tokens with 60-minute expiration
-  - **iPhone Compatibility**: Automatic HEIC to JPEG conversion for iPhone photos
-  - **Rate Limiting**: 10 uploads per minute, 100 per hour per device/token
-  - **Multi-format Support**: JPG, PNG, HEIC, WebP, GIF formats up to 16MB each
-  - **Automatic Processing**: Image optimization, resizing, and thumbnail generation
-  - **Mobile-Optimized Interface**: Touch-friendly upload interface with progress tracking
-- **Smooth Transitions**: Fade transitions between calendar view and photos
+## Installation on a Raspberry Pi
 
-### System Features
-- **Flask Web Application**: 
-  - Python backend with Flask routing
-  - Modular JavaScript frontend
-- **Responsive Design**: Adapts to different monitor sizes and is optimized for touchscreen use
-- **Enhanced Touchscreen Experience**: 
-  - Hidden mouse cursor for touch-only interaction
-  - Advanced virtual keyboard with haptic feedback and multiple layouts
-  - Touch-optimized UI components with visual feedback
-  - Long-press support for rapid text deletion
-- **Smart Loading & Feedback**:
-  - Visual loading indicators with toast notifications
-  - Offline mode with intelligent caching for weather data
-  - Real-time sync status indicators
-  - Motion detection visual feedback with ripple effects
-- **Hardware Integration**:
-  - PIR motion sensor support via GPIO with visual status indicators
-  - Automatic fallback to simulation mode for development
-  - Real-time sensor communication via Server-Sent Events
-- **Configuration Management**:
-  - Centralized configuration system with config.json
-  - Environment variable support for backwards compatibility
-  - Auto-generation of default configurations
-  - Production vs development mode handling
-- **Energy Efficiency**:
-  - Power-saving modes during periods of inactivity
-  - Motion-activated display wake-up
-  - Different brightness levels based on time of day
-- **Database-Backed**: SQLite databases for efficient data storage and retrieval
-- **Background Processing**: 
-  - Multi-threaded background tasks for syncing services
-  - Thread-safe operations with proper locking mechanisms
-  - Graceful error handling and recovery
-
-## Technical Architecture
-
-The application is built using the following technologies:
-
-- **Backend**:
-  - Python 3.11+
-  - Flask web framework
-  - SQLite databases
-  - Threading for background operations
-  - Google API clients
-
-- **Frontend**:
-  - HTML/CSS with responsive design
-  - Modular JavaScript (ES6)
-  - Component-based architecture
-  
-- **Modules**:
-  - `calendar_app`: Core calendar functionality and database
-  - `google_integration`: Google Calendar and Tasks API integration
-  - `slideshow`: Photo management and display
-  - `weather_integration`: Weather data fetching with offline caching
-  - `pir_sensor`: PIR motion sensor integration and GPIO control
-  - `photo_upload`: Secure mobile photo upload system with token authentication
-  - `config`: Centralized configuration management system
-
-## Installation
-
-### Prerequisites
-- Raspberry Pi 5 (4GB+ RAM recommended for optimal performance)
-- PIR motion sensor (HC-SR501 or compatible)
-- Touchscreen monitor with appropriate cables
-- SD card (32GB+ recommended)
-- Power supply for Raspberry Pi
-- Internet connection
-- Python 3.13+
-- Google Cloud OAuth credentials
-
-### Hardware Setup
-1. **Connect PIR Sensor**:
-   - Connect VCC to 5V pin (Pin 2 or 4)
-   - Connect GND to Ground pin (Pin 6, 9, 14, 20, 25, 30, 34, or 39)
-   - Connect OUT to GPIO 18 (Pin 12)
-   - Ensure PIR sensor is positioned to detect motion in desired area
-
-2. **Touchscreen Setup**:
-   - Connect touchscreen via HDMI and USB
-   - Ensure proper power supply for both Pi and display
-
-### Automated Installation (Recommended)
-
-We provide a deployment script that automates the installation and setup process:
-
-1. **Download the script**:
-   ```bash
-   curl -O https://raw.githubusercontent.com/Rasheed-bannister/family_calendar/main/deploy_raspberry_pi.sh
-   chmod +x deploy_raspberry_pi.sh
-   ```
-
-2. **Run the script with sudo**:
-   ```bash
-   sudo ./deploy_raspberry_pi.sh
-   ```
-
-The script will:
-- Install all required dependencies
-- Clone the repository
-- Set up a Python virtual environment
-- Configure autostart settings
-- Set up the display for optimal performance
-- Configure GPIO permissions for PIR sensor
-- Guide you through adding Google API credentials
-- Test PIR sensor functionality
-- Offer to reboot when complete
-
-### Manual Installation
-
-If you prefer to install manually, follow these steps:
-
-1. **Set up your Raspberry Pi**:
-   ```bash
-   # Download and install Raspberry Pi OS (64-bit)
-   # Follow instructions at https://www.raspberrypi.org/software/
-   ```
-
-2. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Rasheed-bannister/family_calendar.git
-   cd family-calendar
-   ```
-
-3. **Install system dependencies** (Raspberry Pi):
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y git python3-venv swig liblgpio-dev
-   ```
-
-4. **Install Python dependencies**:
-   ```bash
-   # Install UV package manager
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-   # Install project dependencies
-   uv venv
-   source .venv/bin/activate
-   uv sync
-   ```
-
-5. **Set up Google API credentials**:
-   1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-   2. Create a new project
-   3. Enable the Google Calendar API and Google Tasks API
-   4. Create OAuth credentials (Desktop application type)
-   5. Download the credentials.json file
-   6. Place the file in the `src/google_integration/` directory
-
-6. **Initialize the application**:
-   ```bash
-   # Run the application once to initialize databases and authenticate with Google
-   # This will prompt you to authorize the application with your Google account
-   uv run src/main.py
-   ```
-
-### Deploying on Raspberry Pi
-
-The automated deployment script (`deploy_raspberry_pi.sh`) handles GPIO permissions, systemd service setup, kiosk mode, and screen configuration. If you installed manually, the key steps are:
-
-1. **Configure GPIO permissions**:
-   ```bash
-   sudo usermod -a -G gpio $USER
-   # Log out and back in for the group change to take effect
-   ```
-
-2. **Test PIR sensor**:
-   ```bash
-   # Run the built-in diagnostic script
-   .venv/bin/python scripts/diagnose_pir.py
-   ```
-   You can also run diagnostics from the app itself via the settings gear button (bottom-left corner).
-
-3. **Set up the systemd service** (auto-start on boot):
-   ```bash
-   # Copy and edit the service file
-   sudo cp startup/family-calendar.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable family-calendar
-   sudo systemctl start family-calendar
-   ```
-
-4. **Configure kiosk mode** (optional, for dedicated display):
-   ```bash
-   # Launch Chromium in kiosk mode pointing at the app
-   chromium-browser --kiosk --incognito --disable-pinch \
-     --overscroll-history-navigation=0 http://localhost:5000
-   ```
-   The deployment script sets this up automatically via `startup/launch-browser.sh`.
-
-## Configuration
-
-The application uses a comprehensive configuration system that supports both JSON files and environment variables.
-
-### Configuration System
-
-The application automatically creates a `config.json` file on first run with sensible defaults. You can customize the behavior by editing this file:
-
-```json
-{
-  "app": {
-    "debug": false,
-    "host": "0.0.0.0",
-    "port": 5000,
-    "environment": "production"
-  },
-  "weather": {
-    "latitude": 40.759010,
-    "longitude": -73.984474,
-    "timezone": "America/New_York",
-    "cache_duration": 600,
-    "offline_fallback": true
-  },
-  "pir_sensor": {
-    "enabled": true,
-    "gpio_pin": 18,
-    "debounce_time": 2.0,
-    "simulation_mode": false
-  },
-  "inactivity": {
-    "day_timeout_minutes": 60,
-    "night_timeout_seconds": 5,
-    "day_brightness_reduction": 0.6,
-    "night_brightness_reduction": 0.2,
-    "night_start_hour": 21,
-    "night_end_hour": 6
-  },
-  "ui": {
-    "show_loading_indicators": true,
-    "show_pir_feedback": true,
-    "enhanced_virtual_keyboard": true,
-    "touch_optimized": true,
-    "animation_duration_ms": 300
-  }
-}
-```
-
-### Environment Variable Override
-
-For backwards compatibility, environment variables will override config file settings:
+Hardware: Raspberry Pi 4 or 5 running Raspberry Pi OS Bookworm (64-bit), a
+touchscreen, and an HC-SR501 PIR sensor wired VCC to 5V (pin 2 or 4), GND to
+pin 6, OUT to GPIO 18 (pin 12).
 
 ```bash
-# Weather location settings
-export CALENDAR_WEATHER_LATITUDE="40.759010"  # Your latitude
-export CALENDAR_WEATHER_LONGITUDE="-73.984474"  # Your longitude
-export CALENDAR_TIMEZONE="America/New_York"  # Your timezone
-
-# Application settings
-export CALENDAR_DEBUG="false"  # Enable/disable debug mode
-export CALENDAR_PORT="5000"    # Application port
-export CALENDAR_ENV="production"  # Environment mode
+git clone https://github.com/Rasheed-bannister/family_calendar.git
+cd family_calendar
+sudo ./deploy_raspberry_pi.sh
 ```
 
-### Configuration Priority
+The script installs the system packages (Python, Node.js, Chromium, lgpio,
+ddcutil), builds the backend and frontend, writes `config.json`, sets up GPIO
+and backlight permissions, installs the `family-calendar` systemd service,
+configures the kiosk browser to start with the desktop, and turns screen
+blanking off. It is safe to re-run.
 
-The configuration system follows this priority order:
-1. Environment variables (highest priority)
-2. config.json file settings
-3. Built-in defaults (lowest priority)
+Google sync needs OAuth credentials: create a project in the
+[Google Cloud Console](https://console.cloud.google.com/), enable the
+Calendar and Tasks APIs, create OAuth credentials of type *Desktop
+application*, and save the download as
+`src/google_integration/credentials.json`. The first sync opens a browser
+window to authorise the account.
 
-### Key Configuration Options
+### Checking the install
 
-- **PIR Sensor**: GPIO pin, sensitivity, and visual feedback settings
-- **Weather**: Location coordinates, caching, and offline behavior
-- **UI**: Touch optimizations, animations, and visual feedback
-- **Inactivity**: Different timeouts for day/night modes
-- **Logging**: Level, format, and file rotation settings
+```bash
+curl -s localhost:5000/health/ | python3 -m json.tool     # status, hardware.pir, hardware.display
+curl -s localhost:5000/pir/status                         # {"available": true, ...} when the sensor works
+sudo systemctl stop family-calendar && .venv/bin/python scripts/pir_smoke_test.py
+```
 
-### Photo Management
+The settings panel (gear, bottom-left of the display) shows the same
+information and can run the full diagnostics.
 
-#### Traditional Method
-Add new photos to the `src/static/photos/` directory. The application will automatically index them on the next restart.
+### Stopping the kiosk to work on the Pi
 
-#### Mobile Upload (Recommended)
-1. **Access Upload Interface**: 
-   - From the main calendar view, click the QR code button
-   - Scan the generated QR code with your mobile device
-2. **Upload Photos**:
-   - Click "Upload Photos" from the photo management page
-   - Select photos from your mobile device gallery or take new photos
-   - Supported formats: JPG, PNG, HEIC, WebP, GIF (up to 16MB each)
-3. **Automatic Processing**:
-   - HEIC photos from iPhones are automatically converted to JPEG
-   - Images are optimized and thumbnails are generated
-   - Photos appear in the slideshow immediately after upload
+The kiosk browser relaunches itself only after a crash; closing it with
+Alt+F4 leaves the desktop free. From a terminal or over SSH:
 
-#### Security Features
-- **Time-Limited Access**: QR codes expire after 60 minutes
-- **Rate Limiting**: Maximum 10 uploads per minute, 100 per hour
-- **Secure Tokens**: HMAC-SHA256 signed tokens prevent unauthorized access
-- **Input Validation**: File types, sizes, and content are validated before processing
+```bash
+startup/launch-browser.sh stop      # close it until the next login
+startup/launch-browser.sh disable   # and keep it from starting at login
+startup/launch-browser.sh enable    # undo
+```
 
-## Upgrading
+### Upgrading
 
-The app supports in-app upgrades via the settings gear button (bottom-left corner), or you can upgrade manually:
+Use **Check for updates** in the settings panel, or on the Pi:
 
 ```bash
 ./upgrade.sh
 ```
 
-Both methods back up your user data, pull the latest release, install dependencies, and restart the service.
+Both back up your data, check out the release, rebuild, and restart.
 
-## Usage
+## Configuration
 
-1. **Calendar View**:
-   - Monthly calendar displayed on the left with loading indicators during sync
-   - Daily schedule shown on the right
-   - Tasks/chores displayed in a dedicated section
-   - Weather information always visible with offline fallback
+`config.json` (copied from `config.default.json` on first run). The parts
+you are most likely to touch:
 
-2. **Enhanced Touchscreen Interaction**:
-   - Advanced virtual keyboard with haptic feedback and multiple layouts
-   - Visual feedback for all touch interactions
-   - Long-press support for rapid text operations
-   - Motion detection with visual ripple effects
+```json
+{
+  "app": { "family_name": "Family", "timezone": null },
+  "weather": { "latitude": 40.759, "longitude": -73.984, "timezone": "America/New_York" },
+  "pir_sensor": { "enabled": true, "gpio_pin": 18, "gpio_chip": null, "debounce_time": 2.0, "simulation_mode": false },
+  "display": {
+    "day":   { "dim_after_seconds": 3600, "hide_ui_after_seconds": 3605, "brightness": 0.6 },
+    "night": { "dim_after_seconds": 5,    "hide_ui_after_seconds": 10,   "brightness": 0.2 },
+    "night_start_hour": 21,
+    "night_end_hour": 6,
+    "backlight": { "backend": "auto", "device": null }
+  },
+  "slideshow": { "interval_seconds": 30, "transition_seconds": 2, "ken_burns": true, "max_dimension": 2048 }
+}
+```
 
-3. **Inactivity Behavior**:
-   - After a period of inactivity (configurable: 1 hour during day, 5 seconds at night), screen dims
-   - PIR sensor instantly wakes display when motion is detected with visual feedback
-   - When in long inactivity mode, slideshow activates
-   - Any touch, mouse movement, keyboard press, or motion detection returns to calendar view
-   - Reduced brightness during nighttime hours for energy saving
+- `display.*.dim_after_seconds` / `hide_ui_after_seconds`: idle time before
+  the screen dims and before the UI hides. `brightness` is the backlight
+  level while idle (0 to 1).
+- `display.backlight.backend`: `auto` picks a sysfs backlight (the official
+  touchscreen) or `ddcutil` (HDMI monitors with DDC/CI); `none` dims with a
+  translucent overlay in the browser instead. The overlay never goes below
+  `display.overlay_min_brightness` (default 0.35), because a black overlay
+  saves no power.
+- `pir_sensor.gpio_chip`: which `/dev/gpiochipN` carries the 40-pin header.
+  Leave `null` to detect it by kernel label; chip numbers change between
+  kernel versions on a Pi 5 (`gpiochip4` on 6.6, `gpiochip1x` on 6.12).
+- An older `inactivity` section is migrated to `display` automatically.
+- Environment variables `CALENDAR_WEATHER_LATITUDE`, `CALENDAR_WEATHER_LONGITUDE`,
+  `CALENDAR_TIMEZONE`, `CALENDAR_PORT`, `CALENDAR_DEBUG`, `CALENDAR_ENV`
+  override the file.
 
-4. **PIR Sensor Operation**:
-   - Continuously monitors for motion via GPIO pin 18
-   - Automatic wake-up when people approach the display
-   - Real-time status indicator showing sensor state
-   - Works in simulation mode for development without hardware
+### Photos
 
-5. **Smart Features**:
-   - Offline weather caching with 24-hour retention
-   - Loading indicators for all sync operations
-   - Toast notifications for system events
-   - Automatic error recovery and retry logic
-
-6. **Browser Access**:
-   - The application can also be accessed from any device on your network
-   - Navigate to `http://[raspberry-pi-ip]:5000` in any web browser
+Tap **📱 Photos** on the display and scan the QR code with a phone, or copy
+files into `src/static/photos/`. Either way the app processes them into
+display-sized variants (`src/static/photos/processed/`) on the next scan.
+JPG, PNG, HEIC, WebP and GIF are accepted, up to 16MB each. Upload links
+expire after 60 minutes and are rate limited.
 
 ## Development
 
-### Project Structure
-```
-├── config.default.json     # Default config template (tracked in git)
-├── config.json             # Your local config (gitignored)
-├── VERSION                 # Current version number
-├── upgrade.sh              # Manual upgrade script
-├── deploy_raspberry_pi.sh  # Full Raspberry Pi deployment
-├── scripts/
-│   └── diagnose_pir.py     # CLI PIR sensor diagnostics
-├── startup/                # Systemd service, launch scripts
-├── src/
-│   ├── main.py             # Application entry point & API routes
-│   ├── config.py           # Centralized configuration management
-│   ├── version.py          # Version checking & in-app upgrade
-│   ├── health_monitor.py   # Error tracking & auto-recovery
-│   ├── health_routes.py    # Health check endpoints
-│   ├── calendar_app/       # Calendar functionality & SQLite DB
-│   ├── chores_app/         # Chore/task management (Google Tasks)
-│   ├── google_integration/ # Google Calendar & Tasks API (OAuth2)
-│   ├── weather_integration/# Open-Meteo weather API with caching
-│   ├── slideshow/          # Photo slideshow & database
-│   ├── pir_sensor/         # PIR motion sensor (gpiozero)
-│   │   ├── sensor.py       # GPIO sensor control
-│   │   ├── routes.py       # REST & SSE endpoints
-│   │   └── diagnostics.py  # Diagnostic checks (used by UI & CLI)
-│   ├── photo_upload/       # Secure mobile photo upload (QR/token)
-│   ├── static/
-│   │   ├── css/components/ # Component stylesheets
-│   │   ├── js/components/  # ES6 JS modules
-│   │   └── photos/         # Photo storage
-│   └── templates/          # HTML templates
-└── tests/                  # Pytest test suite
+```bash
+uv sync                                  # Python 3.11+, creates .venv
+uv run python -m src.main                # backend on http://localhost:5000
+
+cd frontend && npm ci && npm run dev     # Svelte app on http://localhost:5173, proxied to :5000
+npm run build                            # compile into src/static/app/ for Flask to serve
+
+uv run pytest                            # backend tests
+cd frontend && npm run check && npm test # frontend type-check and unit tests
+npm run smoke                            # Playwright end-to-end run against a live server
 ```
 
-### Local Development
+On a machine without GPIO the sensor reports "not working" in the log, on
+`/pir/status`, `/health/` and the on-screen badge. Set
+`pir_sensor.simulation_mode` to `true` to silence that in development; the
+settings panel's **Test motion** button (debug mode) feeds a fake event
+through the same path.
 
-1. **Start the development server**:
-   ```bash
-   cd src
-   python main.py
-   ```
+## Repository layout
 
-2. **Access the application**:
-   Open a browser and navigate to `http://localhost:5000`
-
-3. **Debug mode**:
-   Set `"debug": true` in `config.json` to enable hot reloading during development. Debug mode is automatically disabled in production.
-
-## Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, workflow, and coding standards.
+```
+src/            Flask backend (display/, pir_sensor/, calendar_app/, chores_app/, slideshow/, ...)
+frontend/       Svelte 5 + TypeScript app, built by Vite into src/static/app/
+tests/          pytest suite
+startup/        systemd unit, kiosk launcher, udev rule, health monitor
+scripts/        PIR smoke test and diagnostics
+docs/           architecture notes
+```
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-- Weather data integration via Open-Meteo
-- Google Calendar and Tasks API
-- All photo credits to their respective photographers
-- Special thanks to all contributors
+Open source; see the repository for details.

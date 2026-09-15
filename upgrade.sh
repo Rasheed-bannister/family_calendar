@@ -148,8 +148,8 @@ install_dependencies() {
     status "Installing dependencies..."
     cd "$APP_DIR"
 
-    if command -v uv >/dev/null; then
-        uv sync
+    if command -v uv >/dev/null || [ -x "$HOME/.local/bin/uv" ]; then
+        PATH="$HOME/.local/bin:$PATH" uv sync --no-dev
     elif [ -f ".venv/bin/pip" ]; then
         source .venv/bin/activate
         pip install -e .
@@ -158,6 +158,11 @@ install_dependencies() {
     fi
 
     success "Dependencies installed"
+
+    status "Building frontend..."
+    command -v npm >/dev/null || error "npm is not installed. Run deploy_raspberry_pi.sh once to install Node.js."
+    (cd "$APP_DIR/frontend" && npm ci --no-audit --no-fund && npm run build) || error "Frontend build failed"
+    success "Frontend built"
 }
 
 # Restart the service

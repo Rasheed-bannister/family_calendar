@@ -50,6 +50,8 @@ MOTION_DETECTED = "motion_detected"
 CALENDAR_CHANGED = "calendar_changed"
 CHORES_CHANGED = "chores_changed"
 PHOTOS_CHANGED = "photos_changed"
+DISPLAY_CHANGED = "display_changed"
+WEATHER_CHANGED = "weather_changed"
 HEARTBEAT = "heartbeat"
 
 
@@ -158,9 +160,12 @@ def sse_headers() -> dict:
 
     ``X-Accel-Buffering`` disables proxy buffering, without which a reverse
     proxy can hold events until its buffer fills and make pushes look broken.
+
+    No ``Connection`` header: it is hop-by-hop, which PEP 3333 forbids a WSGI
+    application from setting. Flask's dev server let it through; waitress
+    (the production server) answers 500 instead, killing every stream.
     """
     return {
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }

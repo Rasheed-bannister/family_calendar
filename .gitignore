@@ -42,3 +42,9 @@ src/weather_integration/weather_cache.json
 # dependency versions we ship and audit, and .github/ holds the CI workflows. Left
 # in place they were a trap -- a new workflow file would be silently skipped by
 # `git add`, and dropping uv.lock from the index would make it disappear unnoticed.
+
+# Frontend build output (built by deploy/upgrade scripts or `npm run build`)
+src/static/app/
+frontend/node_modules/
+# Processed slideshow variants are derived from the originals
+src/static/photos/processed/

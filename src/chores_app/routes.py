@@ -1,14 +1,16 @@
 import logging
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, request
 
+from src import events
+from src.events import broker
 from src.google_integration import tasks_api
 
 from . import database as db
 
 logger = logging.getLogger(__name__)
 
-chores_bp = Blueprint("chores", __name__, url_prefix="/chores")
+chores_bp = Blueprint("chores", __name__)
 
 
 def build_chores_context() -> dict:
@@ -23,24 +25,29 @@ def build_chores_context() -> dict:
     return {"chores": db.get_chores()}
 
 
-@chores_bp.route("/fragment")
-def fragment():
-    """Render just the chores component, for in-place client updates.
+def serialize_chore(chore: dict) -> dict:
+    return {
+        "id": chore["id"],
+        "person": chore.get("title") or "",
+        "text": chore.get("notes") or "",
+        "status": chore.get("status") or "needsAction",
+        "due": chore.get("due"),
+    }
 
-    Lets the client swap the chores list instead of calling location.reload(),
-    which on a wall display resets the slideshow position and any open UI.
+
+@chores_bp.route("/api/chores")
+def list_chores():
+    """Visible chores, grouped by person on the client.
 
     Read-only: fetched on every change notification, so starting a sync here
     would be a feedback loop.
     """
-    from src.calendar_app.routes import html_fragment_response
-
-    return html_fragment_response(
-        render_template("components/chores.html", **build_chores_context())
-    )
+    chores = [serialize_chore(c) for c in db.get_chores()]
+    chores.sort(key=lambda c: (c["person"].lower(), c["status"] == "completed"))
+    return jsonify({"chores": chores})
 
 
-@chores_bp.route("/update_status/<chore_id>", methods=["POST"])
+@chores_bp.route("/chores/update_status/<chore_id>", methods=["POST"])
 def update_status(chore_id):
     data = request.get_json()
     new_status = data.get("status")
@@ -59,6 +66,7 @@ def update_status(chore_id):
             else:  # needsAction
                 tasks_api.update_chore(chore_id, updates={"status": "needsAction"})
 
+        broker.publish(events.CHORES_CHANGED)
         return jsonify(
             {
                 "success": True,
@@ -70,7 +78,7 @@ def update_status(chore_id):
         return jsonify({"error": "Failed to update chore status"}), 500
 
 
-@chores_bp.route("/refresh", methods=["POST"])
+@chores_bp.route("/chores/refresh", methods=["POST"])
 def refresh_chores():
     """Manually trigger a refresh of chores data from Google Tasks.
 
@@ -78,7 +86,7 @@ def refresh_chores():
     task status lifecycle. This route must not pre-set a status itself - doing
     so used to make the worker's "already running" guard reject the sync,
     wedging chores syncing at status "running" for the life of the process.
-    Clients poll /calendar/check-updates for the resulting chores_status.
+    Clients learn the outcome from the chores_changed SSE event.
     """
     from src.google_integration.routes import start_tasks_sync
 
@@ -94,7 +102,7 @@ def refresh_chores():
     return jsonify({"message": "Chores refresh started"}), 202
 
 
-@chores_bp.route("/add", methods=["POST"])
+@chores_bp.route("/chores/add", methods=["POST"])
 def add_chore_route():
     data = request.get_json()
     title = data.get("title")  # This is the person assigned
@@ -141,6 +149,7 @@ def add_chore_route():
             message = "Chore added locally, but failed to sync with Google Tasks. It will retain a local ID."
             # No error status, but the message indicates partial success.
 
+        broker.publish(events.CHORES_CHANGED)
         return (
             jsonify(
                 {

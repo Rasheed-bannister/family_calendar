@@ -1,236 +1,78 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository. Read
+`docs/ARCHITECTURE.md` for the design; this file is about how to work here.
 
-## Build and Development Commands
+## Commands
 
-### Development Setup
+### Backend (Python 3.11+, uv)
 ```bash
-# Install dependencies using UV package manager
-uv venv
-source .venv/bin/activate
-uv pip install -e .
-
-# Install development dependencies
-uv pip install -e ".[dev]"
+uv sync                       # create .venv and install (dev tools included)
+uv run python -m src.main     # dev server on http://localhost:5000 (Flask dev server)
+uv run waitress-serve --listen=127.0.0.1:5000 --threads=16 wsgi:app   # production path
+uv run pytest -q              # tests
+uv run pytest tests/display -v
+uv run black src tests && uv run isort --profile black src tests && uv run ruff check --fix src tests
 ```
 
-### Running the Application
+### Frontend (Node 22, Svelte 5, Vite)
 ```bash
-# Start the Flask development server
-uv run src/main.py
+cd frontend
+npm ci
+npm run dev        # http://localhost:5173, proxies API calls to Flask on :5000
+npm run check      # svelte-check (must be 0 errors)
+npm test           # vitest
+npm run build      # writes src/static/app/ which Flask serves at /
+```
+Flask serves the *built* app. After changing anything under `frontend/src`,
+run `npm run build` (or use `npm run dev`) or you will be looking at stale code.
 
-# Or if venv is activated
-python src/main.py
+### Deployment
+`deploy_raspberry_pi.sh` (first install, idempotent), `upgrade.sh` (pull a
+release, rebuild, restart), `scripts/pir_smoke_test.py` (hardware check).
 
-# Application runs on http://localhost:5000
+## Ground rules
+
+- **The server owns display state.** Do not add browser-side timers that
+  hide/show the UI or reset idle. Activity reaches the server only through
+  `POST /api/display/activity` (trusted input events) and the PIR callback.
+- **Never dispatch synthetic DOM events** (`el.click()`, `dispatchEvent(new
+  MouseEvent(...))`) in the frontend. Call store methods.
+- **`create_app()` must stay side-effect free** beyond DB init and blueprint
+  registration. Threads, GPIO, schedulers belong in `src/runtime.py`.
+- **The PIR sensor is opened once per process.** No start/stop endpoints.
+  A failure to open is an ERROR, surfaced on `/pir/status`, `/health/` and
+  the on-screen badge; never fall back silently.
+- **Publish change events only on real change.** Sync code compares before
+  writing (`add_events`, chores) so a `*_changed` event never fires per sync.
+- **One photo pipeline.** Anything that lands in `src/static/photos/` goes
+  through `slideshow/ingest.py`; the frontend only ever loads
+  `photos/processed/*.jpg`.
+- **Z-index bands** (see `frontend/src/app.css`): slideshow 0, UI 10,
+  modals/keyboard 100, toasts 200, dim overlay 1000. Nothing else.
+- **No CDN assets** in the frontend; the Pi may be offline.
+- Config: `config.json` (gitignored) with `config.default.json` as the
+  template. New keys go in `Config.DEFAULTS` in `src/config.py` and, if
+  the browser needs them, in `PUBLIC_CONFIG_KEYS` in `src/main.py`
+  (never `app.secret_key`, `paths`, `logging`).
+
+## Layout
+
+```
+src/            Flask app (see docs/ARCHITECTURE.md for the module table)
+frontend/       Svelte app; builds into src/static/app/
+tests/          pytest; tests/display/ covers the state machine with fake clocks
+startup/        systemd unit, kiosk launcher, udev rule, health monitor
+scripts/        pir_smoke_test.py, diagnose_pir.py
+docs/           ARCHITECTURE.md
 ```
 
-### Testing
-```bash
-# Run all tests
-uv run pytest
+## Testing notes
 
-# Run specific test module
-uv run pytest tests/calendar_app/test_routes.py
-
-# Run with verbose output
-uv run pytest -v
-
-# Run specific test function
-uv run pytest tests/calendar_app/test_routes.py::test_function_name
-```
-
-### Code Quality
-
-#### Automated Code Quality (Recommended)
-```bash
-# Smart commit that auto-handles formatting and fixes
-./git-smart-commit.sh "your commit message"
-
-# Or using the git alias
-git smart-commit "your commit message"
-```
-
-The smart commit script automatically:
-- Runs pre-commit hooks
-- Auto-fixes formatting, import sorting, and linting issues
-- Includes the fixes in the commit
-- Only fails if there are unfixable issues
-
-#### Manual Code Quality Tools
-```bash
-# Format code with Black
-uv run black src tests
-
-# Sort imports with isort
-uv run isort src tests
-
-# Lint with Ruff (auto-fix)
-uv run ruff check --fix src tests
-
-# Type checking with MyPy
-uv run mypy src
-
-# Security scanning with Bandit
-uv run bandit -r src
-
-# Complexity analysis with Radon
-uv run radon cc src --show-closures
-
-# Dead code detection with Vulture
-uv run vulture src --min-confidence 80
-```
-
-#### Pre-commit Hooks
-Pre-commit hooks are configured to run automatically on commit and include:
-- Code formatting (Black, isort, Ruff)
-- Security scanning (Bandit)
-- Type checking (MyPy)
-- Dead code detection (Vulture)
-- Complexity analysis
-- Import validation
-
-```bash
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Run hooks manually on all files
-uv run pre-commit run --all-files
-```
-
-## Architecture Overview
-
-### Core Structure
-The application is a Flask-based family calendar system with touchscreen support, designed primarily for Raspberry Pi deployment. It follows a modular architecture where each major feature is a separate Flask blueprint.
-
-### Key Components
-
-**Main Application (`src/main.py`)**
-- Application factory pattern with `create_app()`
-- Global locks for thread-safe Google API operations (`google_fetch_lock`)
-- Background task tracking dictionary (`background_tasks`) for calendar syncing
-- PIR sensor initialization for motion detection
-- Health monitoring with automatic error recovery
-
-**Module Organization**
-- `calendar_app/`: Core calendar functionality with SQLite database
-- `google_integration/`: Google Calendar & Tasks API integration with OAuth2
-- `weather_integration/`: Open-Meteo weather API integration with caching
-- `slideshow/`: Photo slideshow management with database tracking
-- `pir_sensor/`: GPIO-based PIR motion sensor for automatic display wake
-- `chores_app/`: Task/chore management synced with Google Tasks
-- `photo_upload/`: Secure mobile photo upload system with token authentication
-- `health_monitor.py`: System health monitoring and error recovery
-- `config.py`: Centralized configuration management
-
-**Frontend Architecture & UI System**
-- Component-based JavaScript modules (ES6) in `static/js/components/`
-- **Layered UI Design**: Background slideshow runs continuously with transparent glass-style UI overlays
-- **Always-On Slideshow**: Photo slideshow (`slideshow.js`) runs permanently in background at z-index -1/-2
-- **Transparent Overlays**: Calendar, weather, chores, and other UI elements use transparent/glass styling
-- **Inactivity Modes**: UI overlays hide/show based on user activity, slideshow remains constant
-- Central `app.js` coordinates inactivity detection and mode switching
-- Virtual keyboard for touchscreen text input
-- Server-Sent Events (SSE) for real-time PIR sensor updates at `/pir/events`
-
-**Activity Detection & Mode Management**
-- **User Activity**: Screen touches, PIR motion detection, keyboard/mouse events
-- **Day/Night Inactivity Timeouts**: Configurable timeouts with different behavior for day vs night
-- **Short Inactivity**: UI dims with brightness reduction overlay (z-index 100, above everything)
-- **Long Inactivity**: All UI elements hide (`display: none`), showing only the background slideshow
-- **Wake Behavior**: Any activity instantly restores UI overlays over the continuing slideshow
-
-**Data Flow**
-1. Background threads periodically sync Google Calendar/Tasks data
-2. SQLite databases cache events locally for fast retrieval
-3. Frontend polls `/check-updates` endpoint for changes
-4. PIR sensor events trigger immediate UI updates via SSE
-5. **Slideshow**: Continuously cycles photos with 30-second intervals and 10-second preloading
-
-### Threading Model
-- Main Flask thread handles web requests
-- Separate background threads for Google API syncing per month/year
-- Thread-safe operations using `google_fetch_lock`
-- PIR sensor runs in its own thread with GPIO monitoring
-- Background tasks tracked in `background_tasks` dictionary to prevent duplicates
-
-### Database Schema
-- `calendar.db`: Calendar events with month/year indexing
-- `slideshow.db`: Photo metadata and tracking
-- `chores.db`: Task/chore storage synced with Google Tasks
-
-### Configuration System
-- Primary configuration in `config.json` (auto-generated if missing)
-- Environment variable fallback for backwards compatibility
-- Configuration accessible via `src.config.get_config()`
-- Production vs development mode handling in config
-
-## Important Considerations
-
-### Google API Authentication
-- Credentials must be placed in `src/google_integration/credentials.json`
-- OAuth2 tokens stored in `*_token.json` files (calendar_token.json, tasks_token.json)
-- First run requires manual OAuth authorization via browser redirect
-- Thread-safe API operations using `google_fetch_lock`
-
-### PIR Sensor Integration
-- Uses GPIO pin 18 by default (configurable in config.json)
-- Falls back to simulation mode if GPIO unavailable (for development)
-- Real-time communication via Server-Sent Events at `/pir/events`
-- Debounce protection with 2-second default delay
-
-### Deployment Specifics
-- Designed for Raspberry Pi 5 with touchscreen
-- Full deployment script: `deploy_raspberry_pi.sh`
-- Startup scripts in `startup/` directory:
-  - `launch.sh`: Main launcher script
-  - `launch-calendar.sh`: Calendar app startup
-  - `family-calendar.service`: Systemd service file
-  - `health-monitor.sh`: Health monitoring script
-- Configuration via `config.json` or environment variables:
-  - CALENDAR_WEATHER_LATITUDE
-  - CALENDAR_WEATHER_LONGITUDE
-  - CALENDAR_TIMEZONE
-
-### Frontend State Management & Critical Z-Index Architecture
-- **CRITICAL Z-Index Layering** (must be preserved for proper dimming and slideshow):
-  - **Slideshow backgrounds**: z-index -1 and -2 (always visible, constantly running)
-  - **UI elements**: z-index 0+ (transparent overlays above slideshow)
-  - **Brightness overlay**: z-index 100 (above everything to dim entire screen including slideshow)
-- **Activity Detection**: Screen touches, PIR motion, keyboard/mouse events
-- **Inactivity Modes**:
-  - **Active**: All UI overlays visible over slideshow, full brightness
-  - **Short Inactive**: Brightness overlay dims everything (UI + slideshow)
-  - **Long Inactive**: UI hidden completely, brightness overlay dims slideshow-only view
-- **PIR Flash Suppression**: `body.slideshow-active` class permanently disables motion animations
-- **State Transitions**: Managed by `app.js` inactivity detection system
-
-### Photo Upload System
-- **Security**: Token-based authentication with HMAC-SHA256 signatures and 60-minute expiration
-- **Mobile Access**: QR code generation at `/photo-upload/qr` for secure mobile uploads
-- **File Processing**: Automatic HEIC to JPEG conversion for iPhone compatibility
-- **Rate Limiting**: 10 uploads per minute, 100 per hour per device/token
-- **Image Optimization**: Automatic resizing to max 1920px and thumbnail generation
-- **Cross-Origin**: CORS headers configured for mobile browser compatibility
-- **File Validation**: Size limits (16MB), format validation (JPG, PNG, HEIC, WebP, GIF)
-
-### Photo Upload Security Features
-- **Token Generation**: Cryptographically secure tokens with HMAC-SHA256 signatures
-- **IP Binding**: Tokens optionally bound to client IP addresses (with NAT tolerance)
-- **Usage Limits**: Maximum 100 uses per token with automatic cleanup
-- **Rate Limiting**: Per-device request throttling to prevent abuse
-- **Input Validation**: File type, size, and content validation before processing
-- **Secure Storage**: Photos stored in `src/static/photos/` with unique identifiers
-
-### Health Monitoring
-- Automatic error tracking and recovery in `health_monitor.py`
-- Configurable restart thresholds for critical errors
-- Background task monitoring and cleanup
-- Service status endpoints at `/health/*`
-
-### Testing Structure
-- Test files organized by module in `tests/` directory
-- Each module has corresponding test files (e.g., `tests/calendar_app/`)
-- Use pytest fixtures for database and app setup
-- Mock Google API calls to avoid external dependencies
+- Tests never open GPIO, start the scheduler, or hit the network. Inject
+  fakes with `set_display_service()` / `set_pir_sensor()` and patch
+  `registry.tasks` / `registry.executor`.
+- The state machine takes `clock` and `local_now` callables; test
+  transitions by advancing a fake clock, never by sleeping.
+- Slideshow tests point `slideshow.database.DATABASE_PATH` at a tmp file and
+  generate small images with Pillow.

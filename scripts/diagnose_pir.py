@@ -134,8 +134,22 @@ def print_results(data: dict) -> None:
 
     header("Sensor State")
     s = data["sensor"]
-    row("Initialized", s["status"] == "initialized", s["status"])
-    row("Monitoring", s.get("monitoring", False))
+    row("Initialized", bool(s.get("initialized")))
+    if s.get("initialized"):
+        if s.get("available"):
+            row("GPIO open", True, f"pin {s.get('pin')} via {s.get('pin_factory')}")
+        elif s.get("simulation"):
+            info("Mode", "simulation")
+        elif not s.get("enabled", True):
+            info("Mode", "disabled in config")
+        else:
+            row("GPIO open", False, s.get("error") or "unknown error")
+        if s.get("motion_count"):
+            info("Motion events", str(s["motion_count"]))
+    else:
+        info(
+            "Note", "run inside the app process or via /pir/diagnostics for live state"
+        )
 
     header("GPIO Probe")
     gp = data.get("gpio_probe", {})

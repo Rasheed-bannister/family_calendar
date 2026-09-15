@@ -134,12 +134,59 @@ class HealthMonitor:
                     f"Too many critical errors ({len(recent_critical_errors)} in 10 minutes)"
                 )
 
+        # Hardware the display depends on. A PIR sensor that was expected
+        # and is not working is a warning here rather than critical: the
+        # calendar still works, but motion wake does not, and nobody should
+        # have to read the log to find that out.
+        hardware = self._hardware_status()
+        if hardware["pir"].get("expected") and not hardware["pir"].get("ok"):
+            if health_status == "healthy":
+                health_status = "warning"
+            issues.append(f"PIR sensor not working: {hardware['pir'].get('error')}")
+
         return {
             "status": health_status,
             "issues": issues,
             "system_info": system_info,
+            "hardware": hardware,
             "monitoring_enabled": self.monitoring_enabled,
         }
+
+    def _hardware_status(self) -> Dict[str, Any]:
+        """PIR and display state, as far as this process knows."""
+        pir: Dict[str, Any] = {"expected": False, "ok": True, "error": None}
+        try:
+            from src.pir_sensor.sensor import get_pir_sensor
+
+            sensor = get_pir_sensor()
+            if sensor is not None:
+                status = sensor.status()
+                pir = {
+                    "expected": bool(status["enabled"] and not status["simulation"]),
+                    "ok": sensor.healthy,
+                    "error": status.get("error"),
+                    **status,
+                }
+        except Exception as e:  # pragma: no cover - defensive
+            pir = {"expected": False, "ok": True, "error": str(e)}
+
+        display: Dict[str, Any] = {"running": False}
+        try:
+            from src.display.service import get_display_service
+
+            service = get_display_service()
+            if service is not None:
+                snap = service.snapshot()
+                display = {
+                    "running": service.running,
+                    "mode": snap["mode"],
+                    "brightness": snap["brightness"],
+                    "backlight": snap["backlight"],
+                }
+        except Exception as e:  # pragma: no cover - defensive
+            display = {"running": False, "error": str(e)}
+
+        return {"pir": pir, "display": display}
 
     def record_error(self, error_type: str, message: str, is_critical: bool = False):
         """Record an application error."""

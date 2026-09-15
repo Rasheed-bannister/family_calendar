@@ -1,6 +1,6 @@
 import datetime
-import time
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -8,7 +8,6 @@ from src import sync_state
 
 # Import the functions/blueprint to test
 from src.calendar_app import routes as calendar_routes
-from src.google_integration.routes import TASKS_TASK_ID
 
 # Import the app factory function
 from src.main import create_app
@@ -18,6 +17,7 @@ from src.main import create_app
 from src.sync_state import registry
 
 CALENDAR_TASK_ID = "calendar.5.2025"
+NY = ZoneInfo("America/New_York")
 
 
 @pytest.fixture
@@ -55,19 +55,6 @@ def mock_executor():
     executor = MagicMock()
     with patch.object(registry, "executor", executor):
         yield executor
-
-
-@pytest.fixture
-def photo_sync_due():
-    """Reset the photo-sync rate limiter so /check-updates performs a scan.
-
-    The timestamp is a plain module global (it is a rate limit, not a task with
-    a status lifecycle, so it deliberately does not live in the registry), which
-    means one test's poll would otherwise suppress the next test's for the
-    10-minute interval.
-    """
-    with patch.object(calendar_routes, "_last_photo_sync", 0.0):
-        yield
 
 
 # --- Tests for _filter_events_for_day ---
@@ -216,486 +203,211 @@ def test_filter_events_naive_datetime():
 # --- Tests for view route ---
 
 
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
-@patch("src.weather_integration.api.get_weather_for_display")
-def test_view_route_default(
-    mock_get_weather,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
+# --- Tests for the JSON month/day API ---
+
+
+def _event(
+    event_id="ev1",
+    title="Dentist",
+    start=datetime.datetime(2025, 5, 15, 14, 0, tzinfo=datetime.timezone.utc),
+    end=datetime.datetime(2025, 5, 15, 15, 0, tzinfo=datetime.timezone.utc),
+    all_day=False,
+    **extra,
 ):
-    """Test the default calendar view route (current month/year)."""
-    mock_db.get_all_events.return_value = []
-    # Provide a more realistic weather mock, even if not asserted directly here
-    mock_get_weather.return_value = {
-        "current": {
-            "is_day": 1,
-            "weather_code": 3,  # Example code
-            "apparent_temperature": 70,
-        },
-        "daily": [
-            {
-                "date": datetime.date(2025, 5, 2),
-                "sunrise": datetime.datetime(
-                    2025, 5, 2, 6, 0, tzinfo=datetime.timezone.utc
-                ),
-                "sunset": datetime.datetime(
-                    2025, 5, 2, 20, 0, tzinfo=datetime.timezone.utc
-                ),
-                "apparent_temperature_max": 75,
-                "apparent_temperature_min": 65,
-                "weather_code": 3,
-                "precipitation_probability_max": 10,
-            }
-            # Add more days if needed for other assertions
-        ],
+    return {
+        "google_event_id": event_id,
+        "title": title,
+        "start_datetime": start,
+        "end_datetime": end,
+        "all_day": all_day,
+        "location": extra.get("location"),
+        "description": extra.get("description"),
+        "calendar_name": extra.get("calendar_name", "Family"),
+        "calendar_color": extra.get("calendar_color", "#123456"),
     }
 
-    # Mock datetime.now() to control the date
+
+@pytest.fixture
+def local_tz():
+    with patch("src.config.get_local_timezone", return_value=NY):
+        yield NY
+
+
+@pytest.fixture
+def fixed_now(local_tz):
+    now = datetime.datetime(2025, 5, 2, 12, 0, tzinfo=NY)
     with patch("src.calendar_app.routes.datetime") as mock_dt:
-        now_fixed = datetime.datetime(
-            2025, 5, 2, 12, 0, 0, tzinfo=datetime.timezone.utc
-        )
-        mock_dt.datetime.now.return_value = now_fixed
-        mock_dt.date.today.return_value = now_fixed.date()
-        # Ensure date objects are created correctly within the mocked context
+        mock_dt.datetime.now.return_value = now
         mock_dt.date = datetime.date
-
-        response = client.get("/calendar/")
-
-    assert response.status_code == 200
-    assert b"May 2025" in response.data  # Check month/year in output
-    # Check for something rendered from the weather mock, e.g., current temp
-    assert b"70\xc2\xb0" in response.data  # Check for 70° (UTF-8 encoded degree symbol)
-    mock_db.add_month.assert_called_once()
-    # Both syncs are queued on the thread pool: nothing runs inline in the
-    # request handler (calendar events + Google Tasks/chores).
-    assert mock_executor.submit.call_count == 2
-    calendar_call = mock_executor.submit.call_args_list[0][0]
-    assert calendar_call[1:] == (5, 2025)  # Check args passed to background task
-    chores_call = mock_executor.submit.call_args_list[1][0]
-    assert chores_call[0].__name__ == "fetch_google_tasks_background"
+        mock_dt.timezone = datetime.timezone
+        mock_dt.timedelta = datetime.timedelta
+        yield now
 
 
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
-@patch("src.weather_integration.api.get_weather_for_display")
-def test_view_route_specific_month(
-    mock_get_weather,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """Test the calendar view route for a specific month/year."""
-    mock_db.get_all_events.return_value = []
-    # Update mock weather data to match template structure
-    mock_get_weather.return_value = {
-        "current": {
-            "is_day": 1,
-            "weather_code": 61,  # Example: Slight Rain
-            "apparent_temperature": 65,
-        },
-        "daily": [
-            {
-                "date": datetime.date(
-                    2025, 5, 2
-                ),  # Today's date for consistency in template
-                "sunrise": datetime.datetime(
-                    2025, 5, 2, 6, 0, tzinfo=datetime.timezone.utc
-                ),
-                "sunset": datetime.datetime(
-                    2025, 5, 2, 20, 0, tzinfo=datetime.timezone.utc
-                ),
-                "apparent_temperature_max": 68,
-                "apparent_temperature_min": 60,
-                "weather_code": 61,
-                "precipitation_probability_max": 40,
-            },
-            {
-                "date": datetime.date(2025, 5, 3),
-                "sunrise": datetime.datetime(
-                    2025, 5, 3, 6, 1, tzinfo=datetime.timezone.utc
-                ),
-                "sunset": datetime.datetime(
-                    2025, 5, 3, 20, 1, tzinfo=datetime.timezone.utc
-                ),
-                "apparent_temperature_max": 70,
-                "apparent_temperature_min": 58,
-                "weather_code": 3,  # Partly Cloudy
-                "precipitation_probability_max": 15,
-            },
-            # Add more forecast days if needed
-        ],
-    }
+class TestSerializeEvent:
+    def test_instants_are_expressed_in_the_display_timezone(self):
+        data = calendar_routes.serialize_event(_event(), NY)
+        assert data["start"] == "2025-05-15T10:00:00-04:00"
+        assert data["end"] == "2025-05-15T11:00:00-04:00"
+        assert data["id"] == "ev1"
+        assert data["color"] == "#123456"
+        assert data["calendar_name"] == "Family"
+        assert data["all_day"] is False
+        assert data["location"] == ""
+        assert data["description"] == ""
 
-    # Mock datetime.now() - needed for today's date highlighting
-    with patch("src.calendar_app.routes.datetime") as mock_dt:
-        now_fixed = datetime.datetime(
-            2025, 5, 2, 12, 0, 0, tzinfo=datetime.timezone.utc
+    def test_naive_datetimes_are_treated_as_utc(self):
+        data = calendar_routes.serialize_event(
+            _event(
+                start=datetime.datetime(2025, 5, 15, 14, 0),
+                end=datetime.datetime(2025, 5, 15, 15, 0),
+            ),
+            NY,
         )
-        mock_dt.datetime.now.return_value = now_fixed
-        mock_dt.date.today.return_value = now_fixed.date()
-        mock_dt.date = datetime.date  # Ensure date objects are created correctly
+        assert data["start"] == "2025-05-15T10:00:00-04:00"
 
-        response = client.get("/calendar/2024/11")  # Request Nov 2024
-
-    assert response.status_code == 200
-    assert b"November 2024" in response.data
-    # Assert based on data actually rendered by the template
-    # e.g., check for the mocked current temperature
-    assert b"65\xc2\xb0" in response.data  # Check for 65°
-    mock_db.add_month.assert_called_once()
-    # Calendar sync for Nov 2024 plus the chores sync, both queued on the pool
-    assert mock_executor.submit.call_count == 2
-    calendar_call = mock_executor.submit.call_args_list[0][0]
-    assert calendar_call[1:] == (11, 2024)
-    chores_call = mock_executor.submit.call_args_list[1][0]
-    assert chores_call[0].__name__ == "fetch_google_tasks_background"
+    def test_missing_calendar_gets_defaults(self):
+        event = _event(calendar_name=None, calendar_color=None)
+        data = calendar_routes.serialize_event(event, NY)
+        assert data["calendar_name"] == "Unknown Calendar"
+        assert data["color"] == "#808080"
 
 
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.get_weather_data")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-def test_view_renders_when_weather_unavailable(
-    mock_display,
-    mock_needs_refresh,
-    mock_live_fetch,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """The page still renders - and says so honestly - with no weather data."""
-    mock_db.get_all_events.return_value = []
+class TestBuildMonthPayload:
+    def test_shape(self):
+        today = datetime.date(2025, 5, 15)
+        payload = calendar_routes.build_month_payload(2025, 5, today, [_event()], NY)
+        assert payload["year"] == 2025
+        assert payload["month"] == 5
+        assert payload["month_name"] == "May"
+        assert payload["today"] == "2025-05-15"
+        assert payload["prev"] == {"year": 2025, "month": 4}
+        assert payload["next"] == {"year": 2025, "month": 6}
+        assert all(len(week) == 7 for week in payload["weeks"])
+        # May 2025 starts on a Thursday: Sun-Wed of the first week are padding.
+        assert payload["weeks"][0][:4] == [None] * 4
+        cell = payload["weeks"][0][4]
+        assert cell["date"] == "2025-05-01"
+        assert cell["day"] == 1
+        assert cell["is_today"] is False
+        assert cell["events"] == []
 
-    response = client.get("/calendar/2024/11")
+    def test_events_land_on_their_day_and_today_is_marked(self):
+        today = datetime.date(2025, 5, 15)
+        payload = calendar_routes.build_month_payload(2025, 5, today, [_event()], NY)
+        cells = [c for week in payload["weeks"] for c in week if c]
+        fifteenth = next(c for c in cells if c["day"] == 15)
+        assert fifteenth["is_today"] is True
+        assert [e["title"] for e in fifteenth["events"]] == ["Dentist"]
+        assert sum(len(c["events"]) for c in cells) == 1
 
-    assert response.status_code == 200
-    assert b"Weather data unavailable" in response.data
-    # No invented temperature is rendered
-    assert b"70\xc2\xb0" not in response.data
-    # The live fetch never runs inside the request handler
-    mock_live_fetch.assert_not_called()
-
-
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.get_weather_data")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-def test_view_queues_weather_refresh_instead_of_blocking(
-    mock_display,
-    mock_needs_refresh,
-    mock_live_fetch,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """A stale/missing cache queues the fetch on the pool, never inline."""
-    mock_db.get_all_events.return_value = []
-
-    response = client.get("/calendar/2024/11")
-
-    assert response.status_code == 200
-    mock_live_fetch.assert_not_called()
-    submitted = [call[0][0] for call in mock_executor.submit.call_args_list]
-    assert calendar_routes._refresh_weather_background in submitted
+    def test_multi_day_event_appears_on_every_day(self):
+        event = _event(
+            start=datetime.datetime(2025, 5, 10, 9, 0, tzinfo=datetime.timezone.utc),
+            end=datetime.datetime(2025, 5, 12, 17, 0, tzinfo=datetime.timezone.utc),
+        )
+        payload = calendar_routes.build_month_payload(
+            2025, 5, datetime.date(2025, 5, 1), [event], NY
+        )
+        days = sorted(
+            c["day"] for week in payload["weeks"] for c in week if c and c["events"]
+        )
+        assert days == [10, 11, 12]
 
 
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-@patch("src.google_integration.routes.fetch_google_tasks_background")
-def test_view_dispatches_chores_sync_via_executor(
-    mock_fetch_tasks,
-    mock_display,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """The Google Tasks round-trip is queued on the pool, not run inline."""
-    mock_db.get_all_events.return_value = []
+class TestMonthApi:
+    @patch("src.calendar_app.routes.db")
+    def test_returns_month_and_queues_a_sync(
+        self, mock_db, client, tasks_state, mock_executor, fixed_now
+    ):
+        mock_db.get_all_events_for_month_range.return_value = [_event()]
 
-    response = client.get("/calendar/2024/11")
+        response = client.get("/api/calendar/2025/5")
 
-    assert response.status_code == 200
-    mock_fetch_tasks.assert_not_called()  # never executed in the request thread
-    submitted = [call[0][0] for call in mock_executor.submit.call_args_list]
-    assert mock_fetch_tasks in submitted
-    # The registry claimed the slot on the way to the pool; the worker owns
-    # every status transition from here.
-    assert registry.status(TASKS_TASK_ID) == sync_state.PENDING
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["month_name"] == "May"
+        assert data["today"] == "2025-05-02"
+        mock_db.add_month.assert_called_once()
+        mock_db.get_all_events_for_month_range.assert_called_once_with(2025, 5)
+        # Exactly one thing is queued: the calendar sync for this month. No
+        # chores sync piggybacks on a month fetch any more.
+        assert mock_executor.submit.call_count == 1
+        assert mock_executor.submit.call_args[0][1:] == (5, 2025)
+        assert data["sync_status"] == sync_state.PENDING
 
+    @patch("src.calendar_app.routes.db")
+    def test_sync_can_be_suppressed(
+        self, mock_db, client, tasks_state, mock_executor, fixed_now
+    ):
+        mock_db.get_all_events_for_month_range.return_value = []
+        response = client.get("/api/calendar/2025/5?sync=0")
+        assert response.status_code == 200
+        mock_executor.submit.assert_not_called()
+        assert response.get_json()["sync_status"] is None
 
-def test_view_route_invalid_month(client):
-    """Test the calendar view route with an invalid month."""
-    response = client.get("/calendar/2024/13")
-    assert response.status_code == 404
-    assert b"Invalid month" in response.data
+    @patch("src.calendar_app.routes.db")
+    def test_fresh_month_is_not_resynced(
+        self, mock_db, client, tasks_state, mock_executor, fixed_now
+    ):
+        """Re-fetching on every change notification must not feed back into syncs."""
+        import time
 
+        mock_db.get_all_events_for_month_range.return_value = []
+        tasks_state[CALENDAR_TASK_ID] = {
+            "status": sync_state.COMPLETE,
+            "last_update_time": time.time(),
+        }
+        client.get("/api/calendar/2025/5")
+        client.get("/api/calendar/2025/5")
+        mock_executor.submit.assert_not_called()
 
-# --- Tests for the calendar fragment route ---
+    @patch("src.calendar_app.routes.db")
+    def test_other_month_has_no_today_cell(
+        self, mock_db, client, tasks_state, mock_executor, fixed_now
+    ):
+        mock_db.get_all_events_for_month_range.return_value = []
+        data = client.get("/api/calendar/2025/6").get_json()
+        assert data["today"] == "2025-05-02"
+        assert not any(c and c["is_today"] for week in data["weeks"] for c in week)
 
-
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-def test_calendar_fragment_returns_html(
-    mock_display,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """The fragment endpoint serves uncacheable HTML, not a full document."""
-    mock_db.get_all_events_for_month_range.return_value = []
-
-    response = client.get("/calendar/fragment/2025/5")
-
-    assert response.status_code == 200
-    assert response.headers["Content-Type"] == "text/html; charset=utf-8"
-    assert response.headers["Cache-Control"] == "no-store"
-    body = response.get_data(as_text=True)
-    assert '<div id="main-calendar-area">' in body
-    # A fragment, not a page: no document chrome.
-    assert "<!DOCTYPE html>" not in body
-
-
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=False)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-def test_calendar_fragment_markup_matches_full_page(
-    mock_display,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """Anti-drift guarantee: the fragment is exactly the page's calendar region.
-
-    Both must come from one context builder. If they diverge, the display
-    silently changes appearance the moment it live-updates - a nasty bug to
-    chase from a wall-mounted screen.
-    """
-    mock_db.get_all_events_for_month_range.return_value = []
-
-    fragment = client.get("/calendar/fragment/2025/5").get_data(as_text=True)
-    page = client.get("/calendar/2025/5").get_data(as_text=True)
-
-    # Meaningful, month-specific markup - not just "both contain a <div>".
-    assert '<table class="calendar" data-month="5" data-year="2025">' in fragment
-    assert "May 2025" in fragment
-    # The whole rendered fragment appears verbatim inside the full page.
-    assert fragment in page
-
-
-def test_calendar_fragment_invalid_month_returns_404(client):
-    """Month validation matches the full view route exactly."""
-    response = client.get("/calendar/fragment/2024/13")
-    assert response.status_code == 404
-    assert b"Invalid month" in response.data
-
-    assert client.get("/calendar/fragment/2024/0").status_code == 404
-
-
-@patch("src.calendar_app.routes.db")
-@patch("src.weather_integration.api.weather_cache_needs_refresh", return_value=True)
-@patch("src.weather_integration.api.get_weather_for_display", return_value=None)
-def test_calendar_fragment_starts_no_background_sync(
-    mock_display,
-    mock_needs_refresh,
-    mock_db,
-    client,
-    tasks_state,
-    mock_executor,
-):
-    """The fragment must be read-only.
-
-    The client fetches it on every data-change notification, so any sync
-    started here would be a feedback loop: sync -> change -> fragment -> sync.
-    """
-    mock_db.get_all_events_for_month_range.return_value = []
-
-    response = client.get("/calendar/fragment/2025/5")
-
-    assert response.status_code == 200
-    # Nothing was queued on the shared pool, and no task was registered.
-    mock_executor.submit.assert_not_called()
-    assert tasks_state == {}
-    # The weather path is not entered at all, so it cannot queue a refresh.
-    mock_needs_refresh.assert_not_called()
-    # Nor does the fragment write to the calendar database.
-    mock_db.add_month.assert_not_called()
-
-
-# --- Tests for check_updates route ---
-
-
-@patch("src.slideshow.database.sync_photos")  # Corrected patch target
-def test_check_updates_no_task(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):  # Updated mock name
-    """Test check_updates when the background task is not tracked."""
-    response = client.get("/calendar/check-updates/2025/5")
-    assert response.status_code == 200
-    json_data = response.get_json()
-    assert json_data["calendar_status"] == "not_tracked"
-    assert not json_data["updates_available"]
-    # An untracked month has never synced, so the poll kicks one off
-    assert json_data["refresh_triggered"]
-    mock_executor.submit.assert_called_once()
-    mock_sync_photos.assert_called_once()  # Check slideshow sync is called using updated mock name
-
-
-@patch("src.slideshow.database.sync_photos")  # Corrected patch target
-def test_check_updates_task_running(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):  # Updated mock name
-    """Test check_updates when the background task is running."""
-    registry.update(CALENDAR_TASK_ID, status=sync_state.RUNNING, updated=False)
-
-    response = client.get("/calendar/check-updates/2025/5")
-    assert response.status_code == 200
-    json_data = response.get_json()
-    assert json_data["calendar_status"] == "running"
-    assert not json_data["updates_available"]
-    # A sync already in flight is never stale, so the poll must not pile a
-    # duplicate on top of it
-    assert not json_data["refresh_triggered"]
-    mock_executor.submit.assert_not_called()
-    mock_sync_photos.assert_called_once()  # Use updated mock name
-
-
-@patch("src.slideshow.database.sync_photos")  # Corrected patch target
-def test_check_updates_task_complete_with_updates(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):  # Updated mock name
-    """Test check_updates when the task is complete and updates are available."""
-    now = time.time()
-    registry.update(
-        CALENDAR_TASK_ID,
-        status=sync_state.COMPLETE,
-        updated=True,
-        events_changed=True,
-        last_update_time=now,
+    @pytest.mark.parametrize(
+        "path",
+        ["/api/calendar/2025/13", "/api/calendar/2025/0", "/api/calendar/1900/5"],
     )
-    registry.update(
-        TASKS_TASK_ID,
-        status=sync_state.COMPLETE,
-        updated=False,
-        chores_changed=False,
-        last_update_time=now,
-    )
+    def test_invalid_month_is_404(self, client, path):
+        response = client.get(path)
+        assert response.status_code == 404
+        assert response.get_json()["error"]
 
-    response = client.get("/calendar/check-updates/2025/5")
-    assert response.status_code == 200
-    json_data = response.get_json()
-    assert json_data["calendar_status"] == "complete"
-    assert json_data["updates_available"]
-    assert json_data["events_changed"]
-    assert not json_data["chores_changed"]
-
-    # Verify flags were reset after reading, so the change is reported exactly
-    # once and the browser does not reload on every poll
-    calendar_entry = registry.snapshot(CALENDAR_TASK_ID)
-    assert not calendar_entry["updated"]
-    assert not calendar_entry["events_changed"]
-    assert not registry.snapshot(TASKS_TASK_ID)["chores_changed"]
-    mock_sync_photos.assert_called_once()
+    def test_old_html_urls_redirect_to_the_app(self, client):
+        response = client.get("/calendar/2025/5")
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/?year=2025&month=5")
+        assert client.get("/calendar/").status_code == 302
+        assert client.get("/calendar/fragment/2025/5").status_code == 404
+        assert client.get("/calendar/check-updates/2025/5").status_code == 404
 
 
-@patch("src.slideshow.database.sync_photos")  # Corrected patch target
-def test_check_updates_task_complete_no_updates(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):  # Updated mock name
-    """Test check_updates when the task is complete but no updates were found."""
-    now = time.time()
-    registry.update(
-        CALENDAR_TASK_ID,
-        status=sync_state.COMPLETE,
-        updated=False,
-        events_changed=False,
-        last_update_time=now,
-    )
-    registry.update(
-        TASKS_TASK_ID,
-        status=sync_state.COMPLETE,
-        updated=False,
-        chores_changed=False,
-        last_update_time=now,
-    )
+class TestDayApi:
+    @patch("src.calendar_app.routes.db")
+    def test_returns_events_for_the_day(self, mock_db, client, local_tz):
+        mock_db.get_all_events_for_month_range.return_value = [
+            _event(),
+            _event(
+                event_id="ev2",
+                title="Tomorrow",
+                start=datetime.datetime(
+                    2025, 5, 16, 14, 0, tzinfo=datetime.timezone.utc
+                ),
+                end=datetime.datetime(2025, 5, 16, 15, 0, tzinfo=datetime.timezone.utc),
+            ),
+        ]
+        data = client.get("/api/calendar/day/2025-05-15").get_json()
+        assert data["date"] == "2025-05-15"
+        assert [e["id"] for e in data["events"]] == ["ev1"]
+        mock_db.get_all_events_for_month_range.assert_called_once_with(2025, 5)
 
-    response = client.get("/calendar/check-updates/2025/5")
-    assert response.status_code == 200
-    json_data = response.get_json()
-    assert json_data["calendar_status"] == "complete"
-    assert not json_data["updates_available"]
-    assert not json_data["events_changed"]
-    assert not json_data["chores_changed"]
-    mock_sync_photos.assert_called_once()
-
-
-@patch("src.slideshow.database.sync_photos")
-def test_check_updates_survives_executor_rejection(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):
-    """A pool that refuses work must not turn the poll into a 500.
-
-    ``registry.submit`` re-raises when the executor rejects the submission -
-    which is what a ThreadPoolExecutor does for the whole of shutdown. This
-    endpoint is polled by every connected display every few seconds, so an
-    escaping exception would hit the app's catch-all handler repeatedly and be
-    recorded as a *critical* error counting towards the restart threshold. A
-    refresh that could not be queued is not a failure of the endpoint: it can
-    still report the task status it just read.
-    """
-    mock_executor.submit.side_effect = RuntimeError(
-        "cannot schedule new futures after shutdown"
-    )
-
-    response = client.get("/calendar/check-updates/2025/5")
-
-    assert response.status_code == 200
-    json_data = response.get_json()
-    # The status read still happened and is reported truthfully.
-    assert json_data["calendar_status"] == "not_tracked"
-    assert not json_data["updates_available"]
-    # Nothing was queued, so the response must not claim otherwise - the
-    # frontend re-polls after 3s when refresh_triggered is true, expecting a
-    # sync that would never have run.
-    assert json_data["refresh_triggered"] is False
-    # The failure is reported rather than swallowed.
-    assert json_data["refresh_error"]
-    mock_sync_photos.assert_called_once()
-
-
-@patch("src.slideshow.database.sync_photos")
-def test_check_updates_reports_refresh_not_triggered_when_claim_lost(
-    mock_sync_photos, client, tasks_state, mock_executor, photo_sync_due
-):
-    """refresh_triggered reflects what happened, not what was intended.
-
-    Staleness is read before the trigger runs, so between the two another
-    poller can claim the slot and ``start_calendar_sync`` declines. Reporting
-    True there makes the client wait for a refresh nobody started.
-    """
-    with patch(
-        "src.google_integration.routes.start_calendar_sync", return_value=False
-    ) as mock_start:
-        response = client.get("/calendar/check-updates/2025/5")
-
-    assert response.status_code == 200
-    json_data = response.get_json()
-    mock_start.assert_called_once_with(5, 2025)
-    assert json_data["refresh_triggered"] is False
-    assert json_data["refresh_error"] is None
+    def test_invalid_date_is_404(self, client):
+        assert client.get("/api/calendar/day/2025-13-99").status_code == 404
+        assert client.get("/api/calendar/day/yesterday").status_code == 404

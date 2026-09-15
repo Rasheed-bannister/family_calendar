@@ -236,6 +236,144 @@ class TestGetWeatherDataFailureHandling:
         assert result is None
 
 
+class _FakeVariable:
+    def __init__(self, floats=None, ints=None):
+        self._floats = floats or []
+        self._ints = ints or []
+
+    def Value(self):
+        return self._floats[0]
+
+    def ValuesLength(self):
+        return len(self._floats)
+
+    def Values(self, i):
+        return self._floats[i]
+
+    def ValuesInt64Length(self):
+        return len(self._ints)
+
+    def ValuesInt64(self, i):
+        return self._ints[i]
+
+
+class _FakeDaily:
+    def __init__(self, start, days, variables):
+        self._start = start
+        self._days = days
+        self._variables = variables
+
+    def Time(self):
+        return self._start
+
+    def TimeEnd(self):
+        return self._start + self._days * 86400
+
+    def Interval(self):
+        return 86400
+
+    def Variables(self, i):
+        return self._variables[i]
+
+
+class _FakeCurrent:
+    def __init__(self, time, values):
+        self._time = time
+        self._values = values
+
+    def Time(self):
+        return self._time
+
+    def Variables(self, i):
+        return _FakeVariable([self._values[i]])
+
+
+class _FakeResponse:
+    def __init__(self, current, daily):
+        self._current = current
+        self._daily = daily
+
+    def Current(self):
+        return self._current
+
+    def Daily(self):
+        return self._daily
+
+
+@patch("src.weather_integration.api.requests_cache.CachedSession")
+@patch("src.weather_integration.api.retry")
+@patch("src.weather_integration.api.openmeteo_requests.Client")
+class TestGetWeatherDataParsing:
+    """The daily block is read straight from the flatbuffer, without pandas."""
+
+    def test_builds_daily_records_from_the_sdk_response(
+        self, mock_client_cls, _mock_retry, _mock_session, tmp_path
+    ):
+        start = int(datetime(2025, 5, 15).timestamp())
+        daily = _FakeDaily(
+            start,
+            2,
+            [
+                _FakeVariable([3.0, 61.0]),  # weather_code
+                _FakeVariable([75.0, 70.0]),  # apparent max
+                _FakeVariable([60.0, 55.0]),  # apparent min
+                _FakeVariable(ints=[start + 6 * 3600, start + 86400 + 6 * 3600]),
+                _FakeVariable(ints=[start + 20 * 3600, start + 86400 + 20 * 3600]),
+                _FakeVariable([10.0, 40.0]),  # precipitation probability
+            ],
+        )
+        current = _FakeCurrent(start + 10 * 3600, [70.4, 1.0, 3.0])
+        client = mock_client_cls.return_value
+        client.weather_api.return_value = [_FakeResponse(current, daily)]
+        cache_file = tmp_path / "weather_cache.json"
+
+        with patch("src.weather_integration.api.WEATHER_CACHE_FILE", cache_file):
+            result = get_weather_data()
+
+        assert result["current"]["apparent_temperature"] == 70.4
+        assert result["current"]["weather_code"] == 3.0
+        assert result["current"]["time"] == datetime.fromtimestamp(start + 10 * 3600)
+        assert len(result["daily"]) == 2
+        first, second = result["daily"]
+        assert first["date"] == datetime.fromtimestamp(start)
+        assert second["date"] == datetime.fromtimestamp(start + 86400)
+        assert first["weather_code"] == 3.0
+        assert second["apparent_temperature_max"] == 70.0
+        assert first["sunrise"] == datetime.fromtimestamp(start + 6 * 3600)
+        assert second["sunset"] == datetime.fromtimestamp(start + 86400 + 20 * 3600)
+        assert second["precipitation_probability_max"] == 40.0
+        # The cache round-trips the same shape.
+        assert cache_file.exists()
+        assert (
+            json.loads(cache_file.read_text())["data"]["daily"][1]["weather_code"]
+            == 61.0
+        )
+
+    def test_short_variable_arrays_do_not_crash(
+        self, mock_client_cls, _mock_retry, _mock_session, tmp_path
+    ):
+        start = int(datetime(2025, 5, 15).timestamp())
+        daily = _FakeDaily(
+            start,
+            3,
+            [_FakeVariable([1.0])] * 3
+            + [_FakeVariable(ints=[start])] * 2
+            + [_FakeVariable([0.0])],
+        )
+        current = _FakeCurrent(start, [50.0, 0.0, 1.0])
+        client = mock_client_cls.return_value
+        client.weather_api.return_value = [_FakeResponse(current, daily)]
+
+        with patch(
+            "src.weather_integration.api.WEATHER_CACHE_FILE", tmp_path / "c.json"
+        ):
+            result = get_weather_data()
+
+        assert len(result["daily"]) == 3
+        assert result["daily"][2]["weather_code"] is None
+        assert result["daily"][2]["sunrise"] is None
+
+
 class TestDisplayPath:
     """The render path reads the cache only - never the network."""
 

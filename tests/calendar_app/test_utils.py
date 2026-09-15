@@ -538,8 +538,8 @@ def test_add_events_updates_existing(
     # Use any_order=True as calendar updates might intersperse
     mock_cursor.execute.assert_has_calls(expected_calls, any_order=True)
 
-    # Verify execute was called the correct number of times (once per event + maybe calendar updates)
-    assert mock_cursor.execute.call_count == len(expected_calls)
+    # One SELECT (the compare-before-write) plus one INSERT per event.
+    assert mock_cursor.execute.call_count == len(expected_calls) + len(events_to_test)
 
     # Verify get_next_color was not called if sample_calendar has color
     if sample_calendar.color:
@@ -678,3 +678,90 @@ def test_add_events_stores_offset_qualified_timestamps(real_db, sample_month):
     ).fetchone()
     conn.close()
     assert row == ("2025-05-10T10:00:00+00:00", "2025-05-10T11:00:00+00:00")
+
+
+# --- add_events reports a change only when something actually changed ---
+
+
+@pytest.fixture
+def real_calendar_db(tmp_path):
+    """Point the calendar database at a temp file with the real schema."""
+    with patch.object(db, "DATABASE_FILE", str(tmp_path / "calendar.db")):
+        db.create_all()
+        yield
+
+
+def _make_event(event_id, title, calendar, month, start_hour=10):
+    return CalendarEvent(
+        id=event_id,
+        calendar=calendar,
+        month=month,
+        title=title,
+        start_datetime=datetime(2025, 5, 10, start_hour, 0, tzinfo=timezone.utc),
+        end_datetime=datetime(2025, 5, 10, start_hour + 1, 0, tzinfo=timezone.utc),
+        all_day=False,
+        location="Home",
+        description="Notes",
+    )
+
+
+class TestAddEventsDetectsRealChanges:
+    """The old unconditional INSERT OR REPLACE said "changed" on every sync,
+    which made every display re-render (and reset its idle clock) once a
+    minute. Now only a real difference counts."""
+
+    def test_first_insert_is_a_change(self, real_calendar_db, sample_calendar):
+        month = CalendarMonth(2025, 5)
+        db.add_month(month)
+        assert (
+            utils.add_events([_make_event("e1", "Dentist", sample_calendar, month)])
+            is True
+        )
+
+    def test_identical_second_sync_is_not_a_change(
+        self, real_calendar_db, sample_calendar
+    ):
+        month = CalendarMonth(2025, 5)
+        db.add_month(month)
+        event = _make_event("e1", "Dentist", sample_calendar, month)
+        utils.add_events([event])
+        assert utils.add_events([event]) is False
+        assert (
+            utils.add_events([_make_event("e1", "Dentist", sample_calendar, month)])
+            is False
+        )
+
+    def test_changed_title_is_a_change(self, real_calendar_db, sample_calendar):
+        month = CalendarMonth(2025, 5)
+        db.add_month(month)
+        utils.add_events([_make_event("e1", "Dentist", sample_calendar, month)])
+        assert (
+            utils.add_events(
+                [_make_event("e1", "Dentist (moved)", sample_calendar, month)]
+            )
+            is True
+        )
+        titles = [e["title"] for e in db.get_all_events(month)]
+        assert titles == ["Dentist (moved)"]
+
+    def test_changed_time_is_a_change(self, real_calendar_db, sample_calendar):
+        month = CalendarMonth(2025, 5)
+        db.add_month(month)
+        utils.add_events([_make_event("e1", "Dentist", sample_calendar, month)])
+        assert (
+            utils.add_events(
+                [_make_event("e1", "Dentist", sample_calendar, month, start_hour=14)]
+            )
+            is True
+        )
+
+    def test_mixed_batch_reports_change_when_any_row_differs(
+        self, real_calendar_db, sample_calendar
+    ):
+        month = CalendarMonth(2025, 5)
+        db.add_month(month)
+        same = _make_event("e1", "Dentist", sample_calendar, month)
+        utils.add_events([same])
+        new = _make_event("e2", "Soccer", sample_calendar, month)
+        assert utils.add_events([same, new]) is True
+        assert len(db.get_all_events(month)) == 2
