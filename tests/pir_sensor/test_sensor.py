@@ -261,6 +261,7 @@ class TestStatus:
             "gpiozero_installed": True,
             "lgpio_installed": sensor_module.HAS_LGPIO,
             "pin_factory_env": os.environ.get("GPIOZERO_PIN_FACTORY"),
+            "gpio_chip": None,
             "motion_count": 0,
             "seconds_since_motion": None,
         }
@@ -345,3 +346,116 @@ class TestSingleton:
         set_pir_sensor(None)
         shutdown_pir_sensor()
         assert get_pir_sensor() is None
+
+
+class FakeLgpio:
+    """Stand-in for the lgpio module: a few chips with kernel labels."""
+
+    def __init__(self, chips):
+        self.chips = chips  # number -> (lines, name, label)
+        self.open_calls = []
+
+    def gpiochip_open(self, number):
+        self.open_calls.append(number)
+        if number not in self.chips:
+            raise RuntimeError(f"can not open gpiochip {number}")
+        return number
+
+    def gpio_get_chip_info(self, handle):
+        return self.chips[handle]
+
+    def gpiochip_close(self, handle):
+        pass
+
+
+class TestHeaderChipDetection:
+    def test_picks_the_rp1_chip_by_label_not_number(self):
+        chips = [
+            {"number": 11, "label": "gpio-brcmstb@1000d00000", "lines": 32},
+            {"number": 12, "label": "gpio-brcmstb@1000d20000", "lines": 4},
+            {"number": 13, "label": "pinctrl-rp1", "lines": 54},
+        ]
+        assert sensor_module.detect_header_chip(chips) == 13
+
+    def test_pi4_label(self):
+        chips = [{"number": 0, "label": "pinctrl-bcm2711", "lines": 58}]
+        assert sensor_module.detect_header_chip(chips) == 0
+
+    def test_unknown_board_falls_back_to_the_largest_chip(self):
+        chips = [
+            {"number": 3, "label": "something", "lines": 8},
+            {"number": 5, "label": "other", "lines": 40},
+        ]
+        assert sensor_module.detect_header_chip(chips) == 5
+
+    def test_nothing_usable_returns_none(self):
+        assert sensor_module.detect_header_chip([]) is None
+        assert (
+            sensor_module.detect_header_chip([{"number": 1, "error": "EPERM"}]) is None
+        )
+
+    def test_list_gpio_chips_reads_labels_via_lgpio(self, monkeypatch, tmp_path):
+        fake = FakeLgpio({14: (54, "gpiochip14", "pinctrl-rp1")})
+        monkeypatch.setattr(sensor_module, "lgpio", fake, raising=False)
+        monkeypatch.setattr(sensor_module, "HAS_LGPIO", True)
+        monkeypatch.setattr(
+            "glob.glob", lambda pattern: ["/dev/gpiochip11", "/dev/gpiochip14"]
+        )
+        chips = sensor_module.list_gpio_chips()
+        assert chips[0]["number"] == 11 and "error" in chips[0]
+        assert chips[1] == {
+            "number": 14,
+            "path": "/dev/gpiochip14",
+            "lines": 54,
+            "name": "gpiochip14",
+            "label": "pinctrl-rp1",
+        }
+
+    def test_open_uses_an_lgpio_factory_on_the_detected_chip(self, gpio, monkeypatch):
+        import sys
+        import types
+
+        created = []
+
+        class FakeFactory:
+            def __init__(self, chip=None):
+                self.chip = chip
+                self.closed = False
+                created.append(self)
+
+            def close(self):
+                self.closed = True
+
+        module = types.ModuleType("gpiozero.pins.lgpio")
+        module.LGPIOFactory = FakeFactory
+        monkeypatch.setitem(sys.modules, "gpiozero.pins.lgpio", module)
+        monkeypatch.setattr(sensor_module, "HAS_LGPIO", True)
+        monkeypatch.setattr(sensor_module, "detect_header_chip", lambda chips=None: 13)
+
+        s = PIRSensor(pin=18)
+        assert s.open() is True
+        assert gpio.instances[0].kwargs["pin_factory"] is created[0]
+        assert created[0].chip == 13
+        assert s.status()["gpio_chip"] == 13
+        s.close()
+        assert created[0].closed is True
+
+    def test_configured_chip_overrides_detection(self, gpio, monkeypatch):
+        import sys
+        import types
+
+        module = types.ModuleType("gpiozero.pins.lgpio")
+        module.LGPIOFactory = lambda chip=None: types.SimpleNamespace(
+            chip=chip, close=lambda: None
+        )
+        monkeypatch.setitem(sys.modules, "gpiozero.pins.lgpio", module)
+        monkeypatch.setattr(sensor_module, "HAS_LGPIO", True)
+        monkeypatch.setattr(sensor_module, "detect_header_chip", lambda chips=None: 99)
+        s = PIRSensor(pin=18, gpio_chip=4)
+        s.open()
+        assert gpio.instances[0].kwargs["pin_factory"].chip == 4
+
+    def test_without_lgpio_gpiozero_chooses(self, gpio):
+        s = PIRSensor(pin=18)
+        s.open()
+        assert "pin_factory" not in gpio.instances[0].kwargs

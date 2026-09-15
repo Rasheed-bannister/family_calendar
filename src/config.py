@@ -55,6 +55,9 @@ class Config:
         "pir_sensor": {
             "enabled": True,
             "gpio_pin": 18,
+            # /dev/gpiochipN carrying the 40-pin header. null = detect by
+            # label (chip numbers differ between kernel versions on a Pi 5).
+            "gpio_chip": None,
             "debounce_time": 2.0,
             "simulation_mode": False,
         },

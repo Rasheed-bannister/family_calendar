@@ -20,6 +20,7 @@
   "pir_sensor": {
     "enabled": true,
     "gpio_pin": 18,
+    "gpio_chip": null,
     "debounce_time": 2.0,
     "simulation_mode": false
   },

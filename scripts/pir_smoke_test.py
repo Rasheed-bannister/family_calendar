@@ -17,12 +17,21 @@ import argparse
 import os
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pin", type=int, default=18, help="BCM GPIO pin (default 18)")
     parser.add_argument("--seconds", type=int, default=30, help="how long to listen")
+    parser.add_argument(
+        "--chip",
+        type=int,
+        default=None,
+        help="gpiochip number (default: detect by label)",
+    )
     args = parser.parse_args()
 
     try:
@@ -44,10 +53,30 @@ def main() -> int:
         print("Install with: uv sync  (needs the swig and liblgpio-dev packages)")
         return 2
 
+    from src.pir_sensor.sensor import detect_header_chip, list_gpio_chips
+
+    chips = list_gpio_chips()
+    for chip in chips:
+        label = chip.get("label") or chip.get("error")
+        print(f"  {chip['path']}: {label} ({chip.get('lines', '?')} lines)")
+    chip_number = args.chip if args.chip is not None else detect_header_chip(chips)
+    if chip_number is None:
+        print("Could not identify the header GPIO chip from the labels above.")
+        print("Pass --chip N explicitly (the RP1 chip on a Pi 5, 'pinctrl-rp1').")
+        return 1
+    print(f"Using /dev/gpiochip{chip_number}")
+
     try:
-        sensor = MotionSensor(args.pin, queue_len=1, sample_rate=10, threshold=0.5)
+        from gpiozero.pins.lgpio import LGPIOFactory
+
+        factory = LGPIOFactory(chip=chip_number)
+        sensor = MotionSensor(
+            args.pin, queue_len=1, sample_rate=10, threshold=0.5, pin_factory=factory
+        )
     except Exception as e:
-        print(f"Could not open GPIO {args.pin}: {type(e).__name__}: {e}")
+        print(
+            f"Could not open GPIO {args.pin} on gpiochip{chip_number}: {type(e).__name__}: {e}"
+        )
         print(
             "Check: user in 'gpio' group? /dev/gpiochip0 accessible? service stopped?"
         )

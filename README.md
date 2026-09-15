@@ -105,7 +105,7 @@ you are most likely to touch:
 {
   "app": { "family_name": "Family", "timezone": null },
   "weather": { "latitude": 40.759, "longitude": -73.984, "timezone": "America/New_York" },
-  "pir_sensor": { "enabled": true, "gpio_pin": 18, "debounce_time": 2.0, "simulation_mode": false },
+  "pir_sensor": { "enabled": true, "gpio_pin": 18, "gpio_chip": null, "debounce_time": 2.0, "simulation_mode": false },
   "display": {
     "day":   { "dim_after_seconds": 3600, "hide_ui_after_seconds": 3605, "brightness": 0.6 },
     "night": { "dim_after_seconds": 5,    "hide_ui_after_seconds": 10,   "brightness": 0.2 },
@@ -125,6 +125,9 @@ you are most likely to touch:
   translucent overlay in the browser instead. The overlay never goes below
   `display.overlay_min_brightness` (default 0.35), because a black overlay
   saves no power.
+- `pir_sensor.gpio_chip`: which `/dev/gpiochipN` carries the 40-pin header.
+  Leave `null` to detect it by kernel label; chip numbers change between
+  kernel versions on a Pi 5 (`gpiochip4` on 6.6, `gpiochip1x` on 6.12).
 - An older `inactivity` section is migrated to `display` automatically.
 - Environment variables `CALENDAR_WEATHER_LATITUDE`, `CALENDAR_WEATHER_LONGITUDE`,
   `CALENDAR_TIMEZONE`, `CALENDAR_PORT`, `CALENDAR_DEBUG`, `CALENDAR_ENV`

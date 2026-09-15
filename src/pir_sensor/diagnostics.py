@@ -166,7 +166,11 @@ def _check_gpio_devices() -> dict:
         "user_groups": [],
     }
 
-    # GPIO chip devices
+    # GPIO chip devices, with the kernel label where lgpio can read it. The
+    # header chip is found by label, not number (see sensor.HEADER_CHIP_LABELS).
+    from src.pir_sensor.sensor import detect_header_chip, list_gpio_chips
+
+    labelled = {c["path"]: c for c in list_gpio_chips()}
     chips = sorted(glob.glob("/dev/gpiochip*"))
     for chip in chips:
         try:
@@ -174,11 +178,20 @@ def _check_gpio_devices() -> dict:
             stat = os.stat(chip)
             group = grp.getgrgid(stat.st_gid).gr_name
             mode = oct(stat.st_mode)[-3:]
+            info = labelled.get(chip, {})
             result["chips"].append(
-                {"path": chip, "accessible": accessible, "group": group, "mode": mode}
+                {
+                    "path": chip,
+                    "accessible": accessible,
+                    "group": group,
+                    "mode": mode,
+                    "label": info.get("label"),
+                    "lines": info.get("lines"),
+                }
             )
         except Exception as e:
             result["chips"].append({"path": chip, "accessible": False, "error": str(e)})
+    result["header_chip"] = detect_header_chip(list(labelled.values()))
 
     # /dev/gpiomem
     if os.path.exists("/dev/gpiomem"):
