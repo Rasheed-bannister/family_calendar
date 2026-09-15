@@ -1,6 +1,6 @@
 [project]
 name = "calendar"
-version = "0.4.0"
+version = "1.0.0"
 description = "Wall-mounted family calendar and photo slideshow for a Raspberry Pi touchscreen"
 readme = "README.md"
 requires-python = ">=3.11"
