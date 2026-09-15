@@ -7,6 +7,7 @@ procedure (preflight, backup, checkout, rebuild, restart, rollback on failure).
 
 import json
 import logging
+import re
 import shutil
 import subprocess  # nosec B404 - fixed argv only
 import threading
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+
+from src.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,10 @@ STATUS_FILE = PROJECT_ROOT / ".upgrade-status.json"
 # runs in its own unit, started over D-Bus; a polkit rule lets the service
 # user do that without sudo.
 UPGRADE_UNIT_TEMPLATE = "family-calendar-upgrade@.service"
+
+# Release tags accepted for upgrades. Also enforced here, not only in the
+# route, because the tag becomes part of a systemd unit name.
+TAG_PATTERN = re.compile(r"v\d+\.\d+\.\d+")
 
 # A "running" status older than this is treated as abandoned (the upgrade was
 # killed), so it cannot block every future upgrade.
@@ -148,6 +155,8 @@ def start_upgrade(target_tag: str) -> dict:
     Returns immediately. Progress comes from :func:`get_upgrade_status`; the
     script stops and restarts the service itself.
     """
+    if not TAG_PATTERN.fullmatch(target_tag or ""):
+        return {"success": False, "message": "Invalid tag format (expected vX.Y.Z)"}
     if _upgrade_in_progress():
         return {"success": False, "message": "Upgrade already in progress"}
 
@@ -161,13 +170,15 @@ def start_upgrade(target_tag: str) -> dict:
 
     try:
         how = _launch_upgrade(target_tag)
-    except Exception as e:
-        message = f"Could not start the upgrade: {e}"
-        logger.error(message)
+    except Exception:
+        # The exception can carry systemctl's stderr; it goes to the log, and
+        # the caller gets a fixed message.
+        logger.exception("Could not start the upgrade to %s", log_safe(target_tag))
+        message = "Could not start the upgrade. See the family-calendar service log."
         _set_status("error", message)
         return {"success": False, "message": message}
 
-    logger.info("Upgrade to %s started via %s", target_tag, how)
+    logger.info("Upgrade to %s started via %s", log_safe(target_tag), how)
     return {"success": True, "message": f"Upgrade to {target_tag} started"}
 
 

@@ -224,11 +224,7 @@ class TestHardwareStatus:
         set_display_service(None)
         result = monitor.check_health()
         assert result["status"] == "healthy"
-        assert result["hardware"]["pir"] == {
-            "expected": False,
-            "ok": True,
-            "error": None,
-        }
+        assert result["hardware"]["pir"] == {"expected": False, "ok": True}
         assert result["hardware"]["display"] == {"running": False}
 
     @patch.object(HealthMonitor, "get_system_info")
@@ -241,7 +237,9 @@ class TestHardwareStatus:
         set_pir_sensor(broken)
         result = monitor.check_health()
         assert result["status"] == "warning"
-        assert result["issues"] == ["PIR sensor not working: RuntimeError: EPERM"]
+        assert result["issues"] == ["PIR sensor not working (details at /pir/status)"]
+        # The raw error stays on /pir/status; /health/ carries no error text.
+        assert "EPERM" not in str(result)
         assert result["hardware"]["pir"]["expected"] is True
         assert result["hardware"]["pir"]["ok"] is False
 

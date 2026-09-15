@@ -91,12 +91,11 @@ class HealthMonitor:
                 },
             }
 
-        except Exception as e:
-            logging.error(f"Error getting system info: {e}")
+        except Exception:
+            logging.exception("Error getting system info")
             return {
                 "timestamp": datetime.now().isoformat(),
                 "error": "Failed to collect system information",
-                "details": str(e),
             }
 
     def check_health(self) -> Dict[str, Any]:
@@ -142,7 +141,7 @@ class HealthMonitor:
         if hardware["pir"].get("expected") and not hardware["pir"].get("ok"):
             if health_status == "healthy":
                 health_status = "warning"
-            issues.append(f"PIR sensor not working: {hardware['pir'].get('error')}")
+            issues.append("PIR sensor not working (details at /pir/status)")
 
         return {
             "status": health_status,
@@ -153,8 +152,14 @@ class HealthMonitor:
         }
 
     def _hardware_status(self) -> Dict[str, Any]:
-        """PIR and display state, as far as this process knows."""
-        pir: Dict[str, Any] = {"expected": False, "ok": True, "error": None}
+        """PIR and display state, as far as this process knows.
+
+        Deliberately free of error text: /health/ is polled by the monitor
+        script and anything on the LAN. The underlying hardware errors are
+        exposed in one place each, /pir/status and /api/display, where they
+        are needed for diagnosis.
+        """
+        pir: Dict[str, Any] = {"expected": False, "ok": True}
         try:
             from src.pir_sensor.sensor import get_pir_sensor
 
@@ -164,11 +169,16 @@ class HealthMonitor:
                 pir = {
                     "expected": bool(status["enabled"] and not status["simulation"]),
                     "ok": sensor.healthy,
-                    "error": status.get("error"),
-                    **status,
+                    "enabled": status["enabled"],
+                    "simulation": status["simulation"],
+                    "available": status["available"],
+                    "pin": status["pin"],
+                    "gpio_chip": status.get("gpio_chip"),
+                    "motion_count": status.get("motion_count", 0),
                 }
-        except Exception as e:  # pragma: no cover - defensive
-            pir = {"expected": False, "ok": True, "error": str(e)}
+        except Exception:  # pragma: no cover - defensive
+            logging.exception("Could not read PIR sensor status")
+            pir = {"expected": False, "ok": True}
 
         display: Dict[str, Any] = {"running": False}
         try:
@@ -181,10 +191,14 @@ class HealthMonitor:
                     "running": service.running,
                     "mode": snap["mode"],
                     "brightness": snap["brightness"],
-                    "backlight": snap["backlight"],
+                    "backlight": {
+                        "backend": snap["backlight"].get("backend"),
+                        "available": snap["backlight"].get("available"),
+                    },
                 }
-        except Exception as e:  # pragma: no cover - defensive
-            display = {"running": False, "error": str(e)}
+        except Exception:  # pragma: no cover - defensive
+            logging.exception("Could not read display service status")
+            display = {"running": False}
 
         return {"pir": pir, "display": display}
 

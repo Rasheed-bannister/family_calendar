@@ -324,8 +324,20 @@ def create_app():
 
     @app.route("/api/upgrade/status")
     def upgrade_status_api():
+        """Upgrade progress. Localhost only, like the trigger: the messages
+        can include git and build output."""
         from src.version import get_upgrade_status
 
+        if request.remote_addr not in ("127.0.0.1", "::1"):
+            return (
+                jsonify(
+                    {
+                        "state": "unavailable",
+                        "message": "Upgrade status is available from the display only",
+                    }
+                ),
+                403,
+            )
         return jsonify(get_upgrade_status())
 
     return app
