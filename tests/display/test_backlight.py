@@ -1,6 +1,8 @@
 """Tests for src/display/backlight.py."""
 
 import subprocess
+import threading
+import time
 from unittest.mock import patch
 
 import pytest
@@ -127,6 +129,95 @@ class TestDdcutilBacklight:
                 b.set_brightness(0.5)
                 b._drain()
         assert b.describe()["error"]
+
+
+class TestDdcutilWorker:
+    """One worker at a time, and the newest level is always written last."""
+
+    def test_burst_before_the_worker_runs_starts_one_worker(self):
+        calls = []
+        with (
+            patch.object(bl.shutil, "which", return_value="/usr/bin/ddcutil"),
+            patch.object(
+                bl.subprocess,
+                "run",
+                side_effect=lambda argv, **kw: calls.append(argv[3]),
+            ),
+            patch.object(bl.threading, "Thread") as thread,
+        ):
+            b = bl.DdcutilBacklight()
+            b.set_brightness(0.2)
+            b.set_brightness(0.5)
+            b.set_brightness(0.9)
+            assert thread.call_count == 1
+            b._drain()
+        assert calls == ["90"]
+
+    def test_a_new_worker_starts_after_the_previous_one_finished(self):
+        with (
+            patch.object(bl.shutil, "which", return_value="/usr/bin/ddcutil"),
+            patch.object(bl.subprocess, "run"),
+            patch.object(bl.threading, "Thread") as thread,
+        ):
+            b = bl.DdcutilBacklight()
+            b.set_brightness(0.2)
+            b._drain()
+            b.set_brightness(0.4)
+            assert thread.call_count == 2
+
+    def test_thread_start_failure_does_not_wedge_the_driver(self):
+        with (
+            patch.object(bl.shutil, "which", return_value="/usr/bin/ddcutil"),
+            patch.object(bl.threading, "Thread") as thread,
+        ):
+            thread.return_value.start.side_effect = RuntimeError("can't start")
+            b = bl.DdcutilBacklight()
+            with pytest.raises(RuntimeError):
+                b.set_brightness(0.2)
+            thread.return_value.start.side_effect = None
+            b.set_brightness(0.3)
+            assert thread.call_count == 2
+
+    def test_request_during_a_slow_call_is_written_after_it_by_the_same_worker(
+        self,
+    ):
+        """Real threads: hold the first ddcutil call open while newer levels arrive."""
+        inside_first_call = threading.Event()
+        release_first_call = threading.Event()
+        calls = []
+        threads = set()
+        lock = threading.Lock()
+
+        def fake_run(argv, **kwargs):
+            with lock:
+                calls.append(argv[3])
+                threads.add(threading.get_ident())
+                first = len(calls) == 1
+            if first:
+                inside_first_call.set()
+                assert release_first_call.wait(5)
+            return subprocess.CompletedProcess(argv, 0)
+
+        with (
+            patch.object(bl.shutil, "which", return_value="/usr/bin/ddcutil"),
+            patch.object(bl.subprocess, "run", side_effect=fake_run),
+        ):
+            b = bl.DdcutilBacklight()
+            b.set_brightness(0.2)
+            assert inside_first_call.wait(5)
+            b.set_brightness(0.5)  # dim...
+            b.set_brightness(0.9)  # ...then wake: this must be the last write
+            release_first_call.set()
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                with b._lock:
+                    if not b._worker_active:
+                        break
+                time.sleep(0.01)
+
+        assert calls == ["20", "90"]
+        assert len(threads) == 1
+        assert b._worker_active is False
 
 
 class TestCreateBacklight:

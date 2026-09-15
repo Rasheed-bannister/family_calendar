@@ -119,7 +119,10 @@ class DdcutilBacklight(Backlight):
         self._display = display
         self._lock = threading.Lock()
         self._last_error: Optional[str] = None
+        # Latest requested level not yet sent, and whether a worker thread is
+        # currently responsible for sending it. Both are guarded by _lock.
         self._pending: Optional[int] = None
+        self._worker_active = False
 
     @property
     def available(self) -> bool:
@@ -129,15 +132,26 @@ class DdcutilBacklight(Backlight):
         if not self.available:
             return False
         percent = int(round(min(1.0, max(0.0, level)) * 100))
-        # ddcutil takes ~0.5s; run it off the caller's thread and collapse
-        # bursts to the most recent value.
+        # ddcutil takes ~0.5s, so it runs on a worker thread. There is at most
+        # one worker: it keeps sending until no newer level is pending, so a
+        # burst collapses to its most recent value and that value is always
+        # the last one written. (Deciding whether to start a worker from
+        # "_pending is None" was racy: once a worker had taken the value and
+        # was inside ddcutil, a new request started a second worker, and the
+        # older value could land after the newer one.)
         with self._lock:
-            first = self._pending is None
             self._pending = percent
-        if first:
+            if self._worker_active:
+                return True
+            self._worker_active = True
+        try:
             threading.Thread(
                 target=self._drain, name="ddcutil-backlight", daemon=True
             ).start()
+        except RuntimeError:
+            with self._lock:
+                self._worker_active = False
+            raise
         return True
 
     def _drain(self) -> None:
@@ -145,6 +159,7 @@ class DdcutilBacklight(Backlight):
             with self._lock:
                 percent = self._pending
                 if percent is None:
+                    self._worker_active = False
                     return
                 self._pending = None
             argv = [self._binary, "setvcp", "10", str(percent), "--noverify"]
@@ -160,9 +175,6 @@ class DdcutilBacklight(Backlight):
                 if msg != self._last_error:
                     logger.error("ddcutil failed: %s", msg)
                 self._last_error = msg
-            with self._lock:
-                if self._pending is None:
-                    return
 
     def describe(self) -> dict:
         return {
