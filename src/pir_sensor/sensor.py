@@ -81,10 +81,18 @@ def list_gpio_chips() -> list[dict]:
         try:
             handle = lgpio.gpiochip_open(number)
             try:
-                lines, name, label = lgpio.gpio_get_chip_info(handle)
+                # lgpio returns [status, lines, name, label]; status < 0 is
+                # an error code.
+                info = list(lgpio.gpio_get_chip_info(handle))
             finally:
                 lgpio.gpiochip_close(handle)
-            entry.update({"lines": lines, "name": name, "label": label})
+            if len(info) == 4:
+                status, lines, name, label = info
+                if status < 0:
+                    raise RuntimeError(f"gpio_get_chip_info failed ({status})")
+            else:  # pragma: no cover - older lgpio without the status field
+                lines, name, label = info
+            entry.update({"lines": int(lines), "name": name, "label": label})
         except Exception as e:
             entry["error"] = str(e)
         chips.append(entry)

@@ -362,7 +362,7 @@ class FakeLgpio:
         return number
 
     def gpio_get_chip_info(self, handle):
-        return self.chips[handle]
+        return [0, *self.chips[handle]]
 
     def gpiochip_close(self, handle):
         pass
