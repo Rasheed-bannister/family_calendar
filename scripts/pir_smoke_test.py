@@ -14,6 +14,7 @@ lgpio, wrong pin), which is exactly what the app would have hit.
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -23,6 +24,18 @@ def main() -> int:
     parser.add_argument("--pin", type=int, default=18, help="BCM GPIO pin (default 18)")
     parser.add_argument("--seconds", type=int, default=30, help="how long to listen")
     args = parser.parse_args()
+
+    try:
+        import lgpio  # noqa: F401
+
+        os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+    except ImportError:
+        print("The lgpio Python module is NOT installed in this environment.")
+        print(
+            "On a Pi 5 that is fatal. Fix: sudo apt install swig liblgpio-dev python3-dev"
+        )
+        print("then, in the project directory: uv sync --no-dev")
+        return 2
 
     try:
         from gpiozero import MotionSensor

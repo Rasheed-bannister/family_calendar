@@ -18,11 +18,25 @@ Uses gpiozero, which is what works on a Raspberry Pi 5 (via lgpio).
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+# Pin gpiozero to the lgpio backend whenever lgpio is importable. Left to its
+# own devices gpiozero tries lgpio, RPi.GPIO, pigpio and "native" in turn and,
+# when all fail, raises a generic BadPinFactory that hides the real reason
+# (a permission error on /dev/gpiochip0, say). With the factory fixed, the
+# underlying exception surfaces in the log and on /pir/status.
+try:
+    import lgpio  # noqa: F401
+
+    os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+    HAS_LGPIO = True
+except ImportError:
+    HAS_LGPIO = False
 
 try:
     from gpiozero import MotionSensor
@@ -124,6 +138,12 @@ class PIRSensor:
                 sensor.when_motion = self._on_motion
             except Exception as e:
                 self.error = f"{type(e).__name__}: {e}"
+                if not HAS_LGPIO:
+                    self.error += (
+                        " [the lgpio Python module is not installed in this "
+                        "environment, which a Raspberry Pi 5 requires: install "
+                        "the swig and liblgpio-dev packages and re-run `uv sync`]"
+                    )
                 logger.error(
                     "PIR sensor: cannot open GPIO %s: %s. On a Raspberry Pi 5 the "
                     "service needs access to /dev/gpiochip* (see the systemd "
@@ -192,6 +212,8 @@ class PIRSensor:
             "pin_factory": self.pin_factory,
             "error": self.error,
             "gpiozero_installed": HAS_GPIO,
+            "lgpio_installed": HAS_LGPIO,
+            "pin_factory_env": os.environ.get("GPIOZERO_PIN_FACTORY"),
             "motion_count": self.motion_count,
             "seconds_since_motion": seconds_since,
         }
