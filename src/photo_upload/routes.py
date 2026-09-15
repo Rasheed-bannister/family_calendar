@@ -304,9 +304,11 @@ def upload_photos():
                 }
             )
 
-        except Exception as e:
-            logger.error(f"Failed to process {filename}: {e}")
-            errors.append(f"Failed to save {filename}: {str(e)}")
+        except Exception:
+            # Full detail goes to the log only; the uploading phone is the
+            # least-trusted client in the app and gets a generic message.
+            logger.exception("Failed to process uploaded photo %r", filename)
+            errors.append(f"Failed to save {filename}")
             # Clean up partial file if it exists
             if os.path.exists(filepath):
                 try:
