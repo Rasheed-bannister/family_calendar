@@ -161,7 +161,9 @@ def add_chore(
         return None  # Or raise e to indicate a more critical failure
 
     logger.info(
-        "Chore '%s' for '%s' added to local DB with ID: %s",
+        # %r, not %s: description and assignee are typed by users, and repr
+        # escapes newlines so they cannot forge extra log lines.
+        "Chore %r for %r added to local DB with ID: %s",
         new_chore.description,
         new_chore.assigned_to,
         new_chore.id,

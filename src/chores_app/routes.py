@@ -92,9 +92,9 @@ def refresh_chores():
 
     try:
         started = start_tasks_sync()
-    except Exception as e:
-        logger.error("Error during chores refresh: %s", e)
-        return jsonify({"error": f"Chores refresh failed: {str(e)}"}), 500
+    except Exception:
+        logger.exception("Error during chores refresh")
+        return jsonify({"error": "Chores refresh failed"}), 500
 
     if not started:
         return jsonify({"message": "Refresh already in progress"}), 202
@@ -161,17 +161,16 @@ def add_chore_route():
             201,
         )
 
-    except Exception as e:
+    except Exception:
         # This will catch errors from db.add_chore (if it raises an exception not handled by returning None),
         # tasks_api.create_chore, or db.update_chore_google_id.
-        logger.error("Error in add_chore_route: %s", e)
+        logger.exception("Error in add_chore_route")
         # Attempt to be more specific if possible, otherwise a general error.
         # If new_chore_local was created but a subsequent step failed, it remains in the local DB with its initial ID.
         return (
             jsonify(
                 {
                     "error": "Failed to add chore due to an internal server error.",
-                    "details": str(e),
                 }
             ),
             500,

@@ -29,12 +29,10 @@ def health_check():
         else:  # critical
             return jsonify(health_status), 503  # Service Unavailable
 
-    except Exception as e:
-        logging.error(f"Health check failed: {e}")
+    except Exception:
+        logging.exception("Health check failed")
         return (
-            jsonify(
-                {"status": "error", "message": "Health check failed", "details": str(e)}
-            ),
+            jsonify({"status": "error", "message": "Health check failed"}),
             500,
         )
 
@@ -64,8 +62,8 @@ def sync_status():
             ),
             200,
         )
-    except Exception as e:
-        logging.error(f"Sync status check failed: {e}")
+    except Exception:
+        logging.exception("Sync status check failed")
         return jsonify({"status": "error", "message": "Sync status failed"}), 500
 
 
@@ -86,14 +84,13 @@ def detailed_health():
             200,
         )
 
-    except Exception as e:
-        logging.error(f"Detailed health check failed: {e}")
+    except Exception:
+        logging.exception("Detailed health check failed")
         return (
             jsonify(
                 {
                     "status": "error",
                     "message": "Detailed health check failed",
-                    "details": str(e),
                 }
             ),
             500,
@@ -109,10 +106,10 @@ def system_resources():
         system_info = health_monitor.get_system_info()
         return jsonify(system_info), 200
 
-    except Exception as e:
-        logging.error(f"System info failed: {e}")
+    except Exception:
+        logging.exception("System info failed")
         return (
-            jsonify({"error": "Failed to get system information", "details": str(e)}),
+            jsonify({"error": "Failed to get system information"}),
             500,
         )
 
@@ -126,10 +123,10 @@ def database_status():
         db_status = health_monitor.get_database_status()
         return jsonify(db_status), 200
 
-    except Exception as e:
-        logging.error(f"Database status check failed: {e}")
+    except Exception:
+        logging.exception("Database status check failed")
         return (
-            jsonify({"error": "Failed to check database status", "details": str(e)}),
+            jsonify({"error": "Failed to check database status"}),
             500,
         )
 
@@ -158,9 +155,9 @@ def error_summary():
             200,
         )
 
-    except Exception as e:
-        logging.error(f"Error summary failed: {e}")
-        return jsonify({"error": "Failed to get error summary", "details": str(e)}), 500
+    except Exception:
+        logging.exception("Error summary failed")
+        return jsonify({"error": "Failed to get error summary"}), 500
 
 
 @health_bp.route("/monitoring/enable", methods=["POST"])
@@ -181,9 +178,9 @@ def enable_monitoring():
             200,
         )
 
-    except Exception as e:
-        logging.error(f"Failed to enable monitoring: {e}")
-        return jsonify({"error": "Failed to enable monitoring", "details": str(e)}), 500
+    except Exception:
+        logging.exception("Failed to enable monitoring")
+        return jsonify({"error": "Failed to enable monitoring"}), 500
 
 
 @health_bp.route("/monitoring/disable", methods=["POST"])
@@ -204,9 +201,9 @@ def disable_monitoring():
             200,
         )
 
-    except Exception as e:
-        logging.error(f"Failed to disable monitoring: {e}")
+    except Exception:
+        logging.exception("Failed to disable monitoring")
         return (
-            jsonify({"error": "Failed to disable monitoring", "details": str(e)}),
+            jsonify({"error": "Failed to disable monitoring"}),
             500,
         )
