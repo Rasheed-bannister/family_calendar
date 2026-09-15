@@ -1,0 +1,23 @@
+# Runs upgrade.sh for one release, e.g. family-calendar-upgrade@v1.2.0.service.
+#
+# Started by the in-app updater. It is a separate unit because the main service
+# is sandboxed (no sudo, read-only home for the uv and npm caches) and because
+# upgrade.sh stops that service, which would kill anything it had spawned.
+# Paths and user are rewritten by deploy_raspberry_pi.sh.
+
+[Unit]
+Description=Family Calendar upgrade to %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/family_calendar
+Environment="HOME=/home/pi"
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/bin/bash /home/pi/family_calendar/upgrade.sh --yes --tag %i --status-file /home/pi/family_calendar/.upgrade-status.json
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal

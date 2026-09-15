@@ -1,10 +1,13 @@
 """Tests for src/version.py - Version management and upgrade functionality."""
 
+import json
 import subprocess
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src import version as version_module
 from src.version import (
     _is_newer,
     _set_status,
@@ -19,28 +22,19 @@ from src.version import (
 
 class TestGetCurrentVersion:
     def test_reads_version_file(self, tmp_path):
-        version_file = tmp_path / "VERSION"
-        version_file.write_text("1.2.3\n")
-        with patch("src.version.Path") as mock_path:
-            mock_path.return_value.parent.parent.__truediv__ = lambda s, n: version_file
-            result = get_current_version()
-        assert result == "1.2.3"
+        (tmp_path / "VERSION").write_text("1.2.3\n")
+        with patch("src.version.PROJECT_ROOT", tmp_path):
+            assert get_current_version() == "1.2.3"
 
     def test_returns_unknown_when_file_missing(self, tmp_path):
-        missing_file = tmp_path / "nonexistent"
-        with patch("src.version.Path") as mock_path:
-            mock_path.return_value.parent.parent.__truediv__ = lambda s, n: missing_file
-            result = get_current_version()
-        assert result == "unknown"
+        with patch("src.version.PROJECT_ROOT", tmp_path):
+            assert get_current_version() == "unknown"
 
     def test_strips_whitespace(self, tmp_path):
         """VERSION file content should be stripped of whitespace."""
-        version_file = tmp_path / "VERSION"
-        version_file.write_text("  2.0.0  \n")
-        with patch("src.version.Path") as mock_path:
-            mock_path.return_value.parent.parent.__truediv__ = lambda s, n: version_file
-            result = get_current_version()
-        assert result == "2.0.0"
+        (tmp_path / "VERSION").write_text("  2.0.0  \n")
+        with patch("src.version.PROJECT_ROOT", tmp_path):
+            assert get_current_version() == "2.0.0"
 
 
 # --- _is_newer ---
@@ -158,107 +152,164 @@ class TestCheckForUpdate:
 # --- get_upgrade_status / start_upgrade ---
 
 
+@pytest.fixture
+def status_file(tmp_path):
+    """Point the module at a throwaway status file and reset launcher state."""
+    path = tmp_path / ".upgrade-status.json"
+    with patch("src.version.STATUS_FILE", path):
+        version_module._upgrade_status.update(
+            {"state": "idle", "message": "", "updated_at": 0.0}
+        )
+        yield path
+
+
+def write_script_status(path, state, message, age_seconds=0.0):
+    path.write_text(
+        json.dumps(
+            {
+                "state": state,
+                "message": message,
+                "updated_at": time.time() - age_seconds,
+            }
+        )
+    )
+
+
 class TestUpgradeStatus:
-    def setup_method(self):
-        """Reset upgrade status before each test."""
-        _set_status("idle", "")
+    def test_initial_status_is_idle(self, status_file):
+        assert get_upgrade_status() == {"state": "idle", "message": ""}
 
-    def test_initial_status_is_idle(self):
-        status = get_upgrade_status()
-        assert status["state"] == "idle"
+    def test_script_status_file_wins_when_newer(self, status_file):
+        _set_status("running", "Starting upgrade to v2.0.0...")
+        write_script_status(status_file, "error", "Frontend build failed.")
+        assert get_upgrade_status() == {
+            "state": "error",
+            "message": "Frontend build failed.",
+        }
 
-    def test_rejects_duplicate_upgrade(self):
-        _set_status("running", "In progress")
-        result = start_upgrade("v1.0.0")
+    def test_launcher_status_wins_over_an_older_file(self, status_file):
+        write_script_status(status_file, "done", "Upgraded to 1.0.0", age_seconds=60)
+        _set_status("error", "Could not start the upgrade: boom")
+        assert get_upgrade_status()["state"] == "error"
+
+    def test_corrupt_status_file_is_ignored(self, status_file):
+        status_file.write_text("{not json")
+        _set_status("running", "Starting")
+        assert get_upgrade_status() == {"state": "running", "message": "Starting"}
+
+    def test_rejects_duplicate_upgrade_while_script_runs(self, status_file):
+        write_script_status(status_file, "running", "Building the frontend ...")
+        with patch("src.version._launch_upgrade") as launch:
+            result = start_upgrade("v1.0.0")
         assert result["success"] is False
         assert "already in progress" in result["message"]
+        launch.assert_not_called()
 
-    def test_start_upgrade_returns_success(self):
-        with patch("src.version.threading.Thread") as mock_thread:
-            mock_thread.return_value.start = MagicMock()
-            result = start_upgrade("v1.0.0")
-        assert result["success"] is True
-        assert "v1.0.0" in result["message"]
-
-    def test_start_upgrade_sets_running_state(self):
-        with patch("src.version.threading.Thread") as mock_thread:
-            mock_thread.return_value.start = MagicMock()
-            start_upgrade("v2.0.0")
-        status = get_upgrade_status()
-        assert status["state"] == "running"
-
-    def test_start_upgrade_spawns_thread(self):
-        with patch("src.version.threading.Thread") as mock_thread:
-            mock_instance = MagicMock()
-            mock_thread.return_value = mock_instance
-            start_upgrade("v1.0.0")
-        mock_thread.assert_called_once()
-        mock_instance.start.assert_called_once()
-
-
-# --- _run_upgrade (integration-style with mocked subprocess) ---
-
-
-class TestRunUpgrade:
-    def setup_method(self):
-        _set_status("idle", "")
-
-    @patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}")
-    @patch("src.version.subprocess.Popen")
-    @patch("src.version.subprocess.run")
-    def test_successful_upgrade_flow(self, mock_run, mock_popen, mock_which):
-        """git fetch, checkout, uv sync, frontend build, then restart."""
-        from src.version import _run_upgrade
-
-        mock_run.return_value = MagicMock(stdout="ok", returncode=0)
-
-        _run_upgrade("v2.0.0")
-
-        # git fetch, git checkout --, git checkout tag, uv sync, npm ci, npm build
-        assert mock_run.call_count == 6
-        argvs = [c.args[0] for c in mock_run.call_args_list]
-        assert argvs[0][:2] == ["git", "fetch"]
-        assert argvs[2] == ["git", "checkout", "v2.0.0"]
-        assert argvs[3][:2] == ["uv", "sync"]
-        assert argvs[4][1] == "ci" and argvs[4][0].endswith("npm")
-        assert argvs[5][1:] == ["run", "build"]
-        # The frontend commands run in frontend/, not the project root.
-        assert mock_run.call_args_list[5].kwargs["cwd"].name == "frontend"
-
-        # Should attempt systemd restart
-        mock_popen.assert_called_once()
-
-        status = get_upgrade_status()
-        assert status["state"] == "restarting"
-
-    @patch("src.version.subprocess.run")
-    def test_upgrade_handles_git_failure(self, mock_run):
-        from src.version import _run_upgrade
-
-        mock_run.side_effect = subprocess.CalledProcessError(
-            1, "git", stderr="fatal: not a git repository"
+    def test_stale_running_status_does_not_block_forever(self, status_file):
+        write_script_status(
+            status_file,
+            "running",
+            "killed mid-way",
+            age_seconds=version_module.STALE_RUNNING_SECONDS + 1,
         )
+        with patch("src.version._launch_upgrade", return_value="process"):
+            assert start_upgrade("v1.0.0")["success"] is True
 
-        _run_upgrade("v2.0.0")
+    def test_start_clears_previous_status_file(self, status_file):
+        write_script_status(status_file, "error", "old failure", age_seconds=10)
+        with patch("src.version._launch_upgrade", return_value="systemd"):
+            result = start_upgrade("v2.0.0")
+        assert result == {"success": True, "message": "Upgrade to v2.0.0 started"}
+        assert not status_file.exists()
+        assert get_upgrade_status()["state"] == "running"
 
-        status = get_upgrade_status()
-        assert status["state"] == "error"
-        assert "failed" in status["message"].lower()
+    def test_launch_failure_is_reported(self, status_file):
+        with patch(
+            "src.version._launch_upgrade", side_effect=RuntimeError("polkit said no")
+        ):
+            result = start_upgrade("v2.0.0")
+        assert result["success"] is False
+        assert "polkit said no" in result["message"]
+        assert get_upgrade_status()["state"] == "error"
 
-    @patch("shutil.which", return_value="/usr/bin/uv")
-    @patch("src.version.subprocess.Popen", side_effect=FileNotFoundError("no systemd"))
-    @patch("src.version.subprocess.run")
-    def test_upgrade_without_systemd(self, mock_run, mock_popen, mock_which):
-        """When systemd isn't available, upgrade completes with manual restart message."""
-        from src.version import _run_upgrade
 
-        mock_run.return_value = MagicMock(stdout="ok", returncode=0)
+# --- _launch_upgrade ---
 
-        _run_upgrade("v2.0.0")
 
-        status = get_upgrade_status()
-        assert status["state"] == "done"
-        assert "manually" in status["message"].lower()
+class TestLaunchUpgrade:
+    def test_uses_the_systemd_unit_when_installed(self):
+        with (
+            patch("src.version._upgrade_unit_installed", return_value=True),
+            patch("src.version.shutil.which", return_value="/usr/bin/systemctl"),
+            patch("src.version.subprocess.run") as run,
+            patch("src.version.subprocess.Popen") as popen,
+        ):
+            assert version_module._launch_upgrade("v1.2.3") == "systemd"
+        argv = run.call_args.args[0]
+        assert argv == [
+            "/usr/bin/systemctl",
+            "start",
+            "--no-block",
+            "family-calendar-upgrade@v1.2.3.service",
+        ]
+        popen.assert_not_called()
+
+    def test_systemctl_failure_explains_the_fix(self):
+        error = subprocess.CalledProcessError(1, "systemctl", stderr="Access denied")
+        with (
+            patch("src.version._upgrade_unit_installed", return_value=True),
+            patch("src.version.subprocess.run", side_effect=error),
+        ):
+            with pytest.raises(
+                RuntimeError, match="Access denied.*deploy_raspberry_pi"
+            ):
+                version_module._launch_upgrade("v1.2.3")
+
+    def test_falls_back_to_a_detached_script(self, status_file):
+        with (
+            patch("src.version._upgrade_unit_installed", return_value=False),
+            patch("src.version.subprocess.Popen") as popen,
+        ):
+            assert version_module._launch_upgrade("v1.2.3") == "process"
+        argv = popen.call_args.args[0]
+        assert argv[0] == "bash"
+        assert argv[1].endswith("upgrade.sh")
+        assert argv[2:] == [
+            "--yes",
+            "--tag",
+            "v1.2.3",
+            "--status-file",
+            str(status_file),
+        ]
+        # Its own session, so it is not tied to the web server's process group.
+        assert popen.call_args.kwargs["start_new_session"] is True
+
+    def test_missing_script_is_an_error(self, tmp_path):
+        with (
+            patch("src.version._upgrade_unit_installed", return_value=False),
+            patch("src.version.UPGRADE_SCRIPT", tmp_path / "nope.sh"),
+        ):
+            with pytest.raises(RuntimeError, match="not found"):
+                version_module._launch_upgrade("v1.2.3")
+
+    def test_unit_detection_without_systemctl(self):
+        with patch("src.version.shutil.which", return_value=None):
+            assert version_module._upgrade_unit_installed() is False
+
+    def test_unit_detection_uses_systemctl_cat(self):
+        with (
+            patch("src.version.shutil.which", return_value="/usr/bin/systemctl"),
+            patch(
+                "src.version.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ) as run,
+        ):
+            assert version_module._upgrade_unit_installed() is True
+        assert run.call_args.args[0] == [
+            "/usr/bin/systemctl",
+            "cat",
+            "family-calendar-upgrade@.service",
+        ]
 
 
 # --- API endpoint tests ---
@@ -315,31 +366,8 @@ class TestVersionAPI:
         assert data["success"] is False
         assert "Invalid tag format" in data["message"]
 
-    def test_upgrade_status_endpoint(self, client):
-        _set_status("idle", "")
+    def test_upgrade_status_endpoint(self, client, status_file):
         response = client.get("/api/upgrade/status")
         assert response.status_code == 200
         data = response.get_json()
         assert data["state"] == "idle"
-
-
-class TestUpgradeNeedsNpm:
-    def setup_method(self):
-        _set_status("idle", "")
-
-    @patch(
-        "shutil.which", side_effect=lambda name: "/usr/bin/uv" if name == "uv" else None
-    )
-    @patch("src.version.subprocess.Popen")
-    @patch("src.version.subprocess.run")
-    def test_missing_npm_fails_loudly_before_restart(
-        self, mock_run, mock_popen, mock_which
-    ):
-        from src.version import _run_upgrade
-
-        mock_run.return_value = MagicMock(stdout="ok", returncode=0)
-        _run_upgrade("v2.0.0")
-        status = get_upgrade_status()
-        assert status["state"] == "error"
-        assert "npm is not installed" in status["message"]
-        mock_popen.assert_not_called()

@@ -84,7 +84,9 @@ build_application() {
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
   status "Python dependencies (uv sync)..."
-  run_as_user "PATH=\$HOME/.local/bin:\$PATH uv sync --no-dev" \
+  # --frozen: install exactly what uv.lock pins and never rewrite it. A
+  # rewritten lockfile is a local change that blocks the next git checkout.
+  run_as_user "PATH=\$HOME/.local/bin:\$PATH uv sync --frozen --no-dev" \
     || error "uv sync failed. Missing swig/liblgpio-dev?"
 
   status "Frontend (npm ci && npm run build)..."
@@ -159,11 +161,27 @@ RestartSec=30
 WantedBy=multi-user.target
 EOF
 
-  # The in-app updater restarts the service; allow that one command without a password.
+  # Fallback for upgrade.sh when polkit is unavailable: the service verbs it
+  # uses, and the one package install it may need.
   cat > /etc/sudoers.d/family-calendar <<EOF
-$APP_USER ALL=(root) NOPASSWD: /bin/systemctl restart family-calendar, /usr/bin/systemctl restart family-calendar, /usr/bin/apt-get install -y swig liblgpio-dev
+$APP_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start family-calendar, /usr/bin/systemctl stop family-calendar, /usr/bin/systemctl restart family-calendar, /bin/systemctl start family-calendar, /bin/systemctl stop family-calendar, /bin/systemctl restart family-calendar, /usr/bin/apt-get install -y swig liblgpio-dev
 EOF
   chmod 0440 /etc/sudoers.d/family-calendar
+
+  # In-app upgrades run in their own unit (see startup/family-calendar-upgrade@.service),
+  # started by the sandboxed service over D-Bus with the polkit rule below.
+  sed -e "s|/home/pi/family_calendar|$APP_DIR|g" \
+      -e "s|/home/pi|$APP_HOME|g" \
+      -e "s|^User=pi|User=$APP_USER|" \
+      -e "s|^Group=pi|Group=$APP_USER|" \
+      "$APP_DIR/startup/family-calendar-upgrade@.service" > /etc/systemd/system/family-calendar-upgrade@.service
+  if [ -d /etc/polkit-1/rules.d ]; then
+    sed -e "s|__USER__|$APP_USER|g" "$APP_DIR/startup/50-family-calendar.rules" \
+      > /etc/polkit-1/rules.d/50-family-calendar.rules
+    chmod 0644 /etc/polkit-1/rules.d/50-family-calendar.rules
+  else
+    status "polkit rules directory not found; in-app upgrades will need sudo"
+  fi
 
   systemctl daemon-reload
   systemctl enable family-calendar.service family-calendar-monitor.service

@@ -91,10 +91,25 @@ startup/launch-browser.sh enable    # undo
 Use **Check for updates** in the settings panel, or on the Pi:
 
 ```bash
-./upgrade.sh
+./upgrade.sh              # latest release; add --tag v1.2.3 for a specific one
 ```
 
-Both back up your data, check out the release, rebuild, and restart.
+Run it as your normal user; with `sudo` it re-runs itself as the owner of the
+checkout. The upgrade checks everything it can before stopping the service
+(the release exists, the working tree is clean), backs up your config,
+tokens and databases to `~/.family-calendar-backup/`, checks out the release,
+rebuilds, and restarts. If any step after the service stops fails, it checks
+the previous version back out, rebuilds it, and restarts the service, so a
+failed upgrade leaves the display running the old version.
+
+Lockfiles rewritten by uv or npm are restored automatically. Any other local
+edit to a tracked file stops the upgrade with the file listed; keep it with
+`git stash` or discard it with `git checkout -- <file>`.
+
+The settings panel runs the same script through the
+`family-calendar-upgrade@.service` unit, which `deploy_raspberry_pi.sh`
+installs. Progress and errors appear in the panel; the full log is in
+`journalctl -u 'family-calendar-upgrade@*'`.
 
 ## Configuration
 
