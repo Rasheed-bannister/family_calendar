@@ -6,6 +6,7 @@ for itself is covered: open-once semantics, loud failure, debouncing, the
 callback registry and the process-wide singleton.
 """
 
+import os
 from unittest.mock import Mock
 
 import pytest
@@ -258,6 +259,8 @@ class TestStatus:
             "pin_factory": "object",
             "error": None,
             "gpiozero_installed": True,
+            "lgpio_installed": sensor_module.HAS_LGPIO,
+            "pin_factory_env": os.environ.get("GPIOZERO_PIN_FACTORY"),
             "motion_count": 0,
             "seconds_since_motion": None,
         }
