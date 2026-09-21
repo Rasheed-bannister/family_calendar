@@ -33,7 +33,7 @@ dev = [
 
     # Code formatting
     "black>=26.5.1",
-    "isort>=8.0.1",
+    "isort>=9.0.1",
 
     # Linting and static analysis
     "ruff>=0.16.5",
