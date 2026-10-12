@@ -219,7 +219,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "flask", specifier = ">=3.1.3" },
-    { name = "google-api-core", specifier = ">=2.39.0" },
+    { name = "google-api-core", specifier = ">=2.42.0" },
     { name = "google-api-python-client", specifier = ">=2.201.0" },
     { name = "google-auth-httplib2", specifier = ">=0.4.4" },
     { name = "google-auth-oauthlib", specifier = ">=1.5.0" },
@@ -721,7 +721,7 @@ wheels = [
 
 [[package]]
 name = "google-api-core"
-version = "2.39.0"
+version = "2.42.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-auth" },
@@ -731,9 +731,9 @@ dependencies = [
     { name = "protobuf" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/8d/cbdc715cdfb7acd7ccf1ce2869b103734c6a3cf124afd021f56c10c17522/google_api_core-2.39.0.tar.gz", hash = "sha256:824ee414a10adefefae33fc5e2ba28dc6f0f7089d011c9cc98ea9178e61299e9", size = 258568, upload-time = "2026-09-24T23:20:02.498Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/aa/2aa84799e6920216f8aa2866d3b43daa20f7060dcb6efc8f0449e8be0ab0/google_api_core-2.42.0.tar.gz", hash = "sha256:82cf5daa2ef1b456d4e29ff1de1a5c2995c7be3ccf4fc608184326e03390c1ee", size = 273100, upload-time = "2026-10-08T18:12:37.477Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/78/41b3cd83d472b63c694a01e876d3aaa7c2b2f61f29ec8a9275f47b057349/google_api_core-2.39.0-py3-none-any.whl", hash = "sha256:40a5d1c892bc1798f3b75ab10c665b85717979088519c714ca5774ee81d1e3c5", size = 214233, upload-time = "2026-09-24T23:19:36.419Z" },
+    { url = "https://files.pythonhosted.org/packages/28/ca/fb2a5b38366bcb12990c80384b920f04b968fd834cf98be67d306c374612/google_api_core-2.42.0-py3-none-any.whl", hash = "sha256:b1bdf4f72dc4f910736ce4ba49038352effbbc309579215107649b22973a1317", size = 221364, upload-time = "2026-10-08T18:12:04.618Z" },
 ]
 
 [[package]]
