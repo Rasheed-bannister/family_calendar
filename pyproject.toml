@@ -32,7 +32,7 @@ dev = [
     "pytest-cov>=7.1.0",
 
     # Code formatting
-    "black>=26.5.1",
+    "black>=26.10.0",
     "isort>=9.0.1",
 
     # Linting and static analysis
