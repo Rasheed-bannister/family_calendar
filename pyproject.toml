@@ -20,7 +20,7 @@ dependencies = [
     "waitress>=3.0.2",
     "Pillow>=12.3.0",
     "qrcode[pil]>=8.2",
-    "pillow-heif>=1.7.0",
+    "pillow-heif>=1.8.1",
 ]
 
 [dependency-groups]
