@@ -20,7 +20,7 @@ dependencies = [
     "waitress>=3.0.2",
     "Pillow>=12.3.0",
     "qrcode[pil]>=8.2",
-    "pillow-heif>=1.7.0",
+    "pillow-heif>=1.8.1",
 ]
 
 [dependency-groups]
@@ -36,7 +36,7 @@ dev = [
     "isort>=9.0.2",
 
     # Linting and static analysis
-    "ruff>=0.16.10",
+    "ruff>=0.17.1",
     "mypy>=2.4.0",
     "bandit>=1.9.4",
 
@@ -49,7 +49,7 @@ dev = [
     "pip-audit>=2.10.1",
 
     # Pre-commit hooks
-    "pre-commit>=4.6.2",
+    "pre-commit>=4.7.0",
 ]
 
 [tool.uv]
