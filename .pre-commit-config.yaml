@@ -32,7 +32,7 @@ repos:
 
   # Python code formatting with Black
   - repo: https://github.com/psf/black
-    rev: 26.5.1
+    rev: 26.10.1
     hooks:
       - id: black
         language_version: python3.13
@@ -40,14 +40,14 @@ repos:
 
   # Import sorting with isort
   - repo: https://github.com/PyCQA/isort
-    rev: 8.0.1
+    rev: 9.0.2
     hooks:
       - id: isort
         args: ['--profile', 'black', '--line-length', '88']
 
   # Python linting with Ruff (fast Python linter) - formatting handled by Black
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.21
+    rev: v0.17.1
     hooks:
       - id: ruff
         args: ['--fix']  # Auto-fix issues but don't fail commit
