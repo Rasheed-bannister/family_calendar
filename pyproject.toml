@@ -59,7 +59,9 @@ dev = [
 # - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels
 #   (<48.0.1), plus Bleichenbacher oracle in PKCS#7 decryption via distinguishable
 #   RecipientInfo failure modes CVE-2026-69247 (<50.0.0)
-# - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0)
+# - msgpack (via requests-cache): out-of-bounds read / crash on Unpacker reuse (<=1.2.0),
+#   plus leaked map value on strict_map_key rejection -> memory-growth DoS, and
+#   stale parser-stack refs -> use-after-free in Unpacker CVE-2026-114613 (<1.2.3)
 # - pip (via pip-audit -> pip-api): path traversal via entry point names (<26.1.2),
 #   plus arbitrary-location file writes from doubly-encoded package URLs served by
 #   a malicious index CVE-2026-13346 (<26.2)
@@ -73,7 +75,7 @@ dev = [
 constraint-dependencies = [
     "pyasn1>=0.6.4",
     "cryptography>=50.0.0",
-    "msgpack>=1.2.1",
+    "msgpack>=1.2.3",
     "pip>=26.2",
     "click>=8.3.3",
     "httplib2>=0.32.0",
