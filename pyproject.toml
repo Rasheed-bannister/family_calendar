@@ -55,7 +55,9 @@ dev = [
 [tool.uv]
 # Force patched versions of transitive dependencies to resolve security advisories:
 # - pyasn1 (via google-auth): unbounded recursion DoS CVE, plus quadratic OID /
-#   long-form tag parsing and float-precision Real decoding (<0.6.4)
+#   long-form tag parsing and float-precision Real decoding (<0.6.4), plus
+#   quadratic-time decoding of fragmented BIT/OCTET STRINGs, large REAL mantissas
+#   and schemaless containers CVE-2026-119194..119197 (<0.6.5)
 # - cryptography (via google-auth-oauthlib): vulnerable OpenSSL bundled in wheels
 #   (<48.0.1), plus Bleichenbacher oracle in PKCS#7 decryption via distinguishable
 #   RecipientInfo failure modes CVE-2026-69247 (<50.0.0)
@@ -73,7 +75,7 @@ dev = [
 #   exclusion bypass in sdist via Unicode NFC/NFD collision CVE-2026-59890
 #   (<83.0.0)
 constraint-dependencies = [
-    "pyasn1>=0.6.4",
+    "pyasn1>=0.6.5",
     "cryptography>=50.0.0",
     "msgpack>=1.2.3",
     "pip>=26.2",
