@@ -47,7 +47,7 @@ repos:
 
   # Python linting with Ruff (fast Python linter) - formatting handled by Black
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.4
     hooks:
       - id: ruff
         args: ['--fix']  # Auto-fix issues but don't fail commit
