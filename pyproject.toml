@@ -36,7 +36,7 @@ dev = [
     "isort>=9.0.2",
 
     # Linting and static analysis
-    "ruff>=0.17.3",
+    "ruff>=0.17.4",
     "mypy>=2.4.1",
     "bandit>=1.9.4",
 
